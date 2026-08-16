@@ -141,15 +141,27 @@ class VoiceCalculator {
   }
 
   /// Resolves the volume envelope release duration.
+  /// If the zone or preset zone has native release ([volEnvRelease] > 0),
+  /// [sustainMultiplier] scales that duration.
+  /// Otherwise, [sustainTime] (or [defaultDuration]) is applied.
   static Duration calculateReleaseDuration({
     Zone? zone,
     Zone? presetZone,
     Duration defaultDuration = const Duration(milliseconds: 150),
+    double? sustainTime,
+    double sustainMultiplier = 1.0,
   }) {
     final releaseSec = zone?.volEnvRelease ?? presetZone?.volEnvRelease;
     if (releaseSec != null && releaseSec > 0) {
-      final micros = (releaseSec * 1000000).round();
-      return Duration(microseconds: math.max(10000, micros));
+      if (sustainMultiplier <= 0.0) return Duration.zero;
+      final effectiveSec = releaseSec * sustainMultiplier;
+      final micros = (effectiveSec * 1000000).round();
+      return Duration(microseconds: math.max(1000, micros));
+    }
+    if (sustainTime != null) {
+      if (sustainTime <= 0.0) return Duration.zero;
+      final micros = (sustainTime * 1000000).round();
+      return Duration(microseconds: math.max(1000, micros));
     }
     return defaultDuration;
   }

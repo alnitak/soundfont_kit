@@ -30,33 +30,37 @@ class SoundFontVoice {
     this.releaseDuration = const Duration(milliseconds: 150),
   });
 
-  /// Triggers note-off volume fade and scheduled stop on the audio engine timeline.
+  /// Triggers note-off volume fade and stop on the audio engine timeline.
   Future<void> release({Duration? customRelease, Duration? atTime}) async {
     if (_isReleased) return;
     _isReleased = true;
 
     final duration = customRelease ?? releaseDuration;
-    final engineTime = atTime ??
-        (SoLoud.instance.isInitialized
-            ? SoLoud.instance.getEngineTime()
-            : Duration.zero);
 
     for (final handle in handles) {
       if (!SoLoud.instance.getIsValidVoiceHandle(handle)) continue;
       try {
-        if (duration > Duration.zero) {
-          SoLoud.instance.fadeScheduled(
-            handle,
-            engineTime,
-            0.0,
-            duration,
-            thenStop: true,
-          );
+        if (atTime != null) {
+          if (duration > Duration.zero) {
+            SoLoud.instance.fadeScheduled(
+              handle,
+              atTime,
+              0.0,
+              duration,
+              thenStop: true,
+            );
+          } else {
+            SoLoud.instance.stopScheduled(handle, atTime);
+          }
         } else {
-          SoLoud.instance.stopScheduled(handle, engineTime);
+          if (duration > Duration.zero) {
+            SoLoud.instance.fadeVolume(handle, 0.0, duration);
+            SoLoud.instance.scheduleStop(handle, duration);
+          } else {
+            await SoLoud.instance.stop(handle);
+          }
         }
       } catch (_) {
-        // Fallback to standard fade if engine clock call is unavailable
         try {
           if (duration > Duration.zero) {
             SoLoud.instance.fadeVolume(handle, 0.0, duration);

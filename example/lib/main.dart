@@ -116,8 +116,6 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
   SoundFontFile? _soundFont;
   SoundFontPlayer? _player;
   SelectedPlaybackTarget? _selectedTarget;
-  SampleInfo? _selectedSample;
-  String? _sampleByteDetails;
 
   bool _isPreloading = false;
   double _preloadProgress = 0.0;
@@ -183,8 +181,6 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
       _soundFont = null;
       _player = null;
       _selectedTarget = null;
-      _selectedSample = null;
-      _sampleByteDetails = null;
       _isPreloading = false;
       _preloadProgress = 0.0;
       _isPreloaded = false;
@@ -368,32 +364,6 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
     } catch (e) {
       setState(() {
         _error = 'Error selecting folder: $e';
-      });
-    }
-  }
-
-  Future<void> _inspectSampleBytes(SampleInfo sample) async {
-    if (_soundFont == null) return;
-    setState(() {
-      _selectedSample = sample;
-      _sampleByteDetails = 'Loading sample bytes...';
-    });
-
-    try {
-      final bytes = await _soundFont!.getSampleBytes(sample);
-      final magic = bytes.length >= 4
-          ? bytes
-                .sublist(0, 4)
-                .map((b) => b.toRadixString(16).padLeft(2, '0'))
-                .join(' ')
-          : 'None';
-      setState(() {
-        _sampleByteDetails =
-            'Loaded ${bytes.length} bytes.\nFirst 4 Hex Bytes: [$magic]\nCompression: ${sample.compression.name}';
-      });
-    } catch (e) {
-      setState(() {
-        _sampleByteDetails = 'Error reading sample bytes: $e';
       });
     }
   }
@@ -846,105 +816,68 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
     if (sf.samples.isEmpty) {
       return const Center(child: Text('No samples defined'));
     }
-    return Column(
-      children: [
-        if (_selectedSample != null && _sampleByteDetails != null)
-          Card(
-            margin: const EdgeInsets.all(12),
-            color: Theme.of(context).colorScheme.primaryContainer,
-            child: Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Sample Byte Inspection: ${_selectedSample!.name}',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _sampleByteDetails!,
-                    style: const TextStyle(fontFamily: 'monospace'),
-                  ),
-                ],
-              ),
+    return ListView.builder(
+      itemCount: sf.samples.length,
+      itemBuilder: (context, index) {
+        final sample = sf.samples[index];
+        final isSelected =
+            _selectedTarget?.type == PlaybackTargetType.sample &&
+            _selectedTarget?.sample?.id == sample.id;
+
+        return ListTile(
+          selected: isSelected,
+          selectedTileColor: Theme.of(
+            context,
+          ).colorScheme.primaryContainer.withValues(alpha: 0.2),
+          onTap: () {
+            setState(() {
+              _selectedTarget = SelectedPlaybackTarget.sample(
+                sample,
+                markedKey: sample.originalPitch,
+              );
+            });
+          },
+          title: Text(
+            '${sample.name} [ID: ${sample.id}]',
+            style: TextStyle(
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              color: isSelected
+                  ? Theme.of(context).colorScheme.primary
+                  : null,
             ),
           ),
-        Expanded(
-          child: ListView.builder(
-            itemCount: sf.samples.length,
-            itemBuilder: (context, index) {
-              final sample = sf.samples[index];
-              final isSelected =
-                  _selectedTarget?.type == PlaybackTargetType.sample &&
-                  _selectedTarget?.sample?.id == sample.id;
-
-              return ListTile(
-                selected: isSelected,
-                selectedTileColor: Theme.of(
-                  context,
-                ).colorScheme.primaryContainer.withValues(alpha: 0.2),
-                onTap: () {
+          subtitle: Text(
+            'Rate: ${sample.sampleRate} Hz | '
+            'Key: ${sample.originalPitch} | '
+            'Compression: ${sample.compression.name.toUpperCase()}\n'
+            '${sample.samplePath != null ? "Path: ${sample.samplePath}" : "Offset: ${sample.byteOffset}, Length: ${(sample.byteLength / 1024).toStringAsFixed(1)} KB"}',
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SampleWaveform(
+                soundFont: sf,
+                sample: sample,
+                width: 220,
+                height: 50,
+              ),
+              const SizedBox(width: 8),
+              HoldPlayButton(
+                tooltip: 'Hold to play sample',
+                onStartPlay: () {
                   setState(() {
-                    _selectedSample = sample;
                     _selectedTarget = SelectedPlaybackTarget.sample(
                       sample,
                       markedKey: sample.originalPitch,
                     );
                   });
+                  return _playSample(sample);
                 },
-                title: Text(
-                  '${sample.name} [ID: ${sample.id}]',
-                  style: TextStyle(
-                    fontWeight: isSelected
-                        ? FontWeight.bold
-                        : FontWeight.normal,
-                    color: isSelected
-                        ? Theme.of(context).colorScheme.primary
-                        : null,
-                  ),
-                ),
-                subtitle: Text(
-                  'Rate: ${sample.sampleRate} Hz | '
-                  'Key: ${sample.originalPitch} | '
-                  'Compression: ${sample.compression.name.toUpperCase()}\n'
-                  '${sample.samplePath != null ? "Path: ${sample.samplePath}" : "Offset: ${sample.byteOffset}, Length: ${(sample.byteLength / 1024).toStringAsFixed(1)} KB"}',
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SampleWaveform(
-                      soundFont: sf,
-                      sample: sample,
-                      width: 220,
-                      height: 50,
-                    ),
-                    const SizedBox(width: 8),
-                    HoldPlayButton(
-                      tooltip: 'Hold to play sample',
-                      onStartPlay: () {
-                        setState(() {
-                          _selectedSample = sample;
-                          _selectedTarget = SelectedPlaybackTarget.sample(
-                            sample,
-                            markedKey: sample.originalPitch,
-                          );
-                        });
-                        return _playSample(sample);
-                      },
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.file_download),
-                      tooltip: 'Read Sample Bytes',
-                      onPressed: () => _inspectSampleBytes(sample),
-                    ),
-                  ],
-                ),
-              );
-            },
+              ),
+            ],
           ),
-        ),
-      ],
+        );
+      },
     );
   }
 }

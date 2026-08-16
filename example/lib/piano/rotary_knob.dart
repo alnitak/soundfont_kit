@@ -11,6 +11,7 @@ class RotaryKnob extends StatefulWidget {
   final String unit;
   final ValueChanged<double> onChanged;
   final double size;
+  final bool enabled;
 
   const RotaryKnob({
     super.key,
@@ -22,6 +23,7 @@ class RotaryKnob extends StatefulWidget {
     this.unit = '',
     required this.onChanged,
     this.size = 46.0,
+    this.enabled = true,
   });
 
   @override
@@ -51,6 +53,9 @@ class _RotaryKnobState extends State<RotaryKnob> {
     if (widget.unit == '%') {
       return '${(widget.value * 100).toStringAsFixed(0)}%';
     }
+    if (widget.unit == 'x') {
+      return '${widget.value.toStringAsFixed(1)}x';
+    }
     if (widget.max <= 10.0 && widget.min >= -2.0) {
       return widget.value.toStringAsFixed(2);
     }
@@ -58,12 +63,13 @@ class _RotaryKnobState extends State<RotaryKnob> {
   }
 
   void _onPanStart(DragStartDetails details) {
+    if (!widget.enabled) return;
     _dragStartY = details.globalPosition.dy;
     _dragStartValue = widget.value;
   }
 
   void _onPanUpdate(DragUpdateDetails details) {
-    if (_dragStartY == null || _dragStartValue == null) return;
+    if (!widget.enabled || _dragStartY == null || _dragStartValue == null) return;
 
     final dy = _dragStartY! - details.globalPosition.dy;
     final range = widget.max - widget.min;
@@ -74,6 +80,7 @@ class _RotaryKnobState extends State<RotaryKnob> {
   }
 
   void _onDoubleTap() {
+    if (!widget.enabled) return;
     widget.onChanged(widget.defaultValue);
   }
 
@@ -81,48 +88,54 @@ class _RotaryKnobState extends State<RotaryKnob> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return GestureDetector(
-      onVerticalDragStart: _onPanStart,
-      onVerticalDragUpdate: _onPanUpdate,
-      onDoubleTap: _onDoubleTap,
-      behavior: HitTestBehavior.opaque,
-      child: Tooltip(
-        message: '${widget.label}: $_formattedValue (Double-tap to reset)',
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: widget.size,
-              height: widget.size,
-              child: CustomPaint(
-                painter: _KnobPainter(
-                  normalizedValue: _normalizedValue,
-                  primaryColor: theme.colorScheme.primary,
-                  trackColor: theme.colorScheme.surfaceContainerHighest,
-                  knobColor: theme.colorScheme.surfaceContainerHigh,
-                  pointerColor: theme.colorScheme.onPrimaryContainer,
+    return Opacity(
+      opacity: widget.enabled ? 1.0 : 0.35,
+      child: GestureDetector(
+        onVerticalDragStart: widget.enabled ? _onPanStart : null,
+        onVerticalDragUpdate: widget.enabled ? _onPanUpdate : null,
+        onDoubleTap: widget.enabled ? _onDoubleTap : null,
+        behavior: HitTestBehavior.opaque,
+        child: Tooltip(
+          message: widget.enabled
+              ? '${widget.label}: $_formattedValue (Double-tap to reset)'
+              : '${widget.label}: Disabled for this target',
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: widget.size,
+                height: widget.size,
+                child: CustomPaint(
+                  painter: _KnobPainter(
+                    normalizedValue: _normalizedValue,
+                    primaryColor: theme.colorScheme.primary,
+                    trackColor: theme.colorScheme.surfaceContainerHighest,
+                    knobColor: theme.colorScheme.surfaceContainerHigh,
+                    pointerColor: theme.colorScheme.onPrimaryContainer,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              widget.label,
-              style: theme.textTheme.labelSmall?.copyWith(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
+              const SizedBox(height: 2),
+              Text(
+                widget.label,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            Text(
-              _formattedValue,
-              style: theme.textTheme.labelSmall?.copyWith(
-                fontSize: 9,
-                color: theme.colorScheme.primary,
-                fontFamily: 'monospace',
+              Text(
+                _formattedValue,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontSize: 9,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

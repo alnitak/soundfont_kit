@@ -29,6 +29,14 @@ class SoundFontPlayerOptions {
   /// upon player creation.
   final bool preloadAllSamples;
 
+  /// Global sustain/release duration in seconds (e.g. 0.05 to 5.0).
+  /// Used when an instrument or zone has no native release envelope.
+  final double? sustainTime;
+
+  /// Global sustain multiplier (e.g. 0.1 to 10.0, default 1.0).
+  /// Scales the native release envelope when an instrument or zone defines one.
+  final double sustainMultiplier;
+
   const SoundFontPlayerOptions({
     this.joinStereoChannels = true,
     this.cacheAudioSources = true,
@@ -38,6 +46,8 @@ class SoundFontPlayerOptions {
     this.masterVolume = 1.0,
     this.useScheduledPlayback = false,
     this.preloadAllSamples = false,
+    this.sustainTime,
+    this.sustainMultiplier = 1.0,
   });
 
   SoundFontPlayerOptions copyWith({
@@ -49,6 +59,8 @@ class SoundFontPlayerOptions {
     double? masterVolume,
     bool? useScheduledPlayback,
     bool? preloadAllSamples,
+    double? sustainTime,
+    double? sustainMultiplier,
   }) {
     return SoundFontPlayerOptions(
       joinStereoChannels: joinStereoChannels ?? this.joinStereoChannels,
@@ -60,6 +72,8 @@ class SoundFontPlayerOptions {
       masterVolume: masterVolume ?? this.masterVolume,
       useScheduledPlayback: useScheduledPlayback ?? this.useScheduledPlayback,
       preloadAllSamples: preloadAllSamples ?? this.preloadAllSamples,
+      sustainTime: sustainTime ?? this.sustainTime,
+      sustainMultiplier: sustainMultiplier ?? this.sustainMultiplier,
     );
   }
 }

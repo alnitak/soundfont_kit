@@ -10,7 +10,7 @@ A high-performance, pure Dart reader and playback engine for SoundFont files (**
   - **SF2** (SoundFont 2.04) — Full RIFF/sfbk parser (presets, instruments, zones, generators, modulators, and 16-bit PCM samples).
   - **SF3** (SoundFont 3.0) — OGG Vorbis compressed sample streams with sub-chunk header extraction.
   - **SFZ** (SFZ Instrument Definitions) — Parses opcode definitions and links to external `.wav`, `.flac`, or `.ogg` audio files.
-  - **Compressed Archives** — Transparently loads compressed archives (`.zip`, `.gz`, `.bz2`, `.tar`, `.tgz`, `.tbz2`) containing SoundFonts and sample files.
+  - **Compressed Archives** — Transparently loads compressed archives (`.zip`, `.gz`, `.bz2`, `.tar`, `.tgz`, `.tbz2`) containing SoundFonts and loose sample hierarchies.
 - **Flexible Data Sources**:
   - Load from Flutter Assets (`SoundFontFile.fromAsset`).
   - Load from Local Disk (`SoundFontFile.fromFile`).
@@ -19,8 +19,11 @@ A high-performance, pure Dart reader and playback engine for SoundFont files (**
 - **High-Performance Audio Playback with `flutter_soloud`**:
   - **Sample-Accurate Scheduling** using `playScheduled`, `fadeScheduled`, and `stopScheduled` on the native engine clock.
   - **Real-Time Synthesis**: Pitch calculation, root key tracking, key-to-pitch scaling, MIDI velocity sensitivity, attenuation, panning, and loop points.
-  - **Stereo Channel Joining**: Automatically interleaves paired Left and Right 16-bit PCM channels into unified stereo streams.
-  - **Envelope & Release Control**: Automated volume attack fade-in and note-off release envelope fading.
+  - **Stereo Channel Joining**: Automatically interleaves paired Left and Right 16-bit PCM channels into true 2-channel stereo streams with centered mixer balance.
+  - **Dynamic Sustain & Release Control**:
+    - **Native Sustain Multiplier (`sustainMultiplier`)**: Scales the instrument's authentic SoundFont envelope (`0.0x` to `10.0x`, with `1.0x` = exact SoundFont value).
+    - **Fallback Sustain Time (`sustainTime`)**: Configures manual release fade-out duration (e.g. `0.05s` to `5.0s`) for instruments or samples lacking a native release envelope.
+    - **Instant Release (`0.0x`)**: Cut off sound immediately upon key release.
   - **Polyphonic Voice Lifecycle**: Manage note-on/note-off, chords, and polyphonic voice pools.
 - **Sample Preloading**:
   - Preload all samples into memory upfront (`preloadAll`) for instant zero-latency playback, or stream them on-demand.
@@ -117,6 +120,8 @@ final player = sf.createPlayer(
     joinStereoChannels: true,       // Join paired L/R mono samples to stereo
     cacheAudioSources: true,        // Preserve audio buffers in RAM
     useScheduledPlayback: true,     // Use sample-accurate engine clock
+    sustainMultiplier: 1.0,         // 1.0x = authentic SoundFont envelope
+    sustainTime: 0.20,              // 200ms fallback for items without release
   ),
 );
 
@@ -135,7 +140,25 @@ await voice.release();
 
 ---
 
-### 4. Interactive Keyboard & Polyphony
+### 4. Sustain and Release Modes
+
+The player provides two complementary modes for controlling sustain/release:
+
+```dart
+// 1. Multiplier Mode (for instruments WITH native release envelopes)
+// Scale the instrument's authentic SoundFont release time up or down:
+player.sustainMultiplier = 1.0;  // 100% native SoundFont release
+player.sustainMultiplier = 2.5;  // Extended sustain (like a sustain pedal)
+player.sustainMultiplier = 0.0;  // Staccato (instant cutoff on key release)
+
+// 2. Time Mode (for instruments/samples WITHOUT native release)
+// Sets explicit fade-out duration in seconds:
+player.sustainTime = 0.5;        // 500ms fade-out upon note release
+```
+
+---
+
+### 5. Interactive Keyboard & Polyphony
 
 Manage polyphonic notes and chords with `noteOn` and `noteOff`:
 
@@ -147,7 +170,7 @@ final voice = await player.noteOn(
   velocity: 110,
 );
 
-// Note OFF: fades out smoothly using the zone's release envelope
+// Note OFF: fades out smoothly using the voice's release envelope
 await player.noteOff(64);
 
 // Or stop all playing notes at once:
@@ -156,7 +179,7 @@ await player.allNotesOff();
 
 ---
 
-### 5. Sample Preloading
+### 6. Sample Preloading
 
 To eliminate I/O and streaming overhead during real-time performance, you can preload samples into memory:
 
@@ -174,7 +197,7 @@ await player.preloadPreset(preset);
 
 ---
 
-### 6. Applying Global Audio DSP Filters
+### 7. Applying Global Audio DSP Filters
 
 Use `SoundFontGlobalFilters` to apply and modulate audio effects on the master mix:
 
@@ -211,16 +234,20 @@ The included [`example/`](example) directory contains a complete Flutter desktop
 1. **Interactive SoundFont Inspector**:
    - Tree inspector for Presets, Instruments, Generator Zones, and Raw Sample descriptors.
    - Raw binary header inspection (RIFF magic, OGG headers, FLAC metadata).
+   - Embedded audio waveform visualization widget (`SampleWaveform`).
 2. **Dynamic Docked Piano Keyboard**:
    - Resizable docked bottom panel.
    - Chromatic multi-touch keyboard with vertical touch-velocity sensing (pressing higher on a key plays softer; pressing lower plays louder).
-   - Visual key indicators highlighting the root key of the currently selected zone/sample.
+   - Visual key indicators highlighting the root key and mapped ranges of the currently selected zone/sample.
 3. **Rotary Knobs Parameter Rack**:
-   - Custom vector rotary knobs for adjusting master volume and DSP filter parameters in real-time.
+   - **`Vol`**: Master volume control.
+   - **`Sus x` (Sustain Multiplier)**: Active when the selected target has native sustain (`0.0x` to `10.0x`).
+   - **`Sus` (Sustain Time)**: Active when the selected target has no native sustain (`0.05s` to `5.0s`).
    - Modal selection sheet to toggle and configure multiple simultaneous global audio filters.
-4. **External File Picker**:
-   - Load any external SoundFont (`.sf2`, `.sf3`, `.sfz`, `.zip`, `.tar.gz`, etc.) from your device filesystem.
-   - Interactive preloading prompt with real-time percentage progress bar.
+4. **File & Folder Pickers**:
+   - Open individual SoundFont files (`.sf2`, `.sf3`, `.sfz`, `.zip`, `.tar.gz`, etc.).
+   - Open entire uncompressed SFZ directory hierarchies with automatic nested sample resolution.
+   - Optional preloading prompt with real-time percentage progress bar.
 
 To run the example app:
 

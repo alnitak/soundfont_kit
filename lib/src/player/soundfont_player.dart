@@ -37,7 +37,25 @@ class SoundFontPlayer {
   SoundFontPlayer({
     required this.soundFont,
     this.options = const SoundFontPlayerOptions(),
-  });
+  })  : _sustainTime = options.sustainTime,
+        _sustainMultiplier = options.sustainMultiplier;
+
+  double? _sustainTime;
+  double _sustainMultiplier = 1.0;
+
+  /// Global sustain duration in seconds (e.g. 0.05 to 5.0).
+  /// Used when notes or zones have no native release envelope.
+  double? get sustainTime => _sustainTime;
+  set sustainTime(double? value) {
+    _sustainTime = value?.clamp(0.01, 10.0);
+  }
+
+  /// Global sustain multiplier (e.g. 0.0 to 10.0, default 1.0).
+  /// Scales the native release envelope when notes or zones define one.
+  double get sustainMultiplier => _sustainMultiplier;
+  set sustainMultiplier(double value) {
+    _sustainMultiplier = value.clamp(0.0, 20.0);
+  }
 
   /// Plays a single [SampleInfo] with optional pitch, volume, pan, loop,
   /// and sample-accurate engine scheduling overrides.
@@ -55,6 +73,7 @@ class SoundFontPlayer {
     Duration? duration,
     Zone? zone,
     Zone? presetZone,
+    bool trackVoice = true,
   }) async {
     final speed = pitchRatio ??
         VoiceCalculator.calculatePitchRatio(
@@ -92,6 +111,8 @@ class SoundFontPlayer {
       zone: zone,
       presetZone: presetZone,
       defaultDuration: options.defaultReleaseDuration,
+      sustainTime: _sustainTime,
+      sustainMultiplier: _sustainMultiplier,
     );
 
     AudioSource audio;
@@ -197,7 +218,9 @@ class SoundFontPlayer {
       releaseDuration: releaseDuration,
     );
 
-    _trackVoice(key, voice);
+    if (trackVoice) {
+      _trackVoice(key, voice);
+    }
     return voice;
   }
 
@@ -212,6 +235,7 @@ class SoundFontPlayer {
     Duration? atTime,
     Duration? duration,
     Zone? presetZone,
+    bool trackVoice = true,
   }) async {
     // Find matching zones for this key and velocity
     var matchingZones = instrument.zones
@@ -292,6 +316,7 @@ class SoundFontPlayer {
         duration: duration,
         zone: zone,
         presetZone: presetZone,
+        trackVoice: false,
       );
 
       allHandles.addAll(voice.handles);
@@ -309,7 +334,9 @@ class SoundFontPlayer {
       releaseDuration: maxRelease,
     );
 
-    _trackVoice(key, compoundVoice);
+    if (trackVoice) {
+      _trackVoice(key, compoundVoice);
+    }
     return compoundVoice;
   }
 
@@ -355,6 +382,7 @@ class SoundFontPlayer {
           atTime: atTime,
           duration: duration,
           presetZone: pz,
+          trackVoice: false,
         );
         allHandles.addAll(voice.handles);
         allSources.addAll(voice.sources);
@@ -367,6 +395,34 @@ class SoundFontPlayer {
                 ? soundFont.samples[pz.sampleID!]
                 : null);
         if (sample != null) {
+          if (options.joinStereoChannels &&
+              StereoJoiner.isStereoCandidate(sample)) {
+            final pairedSample = StereoJoiner.findLinkedSample(soundFont, sample);
+            if (pairedSample != null) {
+              final leftSample = sample.isLeft ? sample : pairedSample;
+              final rightSample = sample.isRight ? sample : pairedSample;
+
+              final stereoVoice = await _playJoinedStereoPair(
+                leftSample: leftSample,
+                rightSample: rightSample,
+                key: key,
+                velocity: velocity,
+                presetZone: pz,
+                customVolume: customVolume,
+                customPan: customPan,
+                atTime: atTime,
+                duration: duration,
+              );
+
+              allHandles.addAll(stereoVoice.handles);
+              allSources.addAll(stereoVoice.sources);
+              if (stereoVoice.releaseDuration > maxRelease) {
+                maxRelease = stereoVoice.releaseDuration;
+              }
+              continue;
+            }
+          }
+
           final voice = await playSample(
             sample,
             key: key,
@@ -376,6 +432,7 @@ class SoundFontPlayer {
             atTime: atTime,
             duration: duration,
             presetZone: pz,
+            trackVoice: false,
           );
           allHandles.addAll(voice.handles);
           allSources.addAll(voice.sources);
@@ -744,7 +801,6 @@ class SoundFontPlayer {
 
     final p = customPan ??
         VoiceCalculator.calculatePan(
-          zone: zone,
           presetZone: presetZone,
         );
 
@@ -757,6 +813,8 @@ class SoundFontPlayer {
       zone: zone,
       presetZone: presetZone,
       defaultDuration: options.defaultReleaseDuration,
+      sustainTime: _sustainTime,
+      sustainMultiplier: _sustainMultiplier,
     );
 
     final stereoKey = '${leftSample.id}_${rightSample.id}';

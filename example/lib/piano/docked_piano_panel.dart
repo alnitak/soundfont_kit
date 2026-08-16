@@ -16,38 +16,40 @@ class SelectedPlaybackTarget {
   final int? markedKey;
 
   const SelectedPlaybackTarget.preset(Preset this.preset, {this.markedKey})
-      : type = PlaybackTargetType.preset,
-        instrument = null,
-        sample = null;
+    : type = PlaybackTargetType.preset,
+      instrument = null,
+      sample = null;
 
   const SelectedPlaybackTarget.instrument(
     Instrument this.instrument, {
     this.markedKey,
-  })  : type = PlaybackTargetType.instrument,
-        preset = null,
-        sample = null;
+  }) : type = PlaybackTargetType.instrument,
+       preset = null,
+       sample = null;
 
   const SelectedPlaybackTarget.sample(SampleInfo this.sample, {this.markedKey})
-      : type = PlaybackTargetType.sample,
-        preset = null,
-        instrument = null;
+    : type = PlaybackTargetType.sample,
+      preset = null,
+      instrument = null;
 
   int? get resolvedMarkedKey {
     if (markedKey != null) return markedKey;
     return switch (type) {
       PlaybackTargetType.sample => sample?.originalPitch,
-      PlaybackTargetType.instrument => instrument?.zones.isNotEmpty == true
-          ? (instrument!.zones.first.rootKey ??
-              ((instrument!.zones.first.keyRangeMin +
-                      instrument!.zones.first.keyRangeMax) ~/
-                  2))
-          : 60,
-      PlaybackTargetType.preset => preset?.zones.isNotEmpty == true
-          ? (preset!.zones.first.rootKey ??
-              ((preset!.zones.first.keyRangeMin +
-                      preset!.zones.first.keyRangeMax) ~/
-                  2))
-          : 60,
+      PlaybackTargetType.instrument =>
+        instrument?.zones.isNotEmpty == true
+            ? (instrument!.zones.first.rootKey ??
+                  ((instrument!.zones.first.keyRangeMin +
+                          instrument!.zones.first.keyRangeMax) ~/
+                      2))
+            : 60,
+      PlaybackTargetType.preset =>
+        preset?.zones.isNotEmpty == true
+            ? (preset!.zones.first.rootKey ??
+                  ((preset!.zones.first.keyRangeMin +
+                          preset!.zones.first.keyRangeMax) ~/
+                      2))
+            : 60,
     };
   }
 
@@ -61,8 +63,9 @@ class SelectedPlaybackTarget {
   }
 
   String get subtitle {
-    final noteStr =
-        resolvedMarkedKey != null ? ' • Key ${resolvedMarkedKey!}' : '';
+    final noteStr = resolvedMarkedKey != null
+        ? ' • Key ${resolvedMarkedKey!}'
+        : '';
     return switch (type) {
       PlaybackTargetType.preset =>
         'Bank ${preset?.bank ?? 0}, Program ${preset?.program ?? 0} • ${preset?.zones.length ?? 0} Zones$noteStr',
@@ -102,6 +105,35 @@ class SelectedPlaybackTarget {
     }
     return null;
   }
+
+  bool hasNativeSustain(SoundFontFile? soundFont) {
+    if (type == PlaybackTargetType.instrument && instrument != null) {
+      return instrument!.zones.any(
+        (z) => (z.volEnvRelease != null && z.volEnvRelease! > 0),
+      );
+    }
+    if (type == PlaybackTargetType.preset && preset != null) {
+      if (preset!.zones.any(
+        (z) => (z.volEnvRelease != null && z.volEnvRelease! > 0),
+      )) {
+        return true;
+      }
+      if (soundFont != null) {
+        for (final pz in preset!.zones) {
+          if (pz.instrumentID != null &&
+              pz.instrumentID! < soundFont.instruments.length) {
+            final inst = soundFont.instruments[pz.instrumentID!];
+            if (inst.zones.any(
+              (z) => (z.volEnvRelease != null && z.volEnvRelease! > 0),
+            )) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+    return false;
+  }
 }
 
 /// A docked, resizable bottom panel featuring an interactive piano keyboard,
@@ -135,15 +167,32 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
   final SoundFontGlobalFilters _filters = const SoundFontGlobalFilters();
   SoundFontFilterType _selectedFilterType = SoundFontFilterType.freeverb;
   double _globalVolume = 1.0;
+  double _sustainTime = 0.2;
+  double _sustainMultiplier = 1.0;
 
   @override
   void initState() {
     super.initState();
     _height = widget.initialHeight;
+    if (widget.player != null) {
+      _sustainTime = widget.player!.sustainTime ?? 0.2;
+      _sustainMultiplier = widget.player!.sustainMultiplier;
+      widget.player!.sustainTime = _sustainTime;
+      widget.player!.sustainMultiplier = _sustainMultiplier;
+    }
     if (SoLoud.instance.isInitialized) {
       try {
         _globalVolume = SoLoud.instance.getGlobalVolume();
       } catch (_) {}
+    }
+  }
+
+  @override
+  void didUpdateWidget(DockedPianoPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.player != oldWidget.player && widget.player != null) {
+      widget.player!.sustainTime = _sustainTime;
+      widget.player!.sustainMultiplier = _sustainMultiplier;
     }
   }
 
@@ -213,9 +262,8 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
                           const SizedBox(width: 8),
                           Text(
                             'Global Output Audio Filters',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.bold),
                           ),
                           const Spacer(),
                           TextButton(
@@ -273,6 +321,9 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
         !activeFilters.contains(_selectedFilterType)) {
       _selectedFilterType = activeFilters.first;
     }
+
+    final hasNativeSus =
+        target?.hasNativeSustain(widget.player?.soundFont) ?? false;
 
     if (_isCollapsed) {
       return Container(
@@ -332,8 +383,10 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
             behavior: HitTestBehavior.opaque,
             onVerticalDragUpdate: (details) {
               setState(() {
-                _height = (_height - details.delta.dy)
-                    .clamp(widget.minHeight, widget.maxHeight);
+                _height = (_height - details.delta.dy).clamp(
+                  widget.minHeight,
+                  widget.maxHeight,
+                );
               });
             },
             child: Container(
@@ -379,6 +432,48 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                           ],
+                        ),
+                      ),
+
+                      // Sustain Time Knob (active when target has NO native sustain)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6.0),
+                        child: RotaryKnob(
+                          label: 'Sus',
+                          value: _sustainTime,
+                          min: 0.05,
+                          max: 5.0,
+                          defaultValue: 0.2,
+                          unit: 's',
+                          size: 30.0,
+                          enabled: !hasNativeSus,
+                          onChanged: (newSus) {
+                            setState(() {
+                              _sustainTime = newSus;
+                            });
+                            widget.player?.sustainTime = newSus;
+                          },
+                        ),
+                      ),
+
+                      // Sustain Multiplier Knob (active when target HAS native sustain)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6.0),
+                        child: RotaryKnob(
+                          label: 'Sus x',
+                          value: _sustainMultiplier,
+                          min: 0.0,
+                          max: 10.0,
+                          defaultValue: 1.0,
+                          unit: 'x',
+                          size: 30.0,
+                          enabled: hasNativeSus,
+                          onChanged: (newMult) {
+                            setState(() {
+                              _sustainMultiplier = newMult;
+                            });
+                            widget.player?.sustainMultiplier = newMult;
+                          },
                         ),
                       ),
 
@@ -491,10 +586,7 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
                         setState(() => _selectedFilterType = type);
                       },
                       itemBuilder: (context) => activeFilters.map((f) {
-                        return PopupMenuItem(
-                          value: f,
-                          child: Text(f.label),
-                        );
+                        return PopupMenuItem(value: f, child: Text(f.label));
                       }).toList(),
                     ),
                     const SizedBox(width: 8),
@@ -517,23 +609,26 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
                         children: _filters
                             .getParameters(_selectedFilterType)
                             .map((param) {
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                            child: RotaryKnob(
-                              label: param.name,
-                              value: param.currentValue,
-                              min: param.min,
-                              max: param.max,
-                              defaultValue: param.defaultValue,
-                              unit: param.unit,
-                              onChanged: (newVal) {
-                                setState(() {
-                                  param.setValue(newVal);
-                                });
-                              },
-                            ),
-                          );
-                        }).toList(),
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8.0,
+                                ),
+                                child: RotaryKnob(
+                                  label: param.name,
+                                  value: param.currentValue,
+                                  min: param.min,
+                                  max: param.max,
+                                  defaultValue: param.defaultValue,
+                                  unit: param.unit,
+                                  onChanged: (newVal) {
+                                    setState(() {
+                                      param.setValue(newVal);
+                                    });
+                                  },
+                                ),
+                              );
+                            })
+                            .toList(),
                       ),
                     ),
                   ),
