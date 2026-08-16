@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:typed_data';
+import 'package:archive/archive.dart';
 
 import 'models/instrument.dart';
 import 'models/preset.dart';
@@ -51,10 +52,14 @@ abstract class SoundFontFile {
 
   /// Creates a [SoundFontPlayer] instance for audio playback of this SoundFont.
   SoundFontPlayer createPlayer({SoundFontPlayerOptions? options}) {
-    return SoundFontPlayer(
+    final player = SoundFontPlayer(
       soundFont: this,
       options: options ?? const SoundFontPlayerOptions(),
     );
+    if (player.options.preloadAllSamples) {
+      player.preloadAll();
+    }
+    return player;
   }
 
   /// Load a SoundFont from an in-memory byte buffer.
@@ -92,6 +97,53 @@ abstract class SoundFontFile {
     String? pathHint,
   }) async {
     final bytes = await source.getBytes();
+
+    // Check if source is a ZIP archive
+    if (bytes.length > 4 &&
+        bytes[0] == 0x50 &&
+        bytes[1] == 0x4B &&
+        bytes[2] == 0x03 &&
+        bytes[3] == 0x04 &&
+        source is! ZipSource) {
+      final archive = ZipDecoder().decodeBytes(bytes);
+      final zipSource =
+          SoundFontSource.fromZipArchive(archive, basePath: source.basePath);
+      return fromSource(zipSource, formatHint: formatHint, pathHint: pathHint);
+    }
+
+    // Check if source is GZIP compressed (0x1F, 0x8B)
+    if (bytes.length > 2 && bytes[0] == 0x1F && bytes[1] == 0x8B) {
+      final decompressed =
+          Uint8List.fromList(GZipDecoder().decodeBytes(bytes));
+      final memSource =
+          MemorySource(decompressed, basePath: source.basePath);
+      return fromSource(memSource,
+          formatHint: formatHint, pathHint: pathHint);
+    }
+
+    // Check if source is BZIP2 compressed ('BZ')
+    if (bytes.length > 2 && bytes[0] == 0x42 && bytes[1] == 0x5A) {
+      final decompressed =
+          Uint8List.fromList(BZip2Decoder().decodeBytes(bytes));
+      final memSource =
+          MemorySource(decompressed, basePath: source.basePath);
+      return fromSource(memSource,
+          formatHint: formatHint, pathHint: pathHint);
+    }
+
+    // Check if source is TAR archive
+    if (bytes.length > 262 &&
+        bytes[257] == 0x75 &&
+        bytes[258] == 0x73 &&
+        bytes[259] == 0x74 &&
+        bytes[260] == 0x61 &&
+        bytes[261] == 0x72 &&
+        source is! ZipSource) {
+      final archive = TarDecoder().decodeBytes(bytes);
+      final tarSource =
+          SoundFontSource.fromZipArchive(archive, basePath: source.basePath);
+      return fromSource(tarSource, formatHint: formatHint, pathHint: pathHint);
+    }
 
     var format = formatHint ?? _detectFormat(bytes, pathHint ?? source.basePath);
 

@@ -557,44 +557,160 @@ class SoundFontPlayer {
     _activeVoices.clear();
   }
 
-  /// Preloads audio bytes for [sample] into cache.
-  Future<void> preloadSample(SampleInfo sample) async {
-    if (_sampleBytesCache.containsKey(sample.id)) return;
-    final bytes = await soundFont.getSampleBytes(sample);
-    if (bytes.isNotEmpty) {
-      _sampleBytesCache[sample.id] = bytes;
+  /// Preloads audio bytes and optionally prepares the [AudioSource] for [sample] into cache.
+  Future<void> preloadSample(
+    SampleInfo sample, {
+    bool createAudioSource = true,
+  }) async {
+    Uint8List? bytes = _sampleBytesCache[sample.id];
+    if (bytes == null) {
+      bytes = await soundFont.getSampleBytes(sample);
+      if (bytes.isNotEmpty) {
+        _sampleBytesCache[sample.id] = bytes;
+      }
+    }
+
+    final cacheKey = 'sample_${sample.id}';
+    if (createAudioSource &&
+        options.cacheAudioSources &&
+        !_audioSourceCache.containsKey(cacheKey) &&
+        bytes.isNotEmpty) {
+      final audio = SampleStreamer.streamSample(
+        soundFont: soundFont,
+        sample: sample,
+        preloadedBytes: bytes,
+        chunkSize: options.streamChunkSize,
+        bufferingType: BufferingType.preserved,
+        autoDispose: false,
+      );
+      _audioSourceCache[cacheKey] = audio;
     }
   }
 
-  /// Preloads all samples needed for [instrument].
-  Future<void> preloadInstrument(Instrument instrument) async {
+  /// Preloads audio bytes and prepares the stereo [AudioSource] for a left-right sample pair.
+  Future<void> preloadStereoPair(
+    SampleInfo leftSample,
+    SampleInfo rightSample, {
+    bool createAudioSource = true,
+  }) async {
+    final stereoKey = '${leftSample.id}_${rightSample.id}';
+    Uint8List? stereoBytes = _stereoBytesCache[stereoKey];
+
+    if (stereoBytes == null) {
+      final leftBytes = _sampleBytesCache[leftSample.id] ??
+          await soundFont.getSampleBytes(leftSample);
+      final rightBytes = _sampleBytesCache[rightSample.id] ??
+          await soundFont.getSampleBytes(rightSample);
+
+      if (leftBytes.isNotEmpty && rightBytes.isNotEmpty) {
+        stereoBytes = StereoJoiner.interleavePcm16(
+          leftBytes: leftBytes,
+          rightBytes: rightBytes,
+        );
+        _stereoBytesCache[stereoKey] = stereoBytes;
+      }
+    }
+
+    final cacheKey = 'stereo_$stereoKey';
+    if (createAudioSource &&
+        options.cacheAudioSources &&
+        !_audioSourceCache.containsKey(cacheKey) &&
+        stereoBytes != null &&
+        stereoBytes.isNotEmpty) {
+      final audio = SampleStreamer.streamStereoPcm(
+        stereoPcmBytes: stereoBytes,
+        sampleRate: leftSample.sampleRate,
+        chunkSize: options.streamChunkSize,
+        bufferingType: BufferingType.preserved,
+        autoDispose: false,
+      );
+      _audioSourceCache[cacheKey] = audio;
+    }
+  }
+
+  /// Preloads all samples needed for [instrument] with optional progress callback.
+  Future<void> preloadInstrument(
+    Instrument instrument, {
+    void Function(double progress, int loaded, int total)? onProgress,
+    bool createAudioSources = true,
+  }) async {
+    final samples = <SampleInfo>{};
     for (final zone in instrument.zones) {
       final sample = zone.sampleRef ??
           (zone.sampleID != null && zone.sampleID! < soundFont.samples.length
               ? soundFont.samples[zone.sampleID!]
               : null);
-      if (sample != null) {
-        await preloadSample(sample);
-      }
+      if (sample != null) samples.add(sample);
+    }
+
+    int index = 0;
+    final total = samples.length;
+    for (final s in samples) {
+      await preloadSample(s, createAudioSource: createAudioSources);
+      index++;
+      onProgress?.call(total > 0 ? index / total : 1.0, index, total);
     }
   }
 
-  /// Preloads all samples needed for [preset].
-  Future<void> preloadPreset(Preset preset) async {
+  /// Preloads all samples needed for [preset] with optional progress callback.
+  Future<void> preloadPreset(
+    Preset preset, {
+    void Function(double progress, int loaded, int total)? onProgress,
+    bool createAudioSources = true,
+  }) async {
+    final samples = <SampleInfo>{};
     for (final pz in preset.zones) {
       final inst = (pz.instrumentID != null &&
               pz.instrumentID! < soundFont.instruments.length)
           ? soundFont.instruments[pz.instrumentID!]
           : null;
       if (inst != null) {
-        await preloadInstrument(inst);
+        for (final iz in inst.zones) {
+          final s = iz.sampleRef ??
+              (iz.sampleID != null && iz.sampleID! < soundFont.samples.length
+                  ? soundFont.samples[iz.sampleID!]
+                  : null);
+          if (s != null) samples.add(s);
+        }
       }
-      final sample = pz.sampleRef ??
+      final s = pz.sampleRef ??
           (pz.sampleID != null && pz.sampleID! < soundFont.samples.length
               ? soundFont.samples[pz.sampleID!]
               : null);
-      if (sample != null) {
-        await preloadSample(sample);
+      if (s != null) samples.add(s);
+    }
+
+    int index = 0;
+    final total = samples.length;
+    for (final s in samples) {
+      await preloadSample(s, createAudioSource: createAudioSources);
+      index++;
+      onProgress?.call(total > 0 ? index / total : 1.0, index, total);
+    }
+  }
+
+  /// Preloads all samples in the entire [soundFont] with optional progress callback.
+  Future<void> preloadAll({
+    void Function(double progress, int loaded, int total)? onProgress,
+    bool createAudioSources = true,
+  }) async {
+    final total = soundFont.samples.length;
+    for (int i = 0; i < total; i++) {
+      final sample = soundFont.samples[i];
+      await preloadSample(sample, createAudioSource: createAudioSources);
+      onProgress?.call(total > 0 ? (i + 1) / total : 1.0, i + 1, total);
+    }
+
+    // Preload stereo pairs if enabled
+    if (options.joinStereoChannels) {
+      for (final sample in soundFont.samples) {
+        if (sample.isLeft) {
+          final right = StereoJoiner.findLinkedSample(soundFont, sample);
+          if (right != null) {
+            await preloadStereoPair(sample, right,
+                createAudioSource: createAudioSources);
+          }
+        }
       }
     }
   }

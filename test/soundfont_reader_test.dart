@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:soundfont_reader/soundfont_reader.dart';
@@ -78,6 +80,18 @@ void main() {
 
       // Verify FLAC magic header 'fLaC'
       expect(sampleBytes.sublist(0, 4), equals([0x66, 0x4C, 0x61, 0x43]));
+    });
+  });
+
+  group('SoundFontReader Compressed Formats tests', () {
+    test('Loads GZIP compressed SF2 file correctly', () async {
+      final rawBytes = await File(sf2Path).readAsBytes();
+      final gzippedBytes = Uint8List.fromList(GZipEncoder().encode(rawBytes));
+
+      final sf = await SoundFontFile.fromBytes(gzippedBytes);
+      expect(sf.format, equals(SoundFontFormat.sf2));
+      expect(sf.presets, isNotEmpty);
+      expect(sf.samples, isNotEmpty);
     });
   });
 }

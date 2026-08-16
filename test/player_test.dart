@@ -129,5 +129,22 @@ void main() {
       // When SoLoud is uninitialized in test runner, isActive safely returns false
       expect(filters.isActive(SoundFontFilterType.freeverb), isFalse);
     });
+
+    test('SoundFontPlayer preloadAll preloads all samples with progress', () async {
+      final sf = await SoundFontFile.fromFile(sf2Path);
+      final player = sf.createPlayer();
+
+      final progressValues = <double>[];
+      await player.preloadAll(
+        onProgress: (progress, loaded, total) {
+          progressValues.add(progress);
+        },
+        createAudioSources: false,
+      );
+
+      expect(progressValues, isNotEmpty);
+      expect(progressValues.last, equals(1.0));
+      await player.dispose();
+    });
   });
 }

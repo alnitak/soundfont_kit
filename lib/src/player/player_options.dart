@@ -25,6 +25,10 @@ class SoundFontPlayerOptions {
   /// engine clock by default for unlooped voice playback.
   final bool useScheduledPlayback;
 
+  /// Whether to eagerly preload all samples and prepare audio sources
+  /// upon player creation.
+  final bool preloadAllSamples;
+
   const SoundFontPlayerOptions({
     this.joinStereoChannels = true,
     this.cacheAudioSources = true,
@@ -33,6 +37,7 @@ class SoundFontPlayerOptions {
     this.defaultReleaseDuration = const Duration(milliseconds: 150),
     this.masterVolume = 1.0,
     this.useScheduledPlayback = false,
+    this.preloadAllSamples = false,
   });
 
   SoundFontPlayerOptions copyWith({
@@ -43,6 +48,7 @@ class SoundFontPlayerOptions {
     Duration? defaultReleaseDuration,
     double? masterVolume,
     bool? useScheduledPlayback,
+    bool? preloadAllSamples,
   }) {
     return SoundFontPlayerOptions(
       joinStereoChannels: joinStereoChannels ?? this.joinStereoChannels,
@@ -53,6 +59,7 @@ class SoundFontPlayerOptions {
           defaultReleaseDuration ?? this.defaultReleaseDuration,
       masterVolume: masterVolume ?? this.masterVolume,
       useScheduledPlayback: useScheduledPlayback ?? this.useScheduledPlayback,
+      preloadAllSamples: preloadAllSamples ?? this.preloadAllSamples,
     );
   }
 }

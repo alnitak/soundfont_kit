@@ -229,22 +229,28 @@ class ZipSource extends SoundFontSource {
     }
   }
 
+  Uint8List? _mainFileBytes;
+
   @override
   Future<Uint8List> getBytes([int? offset, int? length]) async {
-    // Find the main .sfz or sf2 file in archive
-    ArchiveFile? sfFile;
-    for (final file in archive) {
-      final ext = p.extension(file.name).toLowerCase();
-      if (ext == '.sfz' || ext == '.sf2' || ext == '.sf3') {
-        sfFile = file;
-        break;
+    if (_mainFileBytes == null) {
+      // Find the main .sfz, .sf3, or .sf2 file in archive
+      ArchiveFile? sfFile;
+      for (final file in archive) {
+        final ext = p.extension(file.name).toLowerCase();
+        if (ext == '.sfz' || ext == '.sf3' || ext == '.sf2') {
+          sfFile = file;
+          break;
+        }
       }
+      if (sfFile == null) {
+        throw Exception('No .sfz, .sf2, or .sf3 file found in ZIP archive');
+      }
+      final content = sfFile.content as List<int>;
+      _mainFileBytes = Uint8List.fromList(content);
     }
-    if (sfFile == null) {
-      throw Exception('No .sfz, .sf2, or .sf3 file found in ZIP archive');
-    }
-    final content = sfFile.content as List<int>;
-    final bytes = Uint8List.fromList(content);
+
+    final bytes = _mainFileBytes!;
     if (offset == null && length == null) return bytes;
     final start = offset ?? 0;
     final end = length != null ? start + length : bytes.length;

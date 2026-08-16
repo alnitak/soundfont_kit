@@ -1,5 +1,7 @@
 import 'dart:developer' as dev;
+import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:soundfont_reader/soundfont_reader.dart';
@@ -37,6 +39,7 @@ class SoundFontReaderDemoApp extends StatelessWidget {
   Widget build(BuildContext me) {
     return MaterialApp(
       title: 'SoundFont Reader Demo',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF6750A4),
@@ -49,6 +52,46 @@ class SoundFontReaderDemoApp extends StatelessWidget {
   }
 }
 
+/// Represents a selectable SoundFont source (bundled asset or external file/bytes).
+class SoundFontSourceEntry {
+  final String id;
+  final String label;
+  final bool isAsset;
+  final String? filePath;
+  final Uint8List? fileBytes;
+
+  SoundFontSourceEntry.asset(String path)
+    : id = path,
+      label = path.split('/').last,
+      isAsset = true,
+      filePath = path,
+      fileBytes = null;
+
+  SoundFontSourceEntry.file(String path, {String? name})
+    : id = path,
+      label = name ?? path.split('/').last,
+      isAsset = false,
+      filePath = path,
+      fileBytes = null;
+
+  SoundFontSourceEntry.bytes(
+    this.fileBytes, {
+    required this.id,
+    required this.label,
+  }) : isAsset = false,
+       filePath = null;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SoundFontSourceEntry &&
+          runtimeType == other.runtimeType &&
+          id == other.id;
+
+  @override
+  int get hashCode => id.hashCode;
+}
+
 class SoundFontInspectorScreen extends StatefulWidget {
   const SoundFontInspectorScreen({super.key});
 
@@ -58,13 +101,13 @@ class SoundFontInspectorScreen extends StatefulWidget {
 }
 
 class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
-  final List<String> _assetFiles = [
-    'assets/Celesta (minimal).sf2',
-    'assets/Celesta (minimal).sf3',
-    'assets/Celesta (converted).sfz+flac.zip',
+  final List<SoundFontSourceEntry> _sources = [
+    SoundFontSourceEntry.asset('assets/Celesta (minimal).sf2'),
+    SoundFontSourceEntry.asset('assets/Celesta (minimal).sf3'),
+    SoundFontSourceEntry.asset('assets/Celesta (converted).sfz+flac.zip'),
   ];
 
-  late String _selectedAsset;
+  late SoundFontSourceEntry _selectedSource;
   bool _isLoading = false;
   String? _error;
   SoundFontFile? _soundFont;
@@ -73,11 +116,15 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
   SampleInfo? _selectedSample;
   String? _sampleByteDetails;
 
+  bool _isPreloading = false;
+  double _preloadProgress = 0.0;
+  bool _isPreloaded = false;
+
   @override
   void initState() {
     super.initState();
-    _selectedAsset = _assetFiles.first;
-    _loadSoundFont(_selectedAsset);
+    _selectedSource = _sources.first;
+    _loadSoundFontEntry(_selectedSource);
   }
 
   @override
@@ -86,9 +133,46 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
     super.dispose();
   }
 
-  Future<void> _loadSoundFont(String assetPath) async {
+  Future<void> _startPreloadingAll() async {
+    if (_player == null || _isPreloading || _isPreloaded) return;
+    setState(() {
+      _isPreloading = true;
+      _preloadProgress = 0.0;
+    });
+
+    try {
+      await _player!.preloadAll(
+        onProgress: (progress, loaded, total) {
+          if (mounted) {
+            setState(() {
+              _preloadProgress = progress;
+            });
+          }
+        },
+      );
+      if (mounted) {
+        setState(() {
+          _isPreloading = false;
+          _isPreloaded = true;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isPreloading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error preloading samples: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _loadSoundFontEntry(SoundFontSourceEntry entry,
+      {bool askPreload = false}) async {
     _player?.dispose();
     setState(() {
+      _selectedSource = entry;
       _isLoading = true;
       _error = null;
       _soundFont = null;
@@ -96,10 +180,26 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
       _selectedTarget = null;
       _selectedSample = null;
       _sampleByteDetails = null;
+      _isPreloading = false;
+      _preloadProgress = 0.0;
+      _isPreloaded = false;
     });
 
     try {
-      final sf = await SoundFontFile.fromAsset(assetPath);
+      SoundFontFile sf;
+      if (entry.isAsset) {
+        sf = await SoundFontFile.fromAsset(entry.filePath!);
+      } else if (entry.filePath != null) {
+        sf = await SoundFontFile.fromFile(entry.filePath!);
+      } else if (entry.fileBytes != null) {
+        sf = await SoundFontFile.fromBytes(
+          entry.fileBytes!,
+          basePath: entry.label,
+        );
+      } else {
+        throw Exception('Invalid SoundFont source configuration.');
+      }
+
       final player = sf.createPlayer();
       SelectedPlaybackTarget? target;
       if (sf.presets.isNotEmpty) {
@@ -116,10 +216,87 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
         _selectedTarget = target;
         _isLoading = false;
       });
+
+      if (askPreload && mounted && sf.samples.isNotEmpty) {
+        final shouldPreload = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Preload SoundFont Samples?'),
+            content: Text(
+              'This SoundFont contains ${sf.samples.length} sample definitions.\n\n'
+              '• Preload All: Loads and buffers all samples into RAM upfront for zero-latency playback.\n'
+              '• Stream On-Demand: Streams samples on the fly as notes are played.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Stream On-Demand'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Preload All'),
+              ),
+            ],
+          ),
+        );
+        if (shouldPreload == true && mounted) {
+          _startPreloadingAll();
+        }
+      }
     } catch (e) {
       setState(() {
         _error = e.toString();
         _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _pickExternalSoundFont() async {
+    try {
+      final file = await FilePicker.pickFile(
+        type: FileType.custom,
+        allowedExtensions: [
+          'sf2',
+          'sf3',
+          'sfz',
+          'zip',
+          'gz',
+          'bz2',
+          'tar',
+          'tgz',
+          'tbz2',
+        ],
+      );
+
+      if (file == null) return;
+
+      final name = file.name;
+      final path = file.path;
+
+      SoundFontSourceEntry entry;
+      if (path != null && path.isNotEmpty) {
+        entry = SoundFontSourceEntry.file(path, name: name);
+      } else {
+        final bytes = await file.readAsBytes();
+        entry = SoundFontSourceEntry.bytes(
+          bytes,
+          id: 'custom_$name',
+          label: name,
+        );
+      }
+
+      final existingIndex = _sources.indexWhere((s) => s.id == entry.id);
+      if (existingIndex >= 0) {
+        _selectedSource = _sources[existingIndex];
+      } else {
+        _sources.add(entry);
+        _selectedSource = entry;
+      }
+
+      await _loadSoundFontEntry(_selectedSource, askPreload: true);
+    } catch (e) {
+      setState(() {
+        _error = 'Error picking file: $e';
       });
     }
   }
@@ -157,7 +334,10 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
     return await _player!.playSample(sample);
   }
 
-  Future<SoundFontVoice> _playInstrument(Instrument instrument, {int key = 60}) async {
+  Future<SoundFontVoice> _playInstrument(
+    Instrument instrument, {
+    int key = 60,
+  }) async {
     if (_player == null) {
       return SoundFontVoice(key: key, velocity: 100, handles: []);
     }
@@ -177,25 +357,40 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
       appBar: AppBar(
         title: const Text('SoundFont Reader Inspector'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.file_open_outlined),
+            tooltip: 'Open external SoundFont (sf2, sf3, sfz, zip, gz, tar...)',
+            onPressed: _pickExternalSoundFont,
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 16.0),
-            child: DropdownButton<String>(
-              value: _selectedAsset,
+            child: DropdownButton<SoundFontSourceEntry>(
+              value: _selectedSource,
               underline: const SizedBox(),
-              items: _assetFiles.map((asset) {
-                final label = asset.split('/').last;
-                return DropdownMenuItem<String>(
-                  value: asset,
-                  child: Text(
-                    label,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+              items: _sources.map((src) {
+                return DropdownMenuItem<SoundFontSourceEntry>(
+                  value: src,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        src.isAsset
+                            ? Icons.library_music
+                            : Icons.insert_drive_file,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        src.label,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ],
                   ),
                 );
               }).toList(),
               onChanged: (val) {
                 if (val != null) {
-                  setState(() => _selectedAsset = val);
-                  _loadSoundFont(val);
+                  _loadSoundFontEntry(val);
                 }
               },
             ),
@@ -280,6 +475,40 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
                     ],
                   ),
                 ),
+                const SizedBox(width: 12),
+                if (_isPreloading)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          value: _preloadProgress > 0 ? _preloadProgress : null,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${(_preloadProgress * 100).toStringAsFixed(0)}%',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                      ),
+                    ],
+                  )
+                else if (_isPreloaded)
+                  const Chip(
+                    avatar: Icon(Icons.check_circle,
+                        size: 18, color: Colors.greenAccent),
+                    label: Text('Preloaded'),
+                  )
+                else
+                  FilledButton.tonalIcon(
+                    icon: const Icon(Icons.bolt, size: 18),
+                    label: Text('Preload (${sf.samples.length})'),
+                    onPressed: _startPreloadingAll,
+                  ),
               ],
             ),
           ),
@@ -299,10 +528,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
               ],
             ),
           ),
-          DockedPianoPanel(
-            player: _player,
-            selectedTarget: _selectedTarget,
-          ),
+          DockedPianoPanel(player: _player, selectedTarget: _selectedTarget),
         ],
       ),
     );
@@ -316,7 +542,8 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
       itemCount: sf.presets.length,
       itemBuilder: (context, index) {
         final preset = sf.presets[index];
-        final isSelected = _selectedTarget?.type == PlaybackTargetType.preset &&
+        final isSelected =
+            _selectedTarget?.type == PlaybackTargetType.preset &&
             _selectedTarget?.preset?.name == preset.name &&
             _selectedTarget?.preset?.bank == preset.bank &&
             _selectedTarget?.preset?.program == preset.program;
@@ -365,17 +592,17 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
             },
           ),
           children: preset.zones.map((zone) {
-            final key = zone.rootKey ??
+            final key =
+                zone.rootKey ??
                 ((zone.keyRangeMin + zone.keyRangeMax) ~/ 2).clamp(0, 127);
-            final isZoneSelected = isSelected &&
-                _selectedTarget?.resolvedMarkedKey == key;
+            final isZoneSelected =
+                isSelected && _selectedTarget?.resolvedMarkedKey == key;
             return ListTile(
               dense: true,
               selected: isZoneSelected,
-              selectedTileColor: Theme.of(context)
-                  .colorScheme
-                  .primaryContainer
-                  .withValues(alpha: 0.15),
+              selectedTileColor: Theme.of(
+                context,
+              ).colorScheme.primaryContainer.withValues(alpha: 0.15),
               onTap: () {
                 setState(() {
                   _selectedTarget = SelectedPlaybackTarget.preset(
@@ -421,7 +648,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
         final inst = sf.instruments[index];
         final isSelected =
             _selectedTarget?.type == PlaybackTargetType.instrument &&
-                _selectedTarget?.instrument?.name == inst.name;
+            _selectedTarget?.instrument?.name == inst.name;
 
         return ExpansionTile(
           shape: isSelected
@@ -467,17 +694,17 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
             },
           ),
           children: inst.zones.map((zone) {
-            final key = zone.rootKey ??
+            final key =
+                zone.rootKey ??
                 ((zone.keyRangeMin + zone.keyRangeMax) ~/ 2).clamp(0, 127);
-            final isZoneSelected = isSelected &&
-                _selectedTarget?.resolvedMarkedKey == key;
+            final isZoneSelected =
+                isSelected && _selectedTarget?.resolvedMarkedKey == key;
             return ListTile(
               dense: true,
               selected: isZoneSelected,
-              selectedTileColor: Theme.of(context)
-                  .colorScheme
-                  .primaryContainer
-                  .withValues(alpha: 0.15),
+              selectedTileColor: Theme.of(
+                context,
+              ).colorScheme.primaryContainer.withValues(alpha: 0.15),
               onTap: () {
                 setState(() {
                   _selectedTarget = SelectedPlaybackTarget.instrument(
@@ -548,14 +775,13 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
               final sample = sf.samples[index];
               final isSelected =
                   _selectedTarget?.type == PlaybackTargetType.sample &&
-                      _selectedTarget?.sample?.id == sample.id;
+                  _selectedTarget?.sample?.id == sample.id;
 
               return ListTile(
                 selected: isSelected,
-                selectedTileColor: Theme.of(context)
-                    .colorScheme
-                    .primaryContainer
-                    .withValues(alpha: 0.2),
+                selectedTileColor: Theme.of(
+                  context,
+                ).colorScheme.primaryContainer.withValues(alpha: 0.2),
                 onTap: () {
                   setState(() {
                     _selectedSample = sample;
@@ -568,8 +794,9 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
                 title: Text(
                   '${sample.name} [ID: ${sample.id}]',
                   style: TextStyle(
-                    fontWeight:
-                        isSelected ? FontWeight.bold : FontWeight.normal,
+                    fontWeight: isSelected
+                        ? FontWeight.bold
+                        : FontWeight.normal,
                     color: isSelected
                         ? Theme.of(context).colorScheme.primary
                         : null,
