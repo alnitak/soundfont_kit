@@ -39,7 +39,8 @@ class SoundFontPlayer {
     this.options = const SoundFontPlayerOptions(),
   });
 
-  /// Plays a single [SampleInfo] with optional pitch, volume, pan, and loop overrides.
+  /// Plays a single [SampleInfo] with optional pitch, volume, pan, loop,
+  /// and sample-accurate engine scheduling overrides.
   Future<SoundFontVoice> playSample(
     SampleInfo sample, {
     int key = 60,
@@ -50,6 +51,8 @@ class SoundFontPlayer {
     bool? looping,
     Duration? loopingStartAt,
     Duration? loopingEndAt,
+    Duration? atTime,
+    Duration? duration,
     Zone? zone,
     Zone? presetZone,
   }) async {
@@ -121,16 +124,66 @@ class SoundFontPlayer {
     }
 
     final validLoop = shouldLoop && loopEnd != null && loopEnd > loopStart;
+    final useScheduled = !validLoop &&
+        (atTime != null || duration != null || options.useScheduledPlayback);
 
-    final handle = SoLoud.instance.play(
-      audio,
-      volume: vol,
-      pan: p,
-      looping: validLoop,
-      loopingStartAt: validLoop ? loopStart : Duration.zero,
-      loopingEndAt: validLoop ? loopEnd : null,
-      busId: options.defaultBusId,
-    );
+    SoundHandle handle;
+    if (useScheduled) {
+      final scheduledAt = atTime ??
+          (SoLoud.instance.isInitialized
+              ? SoLoud.instance.getEngineTime()
+              : Duration.zero);
+
+      final attackSec = zone?.volEnvAttack ?? presetZone?.volEnvAttack;
+      final hasAttack = attackSec != null && attackSec > 0.005;
+
+      handle = SoLoud.instance.playScheduled(
+        audio,
+        scheduledAt,
+        duration: (duration != null && releaseDuration == Duration.zero)
+            ? duration
+            : null,
+        volume: hasAttack ? 0.0 : vol,
+        pan: p,
+        busId: options.defaultBusId,
+      );
+
+      if (hasAttack) {
+        final attackDuration =
+            Duration(microseconds: (attackSec * 1000000).round());
+        SoLoud.instance.fadeScheduled(
+          handle,
+          scheduledAt,
+          vol,
+          attackDuration,
+        );
+      }
+
+      if (duration != null) {
+        final noteOffTime = scheduledAt + duration;
+        if (releaseDuration > Duration.zero) {
+          SoLoud.instance.fadeScheduled(
+            handle,
+            noteOffTime,
+            0.0,
+            releaseDuration,
+            thenStop: true,
+          );
+        } else {
+          SoLoud.instance.stopScheduled(handle, noteOffTime);
+        }
+      }
+    } else {
+      handle = SoLoud.instance.play(
+        audio,
+        volume: vol,
+        pan: p,
+        looping: validLoop,
+        loopingStartAt: validLoop ? loopStart : Duration.zero,
+        loopingEndAt: validLoop ? loopEnd : null,
+        busId: options.defaultBusId,
+      );
+    }
 
     if (speed != 1.0) {
       SoLoud.instance.setRelativePlaySpeed(handle, speed);
@@ -148,18 +201,23 @@ class SoundFontPlayer {
     return voice;
   }
 
-  /// Plays an [Instrument] for a given MIDI [key] and [velocity].
+  /// Plays an [Instrument] for a given MIDI [key] and [velocity], with optional
+  /// sample-accurate engine clock scheduling.
   Future<SoundFontVoice> playInstrument(
     Instrument instrument, {
     int key = 60,
     int velocity = 100,
     double? customVolume,
     double? customPan,
+    Duration? atTime,
+    Duration? duration,
     Zone? presetZone,
   }) async {
     // Find matching zones for this key and velocity
     var matchingZones = instrument.zones
-        .where((z) => z.matches(key, velocity) && (z.sampleRef != null || z.sampleID != null))
+        .where((z) =>
+            z.matches(key, velocity) &&
+            (z.sampleRef != null || z.sampleID != null))
         .toList();
 
     // Fallback if no specific zone matches: pick first zone with a sample
@@ -191,7 +249,8 @@ class SoundFontPlayer {
       if (sample == null || handledSampleIds.contains(sample.id)) continue;
 
       // Check if stereo joining applies
-      if (options.joinStereoChannels && StereoJoiner.isStereoCandidate(sample)) {
+      if (options.joinStereoChannels &&
+          StereoJoiner.isStereoCandidate(sample)) {
         final pairedSample = StereoJoiner.findLinkedSample(soundFont, sample);
         if (pairedSample != null) {
           handledSampleIds.add(sample.id);
@@ -209,6 +268,8 @@ class SoundFontPlayer {
             presetZone: presetZone,
             customVolume: customVolume,
             customPan: customPan,
+            atTime: atTime,
+            duration: duration,
           );
 
           allHandles.addAll(stereoVoice.handles);
@@ -227,6 +288,8 @@ class SoundFontPlayer {
         velocity: velocity,
         volume: customVolume,
         pan: customPan,
+        atTime: atTime,
+        duration: duration,
         zone: zone,
         presetZone: presetZone,
       );
@@ -250,17 +313,19 @@ class SoundFontPlayer {
     return compoundVoice;
   }
 
-  /// Plays a [Preset] for a given MIDI [key] and [velocity].
+  /// Plays a [Preset] for a given MIDI [key] and [velocity], with optional
+  /// sample-accurate engine clock scheduling.
   Future<SoundFontVoice> playPreset(
     Preset preset, {
     int key = 60,
     int velocity = 100,
     double? customVolume,
     double? customPan,
+    Duration? atTime,
+    Duration? duration,
   }) async {
-    var matchingPresetZones = preset.zones
-        .where((pz) => pz.matches(key, velocity))
-        .toList();
+    var matchingPresetZones =
+        preset.zones.where((pz) => pz.matches(key, velocity)).toList();
 
     if (matchingPresetZones.isEmpty) {
       matchingPresetZones = preset.zones.take(1).toList();
@@ -287,6 +352,8 @@ class SoundFontPlayer {
           velocity: velocity,
           customVolume: customVolume,
           customPan: customPan,
+          atTime: atTime,
+          duration: duration,
           presetZone: pz,
         );
         allHandles.addAll(voice.handles);
@@ -306,6 +373,8 @@ class SoundFontPlayer {
             velocity: velocity,
             volume: customVolume,
             pan: customPan,
+            atTime: atTime,
+            duration: duration,
             presetZone: pz,
           );
           allHandles.addAll(voice.handles);
@@ -329,6 +398,72 @@ class SoundFontPlayer {
     return compoundVoice;
   }
 
+  /// Schedules a [Preset] playback at an absolute engine [atTime] with optional [duration].
+  Future<SoundFontVoice> playPresetScheduled(
+    Preset preset, {
+    required Duration atTime,
+    Duration? duration,
+    int key = 60,
+    int velocity = 100,
+    double? customVolume,
+    double? customPan,
+  }) =>
+      playPreset(
+        preset,
+        key: key,
+        velocity: velocity,
+        customVolume: customVolume,
+        customPan: customPan,
+        atTime: atTime,
+        duration: duration,
+      );
+
+  /// Schedules an [Instrument] playback at an absolute engine [atTime] with optional [duration].
+  Future<SoundFontVoice> playInstrumentScheduled(
+    Instrument instrument, {
+    required Duration atTime,
+    Duration? duration,
+    int key = 60,
+    int velocity = 100,
+    double? customVolume,
+    double? customPan,
+  }) =>
+      playInstrument(
+        instrument,
+        key: key,
+        velocity: velocity,
+        customVolume: customVolume,
+        customPan: customPan,
+        atTime: atTime,
+        duration: duration,
+      );
+
+  /// Schedules a [SampleInfo] playback at an absolute engine [atTime] with optional [duration].
+  Future<SoundFontVoice> playSampleScheduled(
+    SampleInfo sample, {
+    required Duration atTime,
+    Duration? duration,
+    int key = 60,
+    int velocity = 100,
+    double? volume,
+    double? pan,
+    double? pitchRatio,
+    Zone? zone,
+    Zone? presetZone,
+  }) =>
+      playSample(
+        sample,
+        key: key,
+        velocity: velocity,
+        volume: volume,
+        pan: pan,
+        pitchRatio: pitchRatio,
+        atTime: atTime,
+        duration: duration,
+        zone: zone,
+        presetZone: presetZone,
+      );
+
   /// Note-on trigger: plays specified [preset], [instrument], or default bank/instrument.
   Future<SoundFontVoice> noteOn(
     int key, {
@@ -337,6 +472,8 @@ class SoundFontPlayer {
     Preset? preset,
     double? customVolume,
     double? customPan,
+    Duration? atTime,
+    Duration? duration,
   }) async {
     if (preset != null) {
       return playPreset(
@@ -345,6 +482,8 @@ class SoundFontPlayer {
         velocity: velocity,
         customVolume: customVolume,
         customPan: customPan,
+        atTime: atTime,
+        duration: duration,
       );
     }
 
@@ -355,6 +494,8 @@ class SoundFontPlayer {
         velocity: velocity,
         customVolume: customVolume,
         customPan: customPan,
+        atTime: atTime,
+        duration: duration,
       );
     }
 
@@ -365,6 +506,8 @@ class SoundFontPlayer {
         velocity: velocity,
         customVolume: customVolume,
         customPan: customPan,
+        atTime: atTime,
+        duration: duration,
       );
     }
 
@@ -375,6 +518,8 @@ class SoundFontPlayer {
         velocity: velocity,
         customVolume: customVolume,
         customPan: customPan,
+        atTime: atTime,
+        duration: duration,
       );
     }
 
@@ -385,6 +530,8 @@ class SoundFontPlayer {
         velocity: velocity,
         volume: customVolume,
         pan: customPan,
+        atTime: atTime,
+        duration: duration,
       );
     }
 
@@ -461,6 +608,8 @@ class SoundFontPlayer {
     Zone? presetZone,
     double? customVolume,
     double? customPan,
+    Duration? atTime,
+    Duration? duration,
   }) async {
     final speed = VoiceCalculator.calculatePitchRatio(
       key: key,
@@ -536,16 +685,66 @@ class SoundFontPlayer {
     final validLoop = loopInfo.isLooping &&
         loopInfo.loopEnd != null &&
         loopInfo.loopEnd! > loopInfo.loopStart;
+    final useScheduled = !validLoop &&
+        (atTime != null || duration != null || options.useScheduledPlayback);
 
-    final handle = SoLoud.instance.play(
-      audio,
-      volume: vol,
-      pan: p,
-      looping: validLoop,
-      loopingStartAt: validLoop ? loopInfo.loopStart : Duration.zero,
-      loopingEndAt: validLoop ? loopInfo.loopEnd : null,
-      busId: options.defaultBusId,
-    );
+    SoundHandle handle;
+    if (useScheduled) {
+      final scheduledAt = atTime ??
+          (SoLoud.instance.isInitialized
+              ? SoLoud.instance.getEngineTime()
+              : Duration.zero);
+
+      final attackSec = zone?.volEnvAttack ?? presetZone?.volEnvAttack;
+      final hasAttack = attackSec != null && attackSec > 0.005;
+
+      handle = SoLoud.instance.playScheduled(
+        audio,
+        scheduledAt,
+        duration: (duration != null && releaseDuration == Duration.zero)
+            ? duration
+            : null,
+        volume: hasAttack ? 0.0 : vol,
+        pan: p,
+        busId: options.defaultBusId,
+      );
+
+      if (hasAttack) {
+        final attackDuration =
+            Duration(microseconds: (attackSec * 1000000).round());
+        SoLoud.instance.fadeScheduled(
+          handle,
+          scheduledAt,
+          vol,
+          attackDuration,
+        );
+      }
+
+      if (duration != null) {
+        final noteOffTime = scheduledAt + duration;
+        if (releaseDuration > Duration.zero) {
+          SoLoud.instance.fadeScheduled(
+            handle,
+            noteOffTime,
+            0.0,
+            releaseDuration,
+            thenStop: true,
+          );
+        } else {
+          SoLoud.instance.stopScheduled(handle, noteOffTime);
+        }
+      }
+    } else {
+      handle = SoLoud.instance.play(
+        audio,
+        volume: vol,
+        pan: p,
+        looping: validLoop,
+        loopingStartAt: validLoop ? loopInfo.loopStart : Duration.zero,
+        loopingEndAt: validLoop ? loopInfo.loopEnd : null,
+        busId: options.defaultBusId,
+      );
+    }
 
     if (speed != 1.0) {
       SoLoud.instance.setRelativePlaySpeed(handle, speed);

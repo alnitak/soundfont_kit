@@ -30,21 +30,73 @@ class SoundFontVoice {
     this.releaseDuration = const Duration(milliseconds: 150),
   });
 
-  /// Triggers note-off volume fade and scheduled stop.
-  Future<void> release({Duration? customRelease}) async {
+  /// Triggers note-off volume fade and scheduled stop on the audio engine timeline.
+  Future<void> release({Duration? customRelease, Duration? atTime}) async {
     if (_isReleased) return;
     _isReleased = true;
 
     final duration = customRelease ?? releaseDuration;
+    final engineTime = atTime ??
+        (SoLoud.instance.isInitialized
+            ? SoLoud.instance.getEngineTime()
+            : Duration.zero);
+
     for (final handle in handles) {
       if (!SoLoud.instance.getIsValidVoiceHandle(handle)) continue;
       try {
         if (duration > Duration.zero) {
-          SoLoud.instance.fadeVolume(handle, 0.0, duration);
-          SoLoud.instance.scheduleStop(handle, duration);
+          SoLoud.instance.fadeScheduled(
+            handle,
+            engineTime,
+            0.0,
+            duration,
+            thenStop: true,
+          );
         } else {
-          await SoLoud.instance.stop(handle);
+          SoLoud.instance.stopScheduled(handle, engineTime);
         }
+      } catch (_) {
+        // Fallback to standard fade if engine clock call is unavailable
+        try {
+          if (duration > Duration.zero) {
+            SoLoud.instance.fadeVolume(handle, 0.0, duration);
+            SoLoud.instance.scheduleStop(handle, duration);
+          } else {
+            await SoLoud.instance.stop(handle);
+          }
+        } catch (_) {}
+      }
+    }
+  }
+
+  /// Stops this voice at an absolute engine time with sample accuracy.
+  void stopScheduled(Duration atTime) {
+    _isReleased = true;
+    for (final handle in handles) {
+      if (!SoLoud.instance.getIsValidVoiceHandle(handle)) continue;
+      try {
+        SoLoud.instance.stopScheduled(handle, atTime);
+      } catch (_) {}
+    }
+  }
+
+  /// Fades this voice starting at an absolute engine time.
+  void fadeScheduled(
+    Duration atTime, {
+    required double to,
+    required Duration time,
+    bool thenStop = false,
+  }) {
+    for (final handle in handles) {
+      if (!SoLoud.instance.getIsValidVoiceHandle(handle)) continue;
+      try {
+        SoLoud.instance.fadeScheduled(
+          handle,
+          atTime,
+          to,
+          time,
+          thenStop: thenStop,
+        );
       } catch (_) {}
     }
   }

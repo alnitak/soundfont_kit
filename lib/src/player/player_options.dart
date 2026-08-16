@@ -21,6 +21,10 @@ class SoundFontPlayerOptions {
   /// Master volume scale (0.0 to 1.0+).
   final double masterVolume;
 
+  /// Whether to use SoLoud's sample-accurate [playScheduled] and [fadeScheduled]
+  /// engine clock by default for unlooped voice playback.
+  final bool useScheduledPlayback;
+
   const SoundFontPlayerOptions({
     this.joinStereoChannels = true,
     this.cacheAudioSources = true,
@@ -28,6 +32,7 @@ class SoundFontPlayerOptions {
     this.defaultBusId = 0,
     this.defaultReleaseDuration = const Duration(milliseconds: 150),
     this.masterVolume = 1.0,
+    this.useScheduledPlayback = false,
   });
 
   SoundFontPlayerOptions copyWith({
@@ -37,6 +42,7 @@ class SoundFontPlayerOptions {
     int? defaultBusId,
     Duration? defaultReleaseDuration,
     double? masterVolume,
+    bool? useScheduledPlayback,
   }) {
     return SoundFontPlayerOptions(
       joinStereoChannels: joinStereoChannels ?? this.joinStereoChannels,
@@ -46,6 +52,7 @@ class SoundFontPlayerOptions {
       defaultReleaseDuration:
           defaultReleaseDuration ?? this.defaultReleaseDuration,
       masterVolume: masterVolume ?? this.masterVolume,
+      useScheduledPlayback: useScheduledPlayback ?? this.useScheduledPlayback,
     );
   }
 }

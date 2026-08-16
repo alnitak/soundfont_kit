@@ -97,11 +97,26 @@ void main() {
   group('SoundFontPlayer creation tests', () {
     test('SoundFontFile.createPlayer returns a functional player instance', () async {
       final sf = await SoundFontFile.fromFile(sf2Path);
-      final player = sf.createPlayer();
+      final player = sf.createPlayer(
+        options: const SoundFontPlayerOptions(
+          useScheduledPlayback: true,
+        ),
+      );
 
       expect(player.soundFont, equals(sf));
       expect(player.options.joinStereoChannels, isTrue);
       expect(player.options.cacheAudioSources, isTrue);
+      expect(player.options.useScheduledPlayback, isTrue);
+
+      final voice = SoundFontVoice(
+        key: 60,
+        velocity: 100,
+        handles: [],
+        releaseDuration: const Duration(milliseconds: 200),
+      );
+      expect(voice.isReleased, isFalse);
+      voice.stopScheduled(Duration.zero);
+      expect(voice.isReleased, isTrue);
     });
   });
 }
