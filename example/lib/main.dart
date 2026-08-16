@@ -600,7 +600,11 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
               ],
             ),
           ),
-          DockedPianoPanel(player: _player, selectedTarget: _selectedTarget),
+          DockedPianoPanel(
+            soundFont: sf,
+            player: _player,
+            selectedTarget: _selectedTarget,
+          ),
         ],
       ),
     );

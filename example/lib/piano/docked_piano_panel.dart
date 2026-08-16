@@ -134,11 +134,26 @@ class SelectedPlaybackTarget {
     }
     return false;
   }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is SelectedPlaybackTarget &&
+        other.type == type &&
+        other.preset == preset &&
+        other.instrument == instrument &&
+        other.sample == sample &&
+        other.markedKey == markedKey;
+  }
+
+  @override
+  int get hashCode => Object.hash(type, preset, instrument, sample, markedKey);
 }
 
 /// A docked, resizable bottom panel featuring an interactive piano keyboard,
 /// global volume & effects filter controls with rotary knobs, and target metadata header.
 class DockedPianoPanel extends StatefulWidget {
+  final SoundFontFile? soundFont;
   final SoundFontPlayer? player;
   final SelectedPlaybackTarget? selectedTarget;
   final double initialHeight;
@@ -147,11 +162,12 @@ class DockedPianoPanel extends StatefulWidget {
 
   const DockedPianoPanel({
     super.key,
+    this.soundFont,
     required this.player,
     required this.selectedTarget,
-    this.initialHeight = 240.0,
-    this.minHeight = 130.0,
-    this.maxHeight = 450.0,
+    this.initialHeight = 220.0,
+    this.minHeight = 140.0,
+    this.maxHeight = 420.0,
   });
 
   @override
@@ -161,22 +177,19 @@ class DockedPianoPanel extends StatefulWidget {
 class _DockedPianoPanelState extends State<DockedPianoPanel> {
   late double _height;
   bool _isCollapsed = false;
-  int _startOctave = 3; // C3 (note 48)
+  int _startOctave = 3; // Starts at C3 (MIDI 48)
   final Set<int> _activeKeys = {};
-
+  double _globalVolume = 1.0;
+  double _sustainMultiplier = 1.0;
+  double _sustainTime = 0.20;
   final SoundFontGlobalFilters _filters = const SoundFontGlobalFilters();
   SoundFontFilterType _selectedFilterType = SoundFontFilterType.freeverb;
-  double _globalVolume = 1.0;
-  double _sustainTime = 0.2;
-  double _sustainMultiplier = 1.0;
 
   @override
   void initState() {
     super.initState();
     _height = widget.initialHeight;
     if (widget.player != null) {
-      _sustainTime = widget.player!.sustainTime ?? 0.2;
-      _sustainMultiplier = widget.player!.sustainMultiplier;
       widget.player!.sustainTime = _sustainTime;
       widget.player!.sustainMultiplier = _sustainMultiplier;
     }
@@ -194,18 +207,46 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
       widget.player!.sustainTime = _sustainTime;
       widget.player!.sustainMultiplier = _sustainMultiplier;
     }
+    if (widget.selectedTarget != oldWidget.selectedTarget) {
+      _stopAllVoices();
+    }
+  }
+
+  void _stopAllVoices() {
+    _activeKeys.clear();
+    _safeSetState(() {});
+    widget.player?.allNotesOff(
+      releaseDuration: Duration.zero,
+    );
+    if (SoLoud.instance.isInitialized) {
+      try {
+        SoLoud.instance.stopAll();
+      } catch (_) {}
+    }
   }
 
   int get _startNote => _startOctave * 12 + 12; // C3 = 48, C4 = 60, etc.
 
+  void _safeSetState(VoidCallback fn) {
+    if (!mounted) return;
+    if (WidgetsBinding.instance.buildOwner?.debugBuilding == true) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(fn);
+      });
+    } else {
+      setState(fn);
+    }
+  }
+
   void _shiftOctave(int delta) {
-    setState(() {
+    _safeSetState(() {
       _startOctave = (_startOctave + delta).clamp(1, 7);
     });
   }
 
   void _handleNoteDown(int key, int velocity) {
-    setState(() => _activeKeys.add(key));
+    _activeKeys.add(key);
+    _safeSetState(() {});
     final player = widget.player;
     final target = widget.selectedTarget;
     if (player == null || target == null) return;
@@ -234,7 +275,8 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
   }
 
   void _handleNoteUp(int key) {
-    setState(() => _activeKeys.remove(key));
+    _activeKeys.remove(key);
+    _safeSetState(() {});
     widget.player?.noteOff(key);
   }
 
@@ -441,7 +483,7 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
                         child: RotaryKnob(
                           label: 'Sus',
                           value: _sustainTime,
-                          min: 0.05,
+                          min: 0.0,
                           max: 5.0,
                           defaultValue: 0.2,
                           unit: 's',
@@ -524,11 +566,24 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
 
                       const SizedBox(width: 6),
 
+                      // Stop All Voices Button
+                      IconButton.outlined(
+                        icon: const Icon(Icons.stop, size: 18),
+                        visualDensity: VisualDensity.compact,
+                        tooltip: 'Stop All Playing Voices',
+                        style: IconButton.styleFrom(
+                          padding: const EdgeInsets.all(6),
+                        ),
+                        onPressed: _stopAllVoices,
+                      ),
+
+                      const SizedBox(width: 6),
+
                       // Octave Controls
                       IconButton.filledTonal(
                         icon: const Icon(Icons.arrow_left, size: 18),
                         visualDensity: VisualDensity.compact,
-                        tooltip: 'Octave Down',
+                        tooltip: 'Octave Down (Left Shift)',
                         onPressed: _startOctave > 1
                             ? () => _shiftOctave(-1)
                             : null,
@@ -545,7 +600,7 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
                       IconButton.filledTonal(
                         icon: const Icon(Icons.arrow_right, size: 18),
                         visualDensity: VisualDensity.compact,
-                        tooltip: 'Octave Up',
+                        tooltip: 'Octave Up (Right Shift)',
                         onPressed: _startOctave < 7
                             ? () => _shiftOctave(1)
                             : null,
@@ -649,6 +704,7 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
                 markedKey: target?.resolvedMarkedKey,
                 onNoteDown: _handleNoteDown,
                 onNoteUp: _handleNoteUp,
+                onOctaveShift: _shiftOctave,
               ),
             ),
           ),

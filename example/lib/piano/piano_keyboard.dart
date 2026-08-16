@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// A chromatic piano keyboard widget that supports multitouch chords,
-/// glissandos, and vertical touch position velocity sensitivity (top = soft, bottom = loud).
+/// physical computer keyboard bindings, glissandos, and vertical touch position
+/// velocity sensitivity (top = soft, bottom = loud).
 class PianoKeyboard extends StatefulWidget {
   /// Starting MIDI note number (e.g., 48 for C3, 60 for C4).
   final int startNote;
@@ -27,12 +29,16 @@ class PianoKeyboard extends StatefulWidget {
   /// Optional set of MIDI keys to mark with red circles at the bottom.
   final Set<int>? markedKeys;
 
+  /// Optional callback when an octave shift key is pressed (Left Shift = -1, Right Shift = +1).
+  final void Function(int deltaOctave)? onOctaveShift;
+
   const PianoKeyboard({
     super.key,
     this.startNote = 48, // C3
     this.keyCount = 37, // ~3 octaves (C3 to C6)
     required this.onNoteDown,
     required this.onNoteUp,
+    this.onOctaveShift,
     this.activeKeys = const {},
     this.availableKeys,
     this.markedKey,
@@ -46,6 +52,9 @@ class PianoKeyboard extends StatefulWidget {
 class _PianoKeyboardState extends State<PianoKeyboard> {
   /// Maps pointer ID -> current MIDI note being played by that pointer.
   final Map<int, int> _pointerNotes = {};
+
+  /// Set of physically held computer keyboard keys.
+  final Set<LogicalKeyboardKey> _pressedPhysicalKeys = {};
 
   static const List<bool> _isBlackNoteInOctave = [
     false, // C
@@ -63,8 +72,57 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
   ];
 
   static const List<String> _noteNames = [
-    'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'
+    'C',
+    'C#',
+    'D',
+    'D#',
+    'E',
+    'F',
+    'F#',
+    'G',
+    'G#',
+    'A',
+    'A#',
+    'B',
   ];
+
+  /// 1-Octave QWERTY layout mapping (A=C through K=C+1):
+  static final Map<LogicalKeyboardKey, ({int semitoneOffset, String label})>
+  _keyBindings = {
+    LogicalKeyboardKey.keyA: (semitoneOffset: 0, label: 'A'),
+    LogicalKeyboardKey.keyW: (semitoneOffset: 1, label: 'W'),
+    LogicalKeyboardKey.keyS: (semitoneOffset: 2, label: 'S'),
+    LogicalKeyboardKey.keyE: (semitoneOffset: 3, label: 'E'),
+    LogicalKeyboardKey.keyD: (semitoneOffset: 4, label: 'D'),
+    LogicalKeyboardKey.keyF: (semitoneOffset: 5, label: 'F'),
+    LogicalKeyboardKey.keyT: (semitoneOffset: 6, label: 'T'),
+    LogicalKeyboardKey.keyG: (semitoneOffset: 7, label: 'G'),
+    LogicalKeyboardKey.keyY: (semitoneOffset: 8, label: 'Y'),
+    LogicalKeyboardKey.keyH: (semitoneOffset: 9, label: 'H'),
+    LogicalKeyboardKey.keyU: (semitoneOffset: 10, label: 'U'),
+    LogicalKeyboardKey.keyJ: (semitoneOffset: 11, label: 'J'),
+    LogicalKeyboardKey.keyK: (semitoneOffset: 12, label: 'K'),
+  };
+
+  static const Map<int, String> _primaryKeyLabels = {
+    0: 'A',
+    1: 'W',
+    2: 'S',
+    3: 'E',
+    4: 'D',
+    5: 'F',
+    6: 'T',
+    7: 'G',
+    8: 'Y',
+    9: 'H',
+    10: 'U',
+    11: 'J',
+    12: 'K',
+  };
+
+  static String? getKeyBindingLabel(int noteOffset) {
+    return _primaryKeyLabels[noteOffset];
+  }
 
   static bool isBlackKey(int midiNote) {
     return _isBlackNoteInOctave[midiNote % 12];
@@ -74,6 +132,112 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
     final name = _noteNames[midiNote % 12];
     final octave = (midiNote ~/ 12) - 1;
     return '$name$octave';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_handleKeyEvent);
+  }
+
+  @override
+  void didUpdateWidget(PianoKeyboard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.startNote != oldWidget.startNote &&
+        _pressedPhysicalKeys.isNotEmpty) {
+      final oldStart = oldWidget.startNote;
+      final newStart = widget.startNote;
+      final keysToUpdate = Set<LogicalKeyboardKey>.from(_pressedPhysicalKeys);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        for (final key in keysToUpdate) {
+          final binding = _keyBindings[key];
+          if (binding != null) {
+            widget.onNoteUp(oldStart + binding.semitoneOffset);
+            widget.onNoteDown(newStart + binding.semitoneOffset, 100);
+          }
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
+    for (final key in _pressedPhysicalKeys) {
+      final binding = _keyBindings[key];
+      if (binding != null) {
+        widget.onNoteUp(widget.startNote + binding.semitoneOffset);
+      }
+    }
+    _pressedPhysicalKeys.clear();
+    super.dispose();
+  }
+
+  bool _handleKeyEvent(KeyEvent event) {
+    if (!mounted) return false;
+
+    // Allow system shortcuts with Command/Meta or Control (e.g. Cmd+Q, Cmd+W)
+    if (HardwareKeyboard.instance.isMetaPressed ||
+        HardwareKeyboard.instance.isControlPressed) {
+      return false;
+    }
+
+    // Handle octave shifting with Left Shift (down) and Right Shift (up)
+    if (event.logicalKey == LogicalKeyboardKey.shiftLeft) {
+      if (event is KeyDownEvent) {
+        widget.onOctaveShift?.call(-1);
+      }
+      return true;
+    } else if (event.logicalKey == LogicalKeyboardKey.shiftRight) {
+      if (event is KeyDownEvent) {
+        widget.onOctaveShift?.call(1);
+      }
+      return true;
+    }
+
+    final binding = _keyBindings[event.logicalKey];
+    if (binding == null) {
+      // Absorb unused keys so macOS doesn't play the unhandled key beep
+      return true;
+    }
+
+    final midiNote = widget.startNote + binding.semitoneOffset;
+    if (midiNote < widget.startNote ||
+        midiNote >= widget.startNote + widget.keyCount) {
+      return true;
+    }
+
+    if (event is KeyDownEvent) {
+      if (!_pressedPhysicalKeys.contains(event.logicalKey)) {
+        _pressedPhysicalKeys.add(event.logicalKey);
+        widget.onNoteDown(midiNote, 100);
+        setState(() {});
+      }
+      return true;
+    } else if (event is KeyRepeatEvent) {
+      // Absorb key repeats so holding down a key does not trigger macOS alert sounds
+      return true;
+    } else if (event is KeyUpEvent) {
+      if (_pressedPhysicalKeys.remove(event.logicalKey)) {
+        widget.onNoteUp(midiNote);
+        setState(() {});
+      }
+      return true;
+    }
+
+    return true;
+  }
+
+  bool _isPhysicalKeyPressed(int note) {
+    for (final key in _pressedPhysicalKeys) {
+      final binding = _keyBindings[key];
+      if (binding != null &&
+          (widget.startNote + binding.semitoneOffset) == note) {
+        return true;
+      }
+    }
+    return false;
   }
 
   @override
@@ -155,12 +319,18 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
               // White keys background layer
               ...whiteKeyNotes.map((note) {
                 final rect = whiteKeyRects[note]!;
-                final isPressed = widget.activeKeys.contains(note) ||
-                    _pointerNotes.values.contains(note);
-                final hasZone = widget.availableKeys == null ||
+                final isPressed =
+                    widget.activeKeys.contains(note) ||
+                    _pointerNotes.values.contains(note) ||
+                    _isPhysicalKeyPressed(note);
+                final hasZone =
+                    widget.availableKeys == null ||
                     widget.availableKeys!.contains(note);
-                final isMarked = (widget.markedKey != null && widget.markedKey == note) ||
-                    (widget.markedKeys != null && widget.markedKeys!.contains(note));
+                final isMarked =
+                    (widget.markedKey != null && widget.markedKey == note) ||
+                    (widget.markedKeys != null &&
+                        widget.markedKeys!.contains(note));
+                final keyLabel = getKeyBindingLabel(note - widget.startNote);
 
                 return Positioned(
                   left: rect.left,
@@ -176,10 +346,7 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
                       borderRadius: const BorderRadius.vertical(
                         bottom: Radius.circular(5.0),
                       ),
-                      border: Border.all(
-                        color: Colors.black45,
-                        width: 1.0,
-                      ),
+                      border: Border.all(color: Colors.black45, width: 1.0),
                       boxShadow: [
                         if (!isPressed)
                           BoxShadow(
@@ -195,21 +362,58 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         if (note % 12 == 0)
-                          Text(
-                            getNoteName(note),
-                            style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.bold,
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 2.0),
+                            child: Text(
+                              getNoteName(note),
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.bold,
+                                color: isPressed
+                                    ? Theme.of(
+                                        context,
+                                      ).colorScheme.onPrimaryContainer
+                                    : Colors.black87,
+                              ),
+                            ),
+                          ),
+                        if (keyLabel != null)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 2.0),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 3.5,
+                              vertical: 1.0,
+                            ),
+                            decoration: BoxDecoration(
                               color: isPressed
-                                  ? Theme.of(context)
-                                      .colorScheme
-                                      .onPrimaryContainer
-                                  : Colors.black54,
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Colors.grey.shade200,
+                              borderRadius: BorderRadius.circular(3.0),
+                              border: Border.all(
+                                color: isPressed
+                                    ? Colors.transparent
+                                    : Colors.grey.shade400,
+                                width: 0.5,
+                              ),
+                            ),
+                            child: Text(
+                              keyLabel,
+                              style: TextStyle(
+                                fontSize: 8.5,
+                                fontWeight: FontWeight.w700,
+                                fontFamily: 'monospace',
+                                color: isPressed
+                                    ? Theme.of(context).colorScheme.onPrimary
+                                    : Colors.black87,
+                              ),
                             ),
                           ),
                         if (isMarked)
                           Container(
-                            margin: const EdgeInsets.only(top: 1.0, bottom: 2.0),
+                            margin: const EdgeInsets.only(
+                              top: 1.0,
+                              bottom: 2.0,
+                            ),
                             width: 7.0,
                             height: 7.0,
                             decoration: BoxDecoration(
@@ -234,12 +438,18 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
               ...blackKeyRects.entries.map((entry) {
                 final note = entry.key;
                 final rect = entry.value;
-                final isPressed = widget.activeKeys.contains(note) ||
-                    _pointerNotes.values.contains(note);
-                final hasZone = widget.availableKeys == null ||
+                final isPressed =
+                    widget.activeKeys.contains(note) ||
+                    _pointerNotes.values.contains(note) ||
+                    _isPhysicalKeyPressed(note);
+                final hasZone =
+                    widget.availableKeys == null ||
                     widget.availableKeys!.contains(note);
-                final isMarked = (widget.markedKey != null && widget.markedKey == note) ||
-                    (widget.markedKeys != null && widget.markedKeys!.contains(note));
+                final isMarked =
+                    (widget.markedKey != null && widget.markedKey == note) ||
+                    (widget.markedKeys != null &&
+                        widget.markedKeys!.contains(note));
+                final keyLabel = getKeyBindingLabel(note - widget.startNote);
 
                 return Positioned(
                   left: rect.left,
@@ -251,8 +461,8 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
                       color: isPressed
                           ? Theme.of(context).colorScheme.primary
                           : (hasZone
-                              ? const Color(0xFF222222)
-                              : const Color(0xFF555555)),
+                                ? const Color(0xFF222222)
+                                : const Color(0xFF555555)),
                       borderRadius: const BorderRadius.vertical(
                         bottom: Radius.circular(4.0),
                       ),
@@ -271,9 +481,44 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
                       ],
                     ),
                     alignment: Alignment.bottomCenter,
-                    padding: const EdgeInsets.only(bottom: 4.0),
-                    child: isMarked
-                        ? Container(
+                    padding: const EdgeInsets.only(bottom: 3.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (keyLabel != null)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 1.0),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 2.5,
+                              vertical: 1.0,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isPressed
+                                  ? Theme.of(context).colorScheme.onPrimary
+                                        .withValues(alpha: 0.9)
+                                  : const Color(0xFF383838),
+                              borderRadius: BorderRadius.circular(3.0),
+                              border: Border.all(
+                                color: isPressed
+                                    ? Colors.transparent
+                                    : Colors.white24,
+                                width: 0.5,
+                              ),
+                            ),
+                            child: Text(
+                              keyLabel,
+                              style: TextStyle(
+                                fontSize: 8.0,
+                                fontWeight: FontWeight.w700,
+                                fontFamily: 'monospace',
+                                color: isPressed
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Colors.white70,
+                              ),
+                            ),
+                          ),
+                        if (isMarked)
+                          Container(
                             width: 6.0,
                             height: 6.0,
                             decoration: BoxDecoration(
@@ -287,8 +532,9 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
                                 ),
                               ],
                             ),
-                          )
-                        : null,
+                          ),
+                      ],
+                    ),
                   ),
                 );
               }),
@@ -307,7 +553,13 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
     double blackHeight,
   ) {
     final pos = event.localPosition;
-    final noteInfo = _hitTest(pos, whiteRects, blackRects, totalHeight, blackHeight);
+    final noteInfo = _hitTest(
+      pos,
+      whiteRects,
+      blackRects,
+      totalHeight,
+      blackHeight,
+    );
     if (noteInfo != null) {
       final note = noteInfo.note;
       final velocity = noteInfo.velocity;
@@ -325,7 +577,13 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
     double blackHeight,
   ) {
     final pos = event.localPosition;
-    final noteInfo = _hitTest(pos, whiteRects, blackRects, totalHeight, blackHeight);
+    final noteInfo = _hitTest(
+      pos,
+      whiteRects,
+      blackRects,
+      totalHeight,
+      blackHeight,
+    );
     final previousNote = _pointerNotes[event.pointer];
 
     if (noteInfo == null) {
