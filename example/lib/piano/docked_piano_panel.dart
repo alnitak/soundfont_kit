@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_soloud/flutter_soloud.dart';
 import 'package:soundfont_reader/soundfont_reader.dart';
 import 'piano_keyboard.dart';
+import 'rotary_knob.dart';
 
 /// Target type for playback.
 enum PlaybackTargetType { preset, instrument, sample }
@@ -59,7 +61,8 @@ class SelectedPlaybackTarget {
   }
 
   String get subtitle {
-    final noteStr = resolvedMarkedKey != null ? ' • Key ${resolvedMarkedKey!}' : '';
+    final noteStr =
+        resolvedMarkedKey != null ? ' • Key ${resolvedMarkedKey!}' : '';
     return switch (type) {
       PlaybackTargetType.preset =>
         'Bank ${preset?.bank ?? 0}, Program ${preset?.program ?? 0} • ${preset?.zones.length ?? 0} Zones$noteStr',
@@ -101,8 +104,8 @@ class SelectedPlaybackTarget {
   }
 }
 
-/// A docked, resizable bottom panel featuring an interactive piano keyboard
-/// and target metadata header.
+/// A docked, resizable bottom panel featuring an interactive piano keyboard,
+/// global volume & effects filter controls with rotary knobs, and target metadata header.
 class DockedPianoPanel extends StatefulWidget {
   final SoundFontPlayer? player;
   final SelectedPlaybackTarget? selectedTarget;
@@ -114,9 +117,9 @@ class DockedPianoPanel extends StatefulWidget {
     super.key,
     required this.player,
     required this.selectedTarget,
-    this.initialHeight = 210.0,
-    this.minHeight = 110.0,
-    this.maxHeight = 380.0,
+    this.initialHeight = 240.0,
+    this.minHeight = 130.0,
+    this.maxHeight = 450.0,
   });
 
   @override
@@ -129,10 +132,19 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
   int _startOctave = 3; // C3 (note 48)
   final Set<int> _activeKeys = {};
 
+  final SoundFontGlobalFilters _filters = const SoundFontGlobalFilters();
+  SoundFontFilterType _selectedFilterType = SoundFontFilterType.freeverb;
+  double _globalVolume = 1.0;
+
   @override
   void initState() {
     super.initState();
     _height = widget.initialHeight;
+    if (SoLoud.instance.isInitialized) {
+      try {
+        _globalVolume = SoLoud.instance.getGlobalVolume();
+      } catch (_) {}
+    }
   }
 
   int get _startNote => _startOctave * 12 + 12; // C3 = 48, C4 = 60, etc.
@@ -157,7 +169,11 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
         break;
       case PlaybackTargetType.instrument:
         if (target.instrument != null) {
-          player.playInstrument(target.instrument!, key: key, velocity: velocity);
+          player.playInstrument(
+            target.instrument!,
+            key: key,
+            velocity: velocity,
+          );
         }
         break;
       case PlaybackTargetType.sample:
@@ -173,10 +189,90 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
     widget.player?.noteOff(key);
   }
 
+  void _showFilterSelectionMenu(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16.0,
+                        vertical: 6.0,
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.tune),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Global Output Audio Filters',
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                          ),
+                          const Spacer(),
+                          TextButton(
+                            onPressed: () {
+                              _filters.deactivateAll();
+                              setModalState(() {});
+                              setState(() {});
+                            },
+                            child: const Text('Reset All'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(),
+                    ...SoundFontFilterType.values.map((filterType) {
+                      final isActive = _filters.isActive(filterType);
+                      return CheckboxListTile(
+                        value: isActive,
+                        title: Text(filterType.label),
+                        subtitle: Text(
+                          filterType.description,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        onChanged: (val) {
+                          _filters.toggle(filterType, val ?? false);
+                          if (val == true) {
+                            _selectedFilterType = filterType;
+                          }
+                          setModalState(() {});
+                          setState(() {});
+                        },
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final target = widget.selectedTarget;
+
+    final activeFilters = SoundFontFilterType.values
+        .where((t) => _filters.isActive(t))
+        .toList();
+
+    // Ensure selected filter is active if any active filters exist
+    if (activeFilters.isNotEmpty &&
+        !activeFilters.contains(_selectedFilterType)) {
+      _selectedFilterType = activeFilters.first;
+    }
 
     if (_isCollapsed) {
       return Container(
@@ -286,6 +382,53 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
                         ),
                       ),
 
+                      // Global Volume Knob
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: RotaryKnob(
+                          label: 'Vol',
+                          value: _globalVolume,
+                          min: 0.0,
+                          max: 3.0,
+                          defaultValue: 1.0,
+                          size: 30.0,
+                          onChanged: (newVol) {
+                            setState(() {
+                              _globalVolume = newVol;
+                            });
+                            if (SoLoud.instance.isInitialized) {
+                              try {
+                                SoLoud.instance.setGlobalVolume(newVol);
+                              } catch (_) {}
+                            }
+                          },
+                        ),
+                      ),
+
+                      // Global Filters Button with badge
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.tune, size: 16),
+                        label: Text(
+                          activeFilters.isEmpty
+                              ? 'Filters'
+                              : 'FX (${activeFilters.length})',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          visualDensity: VisualDensity.compact,
+                          backgroundColor: activeFilters.isNotEmpty
+                              ? theme.colorScheme.primaryContainer
+                              : null,
+                          foregroundColor: activeFilters.isNotEmpty
+                              ? theme.colorScheme.onPrimaryContainer
+                              : null,
+                        ),
+                        onPressed: () => _showFilterSelectionMenu(context),
+                      ),
+
+                      const SizedBox(width: 6),
+
                       // Octave Controls
                       IconButton.filledTonal(
                         icon: const Icon(Icons.arrow_left, size: 18),
@@ -325,6 +468,79 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
               ),
             ),
           ),
+
+          // Active Filter Knobs Rack (shown if at least 1 filter is active)
+          if (activeFilters.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              color: theme.colorScheme.surfaceContainer,
+              child: Row(
+                children: [
+                  // Filter selector chip/tabs if multiple active
+                  if (activeFilters.length > 1) ...[
+                    PopupMenuButton<SoundFontFilterType>(
+                      initialValue: _selectedFilterType,
+                      tooltip: 'Select active filter to adjust',
+                      child: Chip(
+                        avatar: const Icon(Icons.settings, size: 14),
+                        label: Text(_selectedFilterType.label),
+                        padding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onSelected: (type) {
+                        setState(() => _selectedFilterType = type);
+                      },
+                      itemBuilder: (context) => activeFilters.map((f) {
+                        return PopupMenuItem(
+                          value: f,
+                          child: Text(f.label),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(width: 8),
+                  ] else ...[
+                    Text(
+                      _selectedFilterType.label,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
+
+                  // Rotary knobs for the currently selected filter
+                  Expanded(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: _filters
+                            .getParameters(_selectedFilterType)
+                            .map((param) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                            child: RotaryKnob(
+                              label: param.name,
+                              value: param.currentValue,
+                              min: param.min,
+                              max: param.max,
+                              defaultValue: param.defaultValue,
+                              unit: param.unit,
+                              onChanged: (newVal) {
+                                setState(() {
+                                  param.setValue(newVal);
+                                });
+                              },
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
 
           // Piano Keyboard area
           Expanded(

@@ -14,3 +14,4 @@ export 'src/player/stereo_joiner.dart';
 export 'src/player/soundfont_voice.dart';
 export 'src/player/voice_calculator.dart';
 export 'src/player/soundfont_player.dart';
+export 'src/player/filters/soundfont_filter.dart';

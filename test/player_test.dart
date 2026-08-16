@@ -118,5 +118,16 @@ void main() {
       voice.stopScheduled(Duration.zero);
       expect(voice.isReleased, isTrue);
     });
+
+    test('SoundFontGlobalFilters exposes all useful global filter types', () {
+      const filters = SoundFontGlobalFilters();
+      expect(SoundFontFilterType.values.length, equals(7));
+      for (final type in SoundFontFilterType.values) {
+        expect(type.label.isNotEmpty, isTrue);
+        expect(type.description.isNotEmpty, isTrue);
+      }
+      // When SoLoud is uninitialized in test runner, isActive safely returns false
+      expect(filters.isActive(SoundFontFilterType.freeverb), isFalse);
+    });
   });
 }
