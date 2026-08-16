@@ -1,9 +1,11 @@
 import 'dart:developer' as dev;
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 import 'package:soundfont_reader/soundfont_reader.dart';
 import 'package:flutter_soloud/flutter_soloud.dart';
 import 'package:logging/logging.dart';
@@ -161,15 +163,17 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
         setState(() {
           _isPreloading = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error preloading samples: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error preloading samples: $e')));
       }
     }
   }
 
-  Future<void> _loadSoundFontEntry(SoundFontSourceEntry entry,
-      {bool askPreload = false}) async {
+  Future<void> _loadSoundFontEntry(
+    SoundFontSourceEntry entry, {
+    bool askPreload = false,
+  }) async {
     _player?.dispose();
     setState(() {
       _selectedSource = entry;
@@ -265,6 +269,8 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
           'tar',
           'tgz',
           'tbz2',
+          'xz',
+          '7z',
         ],
       );
 
@@ -297,6 +303,71 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
     } catch (e) {
       setState(() {
         _error = 'Error picking file: $e';
+      });
+    }
+  }
+
+  Future<void> _pickExternalSfzFolder() async {
+    try {
+      final dirPath = await FilePicker.getDirectoryPath(
+        dialogTitle: 'Select Folder containing .sfz and audio files',
+      );
+
+      if (dirPath == null || dirPath.isEmpty) return;
+
+      final dir = Directory(dirPath);
+      if (!dir.existsSync()) return;
+
+      // Find all .sfz files inside the chosen directory
+      final sfzFiles = dir
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) => f.path.toLowerCase().endsWith('.sfz'))
+          .toList();
+
+      if (sfzFiles.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('No .sfz files found inside "$dirPath"')),
+          );
+        }
+        return;
+      }
+
+      File targetFile = sfzFiles.first;
+      if (sfzFiles.length > 1 && mounted) {
+        final chosen = await showDialog<File>(
+          context: context,
+          builder: (ctx) => SimpleDialog(
+            title: const Text('Select SFZ File'),
+            children: sfzFiles
+                .map(
+                  (f) => SimpleDialogOption(
+                    onPressed: () => Navigator.pop(ctx, f),
+                    child: Text(p.basename(f.path)),
+                  ),
+                )
+                .toList(),
+          ),
+        );
+        if (chosen != null) targetFile = chosen;
+      }
+
+      final name = p.basename(targetFile.path);
+      final entry = SoundFontSourceEntry.file(targetFile.path, name: name);
+
+      final existingIndex = _sources.indexWhere((s) => s.id == entry.id);
+      if (existingIndex >= 0) {
+        _selectedSource = _sources[existingIndex];
+      } else {
+        _sources.add(entry);
+        _selectedSource = entry;
+      }
+
+      await _loadSoundFontEntry(_selectedSource, askPreload: true);
+    } catch (e) {
+      setState(() {
+        _error = 'Error selecting folder: $e';
       });
     }
   }
@@ -357,10 +428,38 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
       appBar: AppBar(
         title: const Text('SoundFont Reader Inspector'),
         actions: [
-          IconButton(
+          PopupMenuButton<String>(
             icon: const Icon(Icons.file_open_outlined),
-            tooltip: 'Open external SoundFont (sf2, sf3, sfz, zip, gz, tar...)',
-            onPressed: _pickExternalSoundFont,
+            tooltip: 'Open SoundFont File or Folder',
+            onSelected: (val) {
+              if (val == 'file') {
+                _pickExternalSoundFont();
+              } else if (val == 'folder') {
+                _pickExternalSfzFolder();
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'file',
+                child: Row(
+                  children: [
+                    Icon(Icons.insert_drive_file, size: 20),
+                    SizedBox(width: 8),
+                    Text('Open File (.sf2, .sf3, .zip, .tar...)'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'folder',
+                child: Row(
+                  children: [
+                    Icon(Icons.folder_open, size: 20),
+                    SizedBox(width: 8),
+                    Text('Open SFZ Folder'),
+                  ],
+                ),
+              ),
+            ],
           ),
           Padding(
             padding: const EdgeInsets.only(right: 16.0),
@@ -492,15 +591,18 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
                       Text(
                         '${(_preloadProgress * 100).toStringAsFixed(0)}%',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ],
                   )
                 else if (_isPreloaded)
                   const Chip(
-                    avatar: Icon(Icons.check_circle,
-                        size: 18, color: Colors.greenAccent),
+                    avatar: Icon(
+                      Icons.check_circle,
+                      size: 18,
+                      color: Colors.greenAccent,
+                    ),
                     label: Text('Preloaded'),
                   )
                 else
