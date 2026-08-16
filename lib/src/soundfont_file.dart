@@ -8,6 +8,8 @@ import 'models/soundfont_format.dart';
 import 'parsers/sf2_parser.dart';
 import 'parsers/sf3_parser.dart';
 import 'parsers/sfz_parser.dart';
+import 'player/player_options.dart';
+import 'player/soundfont_player.dart';
 import 'sources/soundfont_source.dart';
 
 /// Unified main interface for reading and querying SoundFont files (SF2, SF3, and SFZ).
@@ -40,6 +42,20 @@ abstract class SoundFontFile {
 
   /// Retrieves the raw compressed or uncompressed audio bytes for a specific [SampleInfo].
   Future<Uint8List> getSampleBytes(SampleInfo sample);
+
+  /// Retrieves a stream of audio byte chunks for a specific [SampleInfo].
+  Stream<Uint8List> getSampleByteStream(
+    SampleInfo sample, {
+    int chunkSize = 65536,
+  });
+
+  /// Creates a [SoundFontPlayer] instance for audio playback of this SoundFont.
+  SoundFontPlayer createPlayer({SoundFontPlayerOptions? options}) {
+    return SoundFontPlayer(
+      soundFont: this,
+      options: options ?? const SoundFontPlayerOptions(),
+    );
+  }
 
   /// Load a SoundFont from an in-memory byte buffer.
   static Future<SoundFontFile> fromBytes(
@@ -174,6 +190,17 @@ class _Sf2SoundFontFile extends SoundFontFile {
     if (sample.byteLength <= 0) return Uint8List(0);
     return await _source.getBytes(sample.byteOffset, sample.byteLength);
   }
+
+  @override
+  Stream<Uint8List> getSampleByteStream(
+    SampleInfo sample, {
+    int chunkSize = 65536,
+  }) {
+    if (sample.byteLength <= 0) {
+      return Stream.value(Uint8List(0));
+    }
+    return _source.getByteStream(sample.byteOffset, sample.byteLength, chunkSize);
+  }
 }
 
 class _SfzSoundFontFile extends SoundFontFile {
@@ -205,5 +232,19 @@ class _SfzSoundFontFile extends SoundFontFile {
       return await _data.activeSource.getSubFileBytes(sample.samplePath!);
     }
     return Uint8List(0);
+  }
+
+  @override
+  Stream<Uint8List> getSampleByteStream(
+    SampleInfo sample, {
+    int chunkSize = 65536,
+  }) {
+    if (sample.samplePath != null && sample.samplePath!.isNotEmpty) {
+      return _data.activeSource.getSubFileByteStream(
+        sample.samplePath!,
+        chunkSize: chunkSize,
+      );
+    }
+    return Stream.value(Uint8List(0));
   }
 }

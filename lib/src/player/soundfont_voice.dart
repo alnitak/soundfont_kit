@@ -1,0 +1,62 @@
+import 'package:flutter_soloud/flutter_soloud.dart';
+
+/// Represents one or more active [SoundHandle] instances triggered for a note.
+class SoundFontVoice {
+  /// The MIDI key (0..127) for this voice.
+  final int key;
+
+  /// The MIDI velocity (0..127) for this voice.
+  final int velocity;
+
+  /// The active SoLoud sound handles playing this voice.
+  final List<SoundHandle> handles;
+
+  /// The backing audio sources.
+  final List<AudioSource> sources;
+
+  /// The volume envelope release duration.
+  final Duration releaseDuration;
+
+  bool _isReleased = false;
+
+  /// Whether note-off release has already been triggered for this voice.
+  bool get isReleased => _isReleased;
+
+  SoundFontVoice({
+    required this.key,
+    required this.velocity,
+    required this.handles,
+    this.sources = const [],
+    this.releaseDuration = const Duration(milliseconds: 150),
+  });
+
+  /// Triggers note-off volume fade and scheduled stop.
+  Future<void> release({Duration? customRelease}) async {
+    if (_isReleased) return;
+    _isReleased = true;
+
+    final duration = customRelease ?? releaseDuration;
+    for (final handle in handles) {
+      if (!SoLoud.instance.getIsValidVoiceHandle(handle)) continue;
+      try {
+        if (duration > Duration.zero) {
+          SoLoud.instance.fadeVolume(handle, 0.0, duration);
+          SoLoud.instance.scheduleStop(handle, duration);
+        } else {
+          await SoLoud.instance.stop(handle);
+        }
+      } catch (_) {}
+    }
+  }
+
+  /// Immediately stops all voice handles.
+  Future<void> stop() async {
+    _isReleased = true;
+    for (final handle in handles) {
+      if (!SoLoud.instance.getIsValidVoiceHandle(handle)) continue;
+      try {
+        await SoLoud.instance.stop(handle);
+      } catch (_) {}
+    }
+  }
+}

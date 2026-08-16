@@ -18,6 +18,35 @@ abstract class SoundFontSource {
   /// Fetches byte buffer of the main file or a byte slice.
   Future<Uint8List> getBytes([int? offset, int? length]);
 
+  /// Returns a stream of byte chunks for a given offset and length.
+  Stream<Uint8List> getByteStream([
+    int? offset,
+    int? length,
+    int chunkSize = 65536,
+  ]) async* {
+    final totalBytes = await getBytes(offset, length);
+    for (int i = 0; i < totalBytes.length; i += chunkSize) {
+      final end = (i + chunkSize < totalBytes.length)
+          ? i + chunkSize
+          : totalBytes.length;
+      yield Uint8List.sublistView(totalBytes, i, end);
+    }
+  }
+
+  /// Returns a stream of byte chunks for a subfile.
+  Stream<Uint8List> getSubFileByteStream(
+    String relativePath, {
+    int chunkSize = 65536,
+  }) async* {
+    final totalBytes = await getSubFileBytes(relativePath);
+    for (int i = 0; i < totalBytes.length; i += chunkSize) {
+      final end = (i + chunkSize < totalBytes.length)
+          ? i + chunkSize
+          : totalBytes.length;
+      yield Uint8List.sublistView(totalBytes, i, end);
+    }
+  }
+
   /// Reads a text representation of the file (or subfile).
   Future<String> readAsString([String? relativePath]) async {
     final bytes = relativePath != null

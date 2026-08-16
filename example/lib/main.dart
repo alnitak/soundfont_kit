@@ -67,6 +67,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
   bool _isLoading = false;
   String? _error;
   SoundFontFile? _soundFont;
+  SoundFontPlayer? _player;
   SampleInfo? _selectedSample;
   String? _sampleByteDetails;
 
@@ -77,19 +78,29 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
     _loadSoundFont(_selectedAsset);
   }
 
+  @override
+  void dispose() {
+    _player?.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadSoundFont(String assetPath) async {
+    _player?.dispose();
     setState(() {
       _isLoading = true;
       _error = null;
       _soundFont = null;
+      _player = null;
       _selectedSample = null;
       _sampleByteDetails = null;
     });
 
     try {
       final sf = await SoundFontFile.fromAsset(assetPath);
+      final player = sf.createPlayer();
       setState(() {
         _soundFont = sf;
+        _player = player;
         _isLoading = false;
       });
     } catch (e) {
@@ -126,48 +137,25 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
     }
   }
 
-  Future<void> _playSample(SampleInfo sample) async {
-    if (_soundFont == null) return;
-    final bytes = await _soundFont!.getSampleBytes(sample);
-    if (bytes.isEmpty) return;
-    final BufferType format = switch (sample.compression) {
-      SampleCompression.pcm8 => BufferType.s8,
-      SampleCompression.pcm16 => BufferType.s16le,
-      SampleCompression.pcm32 => BufferType.s32le,
-      SampleCompression.pcmFloat32 => BufferType.f32le,
-      SampleCompression.ogg => BufferType.auto,
-      SampleCompression.flac => BufferType.auto,
-      SampleCompression.wav => BufferType.auto,
-    };
-    final channels = switch (sample.channels) {
-      1 => Channels.mono,
-      2 => Channels.stereo,
-      4 => Channels.quad,
-      6 => Channels.surround51,
-      8 => Channels.dolby71,
-      _ => Channels.stereo,
-    };
-    final audio = SoLoud.instance.setBufferStream(
-      autoDispose: true,
-      bufferingType: BufferingType.released,
-      bufferingTimeNeeds: 0,
-      format: format,
-      channels: channels,
-      sampleRate: sample.sampleRate,
-    );
-    audio.soundEvents.listen((event) {
-      if (event.event == SoundEventType.soundDisposed) {
-        print('Audio Disposed!!!');
-      }
-    });
-    SoLoud.instance.addAudioDataStream(audio, bytes);
-    SoLoud.instance.setDataIsEnded(audio);
-    SoLoud.instance.play(audio);
-    debugPrint(
-      'Audio length: ${SoLoud.instance.getLength(audio).inMilliseconds}',
-    );
-    debugPrint('Active voice count: ${SoLoud.instance.getActiveVoiceCount()}');
-    debugPrint('All voice count: ${SoLoud.instance.activeSounds.length}');
+  Future<SoundFontVoice> _playSample(SampleInfo sample) async {
+    if (_player == null) {
+      return SoundFontVoice(key: 60, velocity: 100, handles: []);
+    }
+    return await _player!.playSample(sample);
+  }
+
+  Future<SoundFontVoice> _playInstrument(Instrument instrument, {int key = 60}) async {
+    if (_player == null) {
+      return SoundFontVoice(key: key, velocity: 100, handles: []);
+    }
+    return await _player!.playInstrument(instrument, key: key, velocity: 100);
+  }
+
+  Future<SoundFontVoice> _playPreset(Preset preset, {int key = 60}) async {
+    if (_player == null) {
+      return SoundFontVoice(key: key, velocity: 100, handles: []);
+    }
+    return await _player!.playPreset(preset, key: key, velocity: 100);
   }
 
   @override
@@ -316,7 +304,13 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
             '${preset.name} (Bank ${preset.bank}, Program ${preset.program})',
           ),
           subtitle: Text('${preset.zones.length} Zones'),
+          trailing: HoldPlayButton(
+            tooltip: 'Hold to play Preset',
+            onStartPlay: () => _playPreset(preset),
+          ),
           children: preset.zones.map((zone) {
+            final key = zone.rootKey ??
+                ((zone.keyRangeMin + zone.keyRangeMax) ~/ 2).clamp(0, 127);
             return ListTile(
               dense: true,
               leading: const Icon(Icons.layers, size: 18),
@@ -325,6 +319,11 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
               ),
               subtitle: Text(
                 'RootKey: ${zone.rootKey ?? "-"} | Pan: ${zone.pan ?? 0.0} | Attenuation: ${zone.attenuation ?? 0.0} dB',
+              ),
+              trailing: HoldPlayButton(
+                size: 20,
+                tooltip: 'Hold to play Note $key',
+                onStartPlay: () => _playPreset(preset, key: key),
               ),
             );
           }).toList(),
@@ -344,7 +343,13 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
         return ExpansionTile(
           title: Text(inst.name),
           subtitle: Text('${inst.zones.length} Zones'),
+          trailing: HoldPlayButton(
+            tooltip: 'Hold to play Instrument',
+            onStartPlay: () => _playInstrument(inst),
+          ),
           children: inst.zones.map((zone) {
+            final key = zone.rootKey ??
+                ((zone.keyRangeMin + zone.keyRangeMax) ~/ 2).clamp(0, 127);
             return ListTile(
               dense: true,
               leading: const Icon(Icons.graphic_eq, size: 18),
@@ -353,6 +358,11 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
               ),
               subtitle: Text(
                 'Key: ${zone.keyRangeMin}..${zone.keyRangeMax} | RootKey: ${zone.rootKey ?? "-"}',
+              ),
+              trailing: HoldPlayButton(
+                size: 20,
+                tooltip: 'Hold to play Note $key',
+                onStartPlay: () => _playInstrument(inst, key: key),
               ),
             );
           }).toList(),
@@ -405,10 +415,9 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    IconButton(
-                      icon: const Icon(Icons.play_arrow),
-                      tooltip: 'Play',
-                      onPressed: () => _playSample(sample),
+                    HoldPlayButton(
+                      tooltip: 'Hold to play sample',
+                      onStartPlay: () => _playSample(sample),
                     ),
                     IconButton(
                       icon: const Icon(Icons.file_download),
@@ -422,6 +431,91 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// A button that plays sound on press/down and releases/stops when pointer is up or cancelled.
+class HoldPlayButton extends StatefulWidget {
+  final Future<SoundFontVoice> Function() onStartPlay;
+  final Future<void> Function(SoundFontVoice voice)? onStopPlay;
+  final String? tooltip;
+  final double size;
+
+  const HoldPlayButton({
+    super.key,
+    required this.onStartPlay,
+    this.onStopPlay,
+    this.tooltip,
+    this.size = 24.0,
+  });
+
+  @override
+  State<HoldPlayButton> createState() => _HoldPlayButtonState();
+}
+
+class _HoldPlayButtonState extends State<HoldPlayButton> {
+  bool _isPlaying = false;
+  SoundFontVoice? _activeVoice;
+
+  Future<void> _start() async {
+    if (_isPlaying) return;
+    setState(() => _isPlaying = true);
+    try {
+      final voice = await widget.onStartPlay();
+      if (!mounted || !_isPlaying) {
+        // User already released before asynchronous start finished
+        if (widget.onStopPlay != null) {
+          await widget.onStopPlay!(voice);
+        } else {
+          await voice.release();
+        }
+        _activeVoice = null;
+      } else {
+        _activeVoice = voice;
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isPlaying = false);
+    }
+  }
+
+  Future<void> _stop() async {
+    if (!_isPlaying) return;
+    setState(() => _isPlaying = false);
+    final voice = _activeVoice;
+    _activeVoice = null;
+    if (voice != null) {
+      if (widget.onStopPlay != null) {
+        await widget.onStopPlay!(voice);
+      } else {
+        await voice.release();
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = _isPlaying
+        ? theme.colorScheme.primary
+        : theme.colorScheme.onSurfaceVariant;
+
+    return Tooltip(
+      message: widget.tooltip ?? 'Hold to play',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (_) => _start(),
+        onTapUp: (_) => _stop(),
+        onTapCancel: () => _stop(),
+        child: Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Icon(
+            _isPlaying ? Icons.volume_up : Icons.play_arrow,
+            color: color,
+            size: widget.size,
+          ),
+        ),
+      ),
     );
   }
 }

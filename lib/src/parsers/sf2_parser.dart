@@ -192,7 +192,7 @@ class Sf2Parser {
       final sampleRate = reader.readUint32();
       final originalPitch = reader.readUint8();
       final pitchCorrection = reader.readInt8();
-      reader.readUint16(); // sampleLink
+      final sampleLink = reader.readUint16();
       final sampleType = reader.readUint16();
 
       // Skip EOS terminal record or empty sample headers
@@ -222,6 +222,7 @@ class Sf2Parser {
         compression: isOgg ? SampleCompression.ogg : SampleCompression.pcm16,
         channels: 1,
         sampleType: sampleType,
+        sampleLink: sampleLink,
       ));
     }
     return list;
