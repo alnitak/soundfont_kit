@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:soundfont_reader/soundfont_reader.dart';
 import 'package:flutter_soloud/flutter_soloud.dart';
 import 'package:logging/logging.dart';
+import 'piano/docked_piano_panel.dart';
 
 void main() async {
   Logger.root.level = kDebugMode ? Level.ALL : Level.INFO;
@@ -68,6 +69,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
   String? _error;
   SoundFontFile? _soundFont;
   SoundFontPlayer? _player;
+  SelectedPlaybackTarget? _selectedTarget;
   SampleInfo? _selectedSample;
   String? _sampleByteDetails;
 
@@ -91,6 +93,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
       _error = null;
       _soundFont = null;
       _player = null;
+      _selectedTarget = null;
       _selectedSample = null;
       _sampleByteDetails = null;
     });
@@ -98,9 +101,19 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
     try {
       final sf = await SoundFontFile.fromAsset(assetPath);
       final player = sf.createPlayer();
+      SelectedPlaybackTarget? target;
+      if (sf.presets.isNotEmpty) {
+        target = SelectedPlaybackTarget.preset(sf.presets.first);
+      } else if (sf.instruments.isNotEmpty) {
+        target = SelectedPlaybackTarget.instrument(sf.instruments.first);
+      } else if (sf.samples.isNotEmpty) {
+        target = SelectedPlaybackTarget.sample(sf.samples.first);
+      }
+
       setState(() {
         _soundFont = sf;
         _player = player;
+        _selectedTarget = target;
         _isLoading = false;
       });
     } catch (e) {
@@ -286,6 +299,10 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
               ],
             ),
           ),
+          DockedPianoPanel(
+            player: _player,
+            selectedTarget: _selectedTarget,
+          ),
         ],
       ),
     );
@@ -299,20 +316,74 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
       itemCount: sf.presets.length,
       itemBuilder: (context, index) {
         final preset = sf.presets[index];
+        final isSelected = _selectedTarget?.type == PlaybackTargetType.preset &&
+            _selectedTarget?.preset?.name == preset.name &&
+            _selectedTarget?.preset?.bank == preset.bank &&
+            _selectedTarget?.preset?.program == preset.program;
+
         return ExpansionTile(
+          shape: isSelected
+              ? RoundedRectangleBorder(
+                  side: BorderSide(
+                    color: Theme.of(context).colorScheme.primary,
+                    width: 1.5,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                )
+              : null,
+          collapsedShape: isSelected
+              ? RoundedRectangleBorder(
+                  side: BorderSide(
+                    color: Theme.of(context).colorScheme.primary,
+                    width: 1.5,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                )
+              : null,
+          onExpansionChanged: (expanded) {
+            if (expanded) {
+              setState(() {
+                _selectedTarget = SelectedPlaybackTarget.preset(preset);
+              });
+            }
+          },
           title: Text(
             '${preset.name} (Bank ${preset.bank}, Program ${preset.program})',
+            style: TextStyle(
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              color: isSelected ? Theme.of(context).colorScheme.primary : null,
+            ),
           ),
           subtitle: Text('${preset.zones.length} Zones'),
           trailing: HoldPlayButton(
             tooltip: 'Hold to play Preset',
-            onStartPlay: () => _playPreset(preset),
+            onStartPlay: () {
+              setState(() {
+                _selectedTarget = SelectedPlaybackTarget.preset(preset);
+              });
+              return _playPreset(preset);
+            },
           ),
           children: preset.zones.map((zone) {
             final key = zone.rootKey ??
                 ((zone.keyRangeMin + zone.keyRangeMax) ~/ 2).clamp(0, 127);
+            final isZoneSelected = isSelected &&
+                _selectedTarget?.resolvedMarkedKey == key;
             return ListTile(
               dense: true,
+              selected: isZoneSelected,
+              selectedTileColor: Theme.of(context)
+                  .colorScheme
+                  .primaryContainer
+                  .withValues(alpha: 0.15),
+              onTap: () {
+                setState(() {
+                  _selectedTarget = SelectedPlaybackTarget.preset(
+                    preset,
+                    markedKey: key,
+                  );
+                });
+              },
               leading: const Icon(Icons.layers, size: 18),
               title: Text(
                 'Key Range: ${zone.keyRangeMin}..${zone.keyRangeMax} | Vel: ${zone.velRangeMin}..${zone.velRangeMax}',
@@ -323,7 +394,15 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
               trailing: HoldPlayButton(
                 size: 20,
                 tooltip: 'Hold to play Note $key',
-                onStartPlay: () => _playPreset(preset, key: key),
+                onStartPlay: () {
+                  setState(() {
+                    _selectedTarget = SelectedPlaybackTarget.preset(
+                      preset,
+                      markedKey: key,
+                    );
+                  });
+                  return _playPreset(preset, key: key);
+                },
               ),
             );
           }).toList(),
@@ -340,18 +419,73 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
       itemCount: sf.instruments.length,
       itemBuilder: (context, index) {
         final inst = sf.instruments[index];
+        final isSelected =
+            _selectedTarget?.type == PlaybackTargetType.instrument &&
+                _selectedTarget?.instrument?.name == inst.name;
+
         return ExpansionTile(
-          title: Text(inst.name),
+          shape: isSelected
+              ? RoundedRectangleBorder(
+                  side: BorderSide(
+                    color: Theme.of(context).colorScheme.primary,
+                    width: 1.5,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                )
+              : null,
+          collapsedShape: isSelected
+              ? RoundedRectangleBorder(
+                  side: BorderSide(
+                    color: Theme.of(context).colorScheme.primary,
+                    width: 1.5,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                )
+              : null,
+          onExpansionChanged: (expanded) {
+            if (expanded) {
+              setState(() {
+                _selectedTarget = SelectedPlaybackTarget.instrument(inst);
+              });
+            }
+          },
+          title: Text(
+            inst.name,
+            style: TextStyle(
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              color: isSelected ? Theme.of(context).colorScheme.primary : null,
+            ),
+          ),
           subtitle: Text('${inst.zones.length} Zones'),
           trailing: HoldPlayButton(
             tooltip: 'Hold to play Instrument',
-            onStartPlay: () => _playInstrument(inst),
+            onStartPlay: () {
+              setState(() {
+                _selectedTarget = SelectedPlaybackTarget.instrument(inst);
+              });
+              return _playInstrument(inst);
+            },
           ),
           children: inst.zones.map((zone) {
             final key = zone.rootKey ??
                 ((zone.keyRangeMin + zone.keyRangeMax) ~/ 2).clamp(0, 127);
+            final isZoneSelected = isSelected &&
+                _selectedTarget?.resolvedMarkedKey == key;
             return ListTile(
               dense: true,
+              selected: isZoneSelected,
+              selectedTileColor: Theme.of(context)
+                  .colorScheme
+                  .primaryContainer
+                  .withValues(alpha: 0.15),
+              onTap: () {
+                setState(() {
+                  _selectedTarget = SelectedPlaybackTarget.instrument(
+                    inst,
+                    markedKey: key,
+                  );
+                });
+              },
               leading: const Icon(Icons.graphic_eq, size: 18),
               title: Text(
                 'Sample ID: ${zone.sampleID ?? "-"} (${zone.sampleRef?.name ?? "N/A"})',
@@ -362,7 +496,15 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
               trailing: HoldPlayButton(
                 size: 20,
                 tooltip: 'Hold to play Note $key',
-                onStartPlay: () => _playInstrument(inst, key: key),
+                onStartPlay: () {
+                  setState(() {
+                    _selectedTarget = SelectedPlaybackTarget.instrument(
+                      inst,
+                      markedKey: key,
+                    );
+                  });
+                  return _playInstrument(inst, key: key);
+                },
               ),
             );
           }).toList(),
@@ -404,8 +546,35 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
             itemCount: sf.samples.length,
             itemBuilder: (context, index) {
               final sample = sf.samples[index];
+              final isSelected =
+                  _selectedTarget?.type == PlaybackTargetType.sample &&
+                      _selectedTarget?.sample?.id == sample.id;
+
               return ListTile(
-                title: Text('${sample.name} [ID: ${sample.id}]'),
+                selected: isSelected,
+                selectedTileColor: Theme.of(context)
+                    .colorScheme
+                    .primaryContainer
+                    .withValues(alpha: 0.2),
+                onTap: () {
+                  setState(() {
+                    _selectedSample = sample;
+                    _selectedTarget = SelectedPlaybackTarget.sample(
+                      sample,
+                      markedKey: sample.originalPitch,
+                    );
+                  });
+                },
+                title: Text(
+                  '${sample.name} [ID: ${sample.id}]',
+                  style: TextStyle(
+                    fontWeight:
+                        isSelected ? FontWeight.bold : FontWeight.normal,
+                    color: isSelected
+                        ? Theme.of(context).colorScheme.primary
+                        : null,
+                  ),
+                ),
                 subtitle: Text(
                   'Rate: ${sample.sampleRate} Hz | '
                   'Key: ${sample.originalPitch} | '
@@ -417,7 +586,16 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
                   children: [
                     HoldPlayButton(
                       tooltip: 'Hold to play sample',
-                      onStartPlay: () => _playSample(sample),
+                      onStartPlay: () {
+                        setState(() {
+                          _selectedSample = sample;
+                          _selectedTarget = SelectedPlaybackTarget.sample(
+                            sample,
+                            markedKey: sample.originalPitch,
+                          );
+                        });
+                        return _playSample(sample);
+                      },
                     ),
                     IconButton(
                       icon: const Icon(Icons.file_download),

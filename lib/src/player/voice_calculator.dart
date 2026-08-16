@@ -100,15 +100,18 @@ class VoiceCalculator {
     required SampleInfo sample,
     Zone? zone,
   }) {
+    final startFrames = zone?.loopStart ?? sample.loopStart;
+    final endFrames = zone?.loopEnd ?? sample.loopEnd;
+
     final loopMode = zone?.loopMode ??
-        (sample.loopEnd > sample.loopStart
+        (endFrames > startFrames && sample.compression != SampleCompression.ogg
             ? LoopMode.continuous
             : LoopMode.none);
 
     final shouldLoop = loopMode == LoopMode.continuous ||
         loopMode == LoopMode.sustain;
 
-    if (!shouldLoop || sample.sampleRate <= 0) {
+    if (!shouldLoop || sample.sampleRate <= 0 || endFrames <= startFrames) {
       return (
         isLooping: false,
         loopStart: Duration.zero,
@@ -116,16 +119,19 @@ class VoiceCalculator {
       );
     }
 
-    final startFrames = zone?.loopStart ?? sample.loopStart;
-    final endFrames = zone?.loopEnd ?? sample.loopEnd;
-
     final startMicros = ((startFrames / sample.sampleRate) * 1000000).round();
     final endMicros = ((endFrames / sample.sampleRate) * 1000000).round();
 
+    if (endMicros <= startMicros) {
+      return (
+        isLooping: false,
+        loopStart: Duration.zero,
+        loopEnd: null,
+      );
+    }
+
     final loopStart = Duration(microseconds: math.max(0, startMicros));
-    final loopEnd = endMicros > startMicros
-        ? Duration(microseconds: endMicros)
-        : null;
+    final loopEnd = Duration(microseconds: endMicros);
 
     return (
       isLooping: true,

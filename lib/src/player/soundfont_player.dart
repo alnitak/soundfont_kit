@@ -120,13 +120,15 @@ class SoundFontPlayer {
       }
     }
 
+    final validLoop = shouldLoop && loopEnd != null && loopEnd > loopStart;
+
     final handle = SoLoud.instance.play(
       audio,
       volume: vol,
       pan: p,
-      looping: shouldLoop,
-      loopingStartAt: loopStart,
-      loopingEndAt: loopEnd,
+      looping: validLoop,
+      loopingStartAt: validLoop ? loopStart : Duration.zero,
+      loopingEndAt: validLoop ? loopEnd : null,
       busId: options.defaultBusId,
     );
 
@@ -531,13 +533,17 @@ class SoundFontPlayer {
       }
     }
 
+    final validLoop = loopInfo.isLooping &&
+        loopInfo.loopEnd != null &&
+        loopInfo.loopEnd! > loopInfo.loopStart;
+
     final handle = SoLoud.instance.play(
       audio,
       volume: vol,
       pan: p,
-      looping: loopInfo.isLooping,
-      loopingStartAt: loopInfo.loopStart,
-      loopingEndAt: loopInfo.loopEnd,
+      looping: validLoop,
+      loopingStartAt: validLoop ? loopInfo.loopStart : Duration.zero,
+      loopingEndAt: validLoop ? loopInfo.loopEnd : null,
       busId: options.defaultBusId,
     );
 
