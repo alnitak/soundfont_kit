@@ -10,6 +10,7 @@ import 'package:soundfont_reader/soundfont_reader.dart';
 import 'package:flutter_soloud/flutter_soloud.dart';
 import 'package:logging/logging.dart';
 import 'piano/docked_piano_panel.dart';
+import 'piano/sample_waveform.dart';
 
 void main() async {
   Logger.root.level = kDebugMode ? Level.ALL : Level.INFO;
@@ -270,7 +271,6 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
           'tgz',
           'tbz2',
           'xz',
-          '7z',
         ],
       );
 
@@ -913,6 +913,13 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    SampleWaveform(
+                      soundFont: sf,
+                      sample: sample,
+                      width: 220,
+                      height: 50,
+                    ),
+                    const SizedBox(width: 8),
                     HoldPlayButton(
                       tooltip: 'Hold to play sample',
                       onStartPlay: () {
