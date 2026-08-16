@@ -63,8 +63,11 @@ void main() {
 
       expect(sf.format, equals(SoundFontFormat.sfz));
       expect(sf.presets, isNotEmpty);
-      expect(sf.instruments, isNotEmpty);
-      expect(sf.samples, isNotEmpty);
+      expect(sf.instruments.first.zones, isNotEmpty);
+      final zoneF6 = sf.instruments.first.zones.firstWhere((z) => z.opcodes['key'] == 'F6');
+      expect(zoneF6.keyRangeMin, equals(89));
+      expect(zoneF6.keyRangeMax, equals(89));
+      expect(zoneF6.rootKey, equals(89));
 
       final firstSample = sf.samples.first;
       expect(firstSample.samplePath, isNotNull);

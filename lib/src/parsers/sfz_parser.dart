@@ -96,12 +96,10 @@ class SfzParser {
         comp = SampleCompression.ogg;
       }
 
-      int rootKey = int.tryParse(merged['pitch_keycenter'] ?? '') ??
-          int.tryParse(merged['key'] ?? '') ?? 60;
-      int loKey = int.tryParse(merged['lokey'] ?? '') ??
-          int.tryParse(merged['key'] ?? '') ?? 0;
-      int hiKey = int.tryParse(merged['hikey'] ?? '') ??
-          int.tryParse(merged['key'] ?? '') ?? 127;
+      final parsedKey = _parseNote(merged['key']);
+      final rootKey = _parseNote(merged['pitch_keycenter']) ?? parsedKey ?? 60;
+      final loKey = _parseNote(merged['lokey']) ?? parsedKey ?? 0;
+      final hiKey = _parseNote(merged['hikey']) ?? parsedKey ?? 127;
 
       int loVel = int.tryParse(merged['lovel'] ?? '') ?? 0;
       int hiVel = int.tryParse(merged['hivel'] ?? '') ?? 127;
@@ -218,11 +216,19 @@ class SfzParser {
       zones: zones,
     );
 
+    final presetZone = Zone(
+      keyRangeMin: 0,
+      keyRangeMax: 127,
+      velRangeMin: 0,
+      velRangeMax: 127,
+      instrumentID: 0,
+    );
+
     final preset = Preset(
       bank: 0,
       program: 0,
       name: name,
-      zones: zones,
+      zones: [presetZone],
     );
 
     return SfzData(
@@ -233,6 +239,42 @@ class SfzParser {
       samples: samples,
       activeSource: currentSource,
     );
+  }
+
+  /// Parses a note value from SFZ opcode, which can be an integer (e.g. "60")
+  /// or note name (e.g. "C4", "F#6", "Eb5", "Db3").
+  static int? _parseNote(String? value) {
+    if (value == null || value.trim().isEmpty) return null;
+    final clean = value.trim().toLowerCase();
+    final intVal = int.tryParse(clean);
+    if (intVal != null) return intVal;
+
+    final match = RegExp(r'^([a-g])([#b]?)(-?\d+)$').firstMatch(clean);
+    if (match == null) return null;
+
+    final noteLetter = match.group(1)!;
+    final accidental = match.group(2)!;
+    final octave = int.tryParse(match.group(3)!) ?? 4;
+
+    int noteInOctave = switch (noteLetter) {
+      'c' => 0,
+      'd' => 2,
+      'e' => 4,
+      'f' => 5,
+      'g' => 7,
+      'a' => 9,
+      'b' => 11,
+      _ => 0,
+    };
+
+    if (accidental == '#' || accidental == '+') {
+      noteInOctave += 1;
+    } else if (accidental == 'b' || accidental == '-') {
+      noteInOctave -= 1;
+    }
+
+    final midiNote = (octave + 1) * 12 + noteInOctave;
+    return midiNote.clamp(0, 127);
   }
 
   String _stripComments(String text) {
