@@ -1,7 +1,31 @@
+import 'dart:developer' as dev;
+
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:soundfont_reader/soundfont_reader.dart';
+import 'package:flutter_soloud/flutter_soloud.dart';
+import 'package:logging/logging.dart';
 
-void main() {
+void main() async {
+  Logger.root.level = kDebugMode ? Level.ALL : Level.INFO;
+  Logger.root.onRecord.listen((record) {
+    dev.log(
+      record.message,
+      time: record.time,
+      level: record.level.value,
+      name: record.loggerName,
+      zone: record.zone,
+      error: record.error,
+      stackTrace: record.stackTrace,
+    );
+  });
+
+  WidgetsFlutterBinding.ensureInitialized();
+
+  /// Initialize the player.
+  await SoLoud.instance.init();
+  SoLoud.instance.setMaxActiveVoiceCount(128);
+
   runApp(const SoundFontReaderDemoApp());
 }
 
@@ -28,14 +52,15 @@ class SoundFontInspectorScreen extends StatefulWidget {
   const SoundFontInspectorScreen({super.key});
 
   @override
-  State<SoundFontInspectorScreen> createState() => _SoundFontInspectorScreenState();
+  State<SoundFontInspectorScreen> createState() =>
+      _SoundFontInspectorScreenState();
 }
 
 class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
   final List<String> _assetFiles = [
-    'assets/Rhodes - minimal (from Dream Piano).sf2',
-    'assets/Rhodes - minimal (from Dream Piano).sf3',
-    'assets/Dream Piano (converted).sfz+flac.zip',
+    'assets/Celesta (minimal).sf2',
+    'assets/Celesta (minimal).sf3',
+    'assets/Celesta (converted).sfz+flac.zip',
   ];
 
   late String _selectedAsset;
@@ -85,7 +110,10 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
     try {
       final bytes = await _soundFont!.getSampleBytes(sample);
       final magic = bytes.length >= 4
-          ? bytes.sublist(0, 4).map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')
+          ? bytes
+                .sublist(0, 4)
+                .map((b) => b.toRadixString(16).padLeft(2, '0'))
+                .join(' ')
           : 'None';
       setState(() {
         _sampleByteDetails =
@@ -96,6 +124,50 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
         _sampleByteDetails = 'Error reading sample bytes: $e';
       });
     }
+  }
+
+  Future<void> _playSample(SampleInfo sample) async {
+    if (_soundFont == null) return;
+    final bytes = await _soundFont!.getSampleBytes(sample);
+    if (bytes.isEmpty) return;
+    final BufferType format = switch (sample.compression) {
+      SampleCompression.pcm8 => BufferType.s8,
+      SampleCompression.pcm16 => BufferType.s16le,
+      SampleCompression.pcm32 => BufferType.s32le,
+      SampleCompression.pcmFloat32 => BufferType.f32le,
+      SampleCompression.ogg => BufferType.auto,
+      SampleCompression.flac => BufferType.auto,
+      SampleCompression.wav => BufferType.auto,
+    };
+    final channels = switch (sample.channels) {
+      1 => Channels.mono,
+      2 => Channels.stereo,
+      4 => Channels.quad,
+      6 => Channels.surround51,
+      8 => Channels.dolby71,
+      _ => Channels.stereo,
+    };
+    final audio = SoLoud.instance.setBufferStream(
+      autoDispose: true,
+      bufferingType: BufferingType.released,
+      bufferingTimeNeeds: 0,
+      format: format,
+      channels: channels,
+      sampleRate: sample.sampleRate,
+    );
+    audio.soundEvents.listen((event) {
+      if (event.event == SoundEventType.soundDisposed) {
+        print('Audio Disposed!!!');
+      }
+    });
+    SoLoud.instance.addAudioDataStream(audio, bytes);
+    SoLoud.instance.setDataIsEnded(audio);
+    SoLoud.instance.play(audio);
+    debugPrint(
+      'Audio length: ${SoLoud.instance.getLength(audio).inMilliseconds}',
+    );
+    debugPrint('Active voice count: ${SoLoud.instance.getActiveVoiceCount()}');
+    debugPrint('All voice count: ${SoLoud.instance.activeSounds.length}');
   }
 
   @override
@@ -113,7 +185,10 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
                 final label = asset.split('/').last;
                 return DropdownMenuItem<String>(
                   value: asset,
-                  child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  child: Text(
+                    label,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                 );
               }).toList(),
               onChanged: (val) {
@@ -151,9 +226,16 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.error_outline, size: 64, color: Colors.redAccent),
+              const Icon(
+                Icons.error_outline,
+                size: 64,
+                color: Colors.redAccent,
+              ),
               const SizedBox(height: 16),
-              Text('Error Loading SoundFont', style: Theme.of(context).textTheme.titleLarge),
+              Text(
+                'Error Loading SoundFont',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
               const SizedBox(height: 8),
               Text(_error!, style: const TextStyle(color: Colors.redAccent)),
             ],
@@ -230,14 +312,20 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
       itemBuilder: (context, index) {
         final preset = sf.presets[index];
         return ExpansionTile(
-          title: Text('${preset.name} (Bank ${preset.bank}, Program ${preset.program})'),
+          title: Text(
+            '${preset.name} (Bank ${preset.bank}, Program ${preset.program})',
+          ),
           subtitle: Text('${preset.zones.length} Zones'),
           children: preset.zones.map((zone) {
             return ListTile(
               dense: true,
               leading: const Icon(Icons.layers, size: 18),
-              title: Text('Key Range: ${zone.keyRangeMin}..${zone.keyRangeMax} | Vel: ${zone.velRangeMin}..${zone.velRangeMax}'),
-              subtitle: Text('RootKey: ${zone.rootKey ?? "-"} | Pan: ${zone.pan ?? 0.0} | Attenuation: ${zone.attenuation ?? 0.0} dB'),
+              title: Text(
+                'Key Range: ${zone.keyRangeMin}..${zone.keyRangeMax} | Vel: ${zone.velRangeMin}..${zone.velRangeMax}',
+              ),
+              subtitle: Text(
+                'RootKey: ${zone.rootKey ?? "-"} | Pan: ${zone.pan ?? 0.0} | Attenuation: ${zone.attenuation ?? 0.0} dB',
+              ),
             );
           }).toList(),
         );
@@ -260,8 +348,12 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
             return ListTile(
               dense: true,
               leading: const Icon(Icons.graphic_eq, size: 18),
-              title: Text('Sample ID: ${zone.sampleID ?? "-"} (${zone.sampleRef?.name ?? "N/A"})'),
-              subtitle: Text('Key: ${zone.keyRangeMin}..${zone.keyRangeMax} | RootKey: ${zone.rootKey ?? "-"}'),
+              title: Text(
+                'Sample ID: ${zone.sampleID ?? "-"} (${zone.sampleRef?.name ?? "N/A"})',
+              ),
+              subtitle: Text(
+                'Key: ${zone.keyRangeMin}..${zone.keyRangeMax} | RootKey: ${zone.rootKey ?? "-"}',
+              ),
             );
           }).toList(),
         );
@@ -289,7 +381,10 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 4),
-                  Text(_sampleByteDetails!, style: const TextStyle(fontFamily: 'monospace')),
+                  Text(
+                    _sampleByteDetails!,
+                    style: const TextStyle(fontFamily: 'monospace'),
+                  ),
                 ],
               ),
             ),
@@ -302,13 +397,25 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
               return ListTile(
                 title: Text('${sample.name} [ID: ${sample.id}]'),
                 subtitle: Text(
-                  'Rate: ${sample.sampleRate} Hz | Key: ${sample.originalPitch} | Compression: ${sample.compression.name.toUpperCase()}\n'
-                  '${sample.samplePath != null ? "Path: ${sample.samplePath}" : "Offset: ${sample.byteOffset}, Length: ${sample.byteLength} B"}',
+                  'Rate: ${sample.sampleRate} Hz | '
+                  'Key: ${sample.originalPitch} | '
+                  'Compression: ${sample.compression.name.toUpperCase()}\n'
+                  '${sample.samplePath != null ? "Path: ${sample.samplePath}" : "Offset: ${sample.byteOffset}, Length: ${(sample.byteLength / 1024).toStringAsFixed(1)} KB"}',
                 ),
-                trailing: IconButton(
-                  icon: const Icon(Icons.file_download),
-                  tooltip: 'Read Sample Bytes',
-                  onPressed: () => _inspectSampleBytes(sample),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.play_arrow),
+                      tooltip: 'Play',
+                      onPressed: () => _playSample(sample),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.file_download),
+                      tooltip: 'Read Sample Bytes',
+                      onPressed: () => _inspectSampleBytes(sample),
+                    ),
+                  ],
                 ),
               );
             },

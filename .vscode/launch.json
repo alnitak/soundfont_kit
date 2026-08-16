@@ -1,0 +1,38 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "soundfont_reader",
+            "request": "launch",
+            "type": "dart"
+        },
+        {
+            "name": "soundfont_reader (profile mode)",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "profile"
+        },
+        {
+            "name": "soundfont_reader (release mode)",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "release"
+        },
+        {
+            // install CodeLLDB extension for macOS debugging
+            // and remember to replace "-O2 -DNDEBUG" with "-O0 -g" in "target_compile_options" in "macos/CMakeLists.txt"
+            "name": "Debug native macOS",
+            "preLaunchTask": "compile macos debug",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/example/build/macos/Build/Products/Debug/example.app/Contents/MacOS/example",
+            "cwd": "${workspaceFolder}",
+            "sourceMap": {
+                "${workspaceFolder}/example/macos/Flutter/ephemeral/.symlinks/plugins/flutter_soloud": "${workspaceFolder}"
+            }
+        }
+    ]
+}

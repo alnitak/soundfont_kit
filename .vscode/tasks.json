@@ -1,0 +1,10 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "compile macos debug",
+            "command": "cd ${workspaceFolder}/example; flutter build macos -t lib/main.dart --debug",
+            "type": "shell"
+        }
+    ]
+}

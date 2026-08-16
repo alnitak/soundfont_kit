@@ -5,9 +5,9 @@ import 'package:soundfont_reader/soundfont_reader.dart';
 
 void main() {
   final assetDir = p.join(Directory.current.path, 'example', 'assets');
-  final sf2Path = p.join(assetDir, 'Rhodes - minimal (from Dream Piano).sf2');
-  final sf3Path = p.join(assetDir, 'Rhodes - minimal (from Dream Piano).sf3');
-  final sfzZipPath = p.join(assetDir, 'Dream Piano (converted).sfz+flac.zip');
+  final sf2Path = p.join(assetDir, 'Celesta (minimal).sf2');
+  final sf3Path = p.join(assetDir, 'Celesta (minimal).sf3');
+  final sfzZipPath = p.join(assetDir, 'Celesta (converted).sfz+flac.zip');
 
   group('SoundFontReader SF2 tests', () {
     test('Loads and parses SF2 file correctly', () async {
@@ -23,6 +23,7 @@ void main() {
 
       final sample = sf.samples.first;
       expect(sample.byteLength, greaterThan(0));
+      expect(sample.channels, equals(1));
 
       final sampleBytes = await sf.getSampleBytes(sample);
       expect(sampleBytes.length, equals(sample.byteLength));
@@ -30,7 +31,7 @@ void main() {
   });
 
   group('SoundFontReader SF3 tests', () {
-    test('Loads and parses SF3 file correctly', () async {
+    test('Loads and parses SF3 file correctly and verifies OGG stream offsets', () async {
       final sf = await SoundFontFile.fromFile(sf3Path);
 
       expect(sf.format, equals(SoundFontFormat.sf3));
@@ -38,20 +39,21 @@ void main() {
       expect(sf.instruments, isNotEmpty);
       expect(sf.samples, isNotEmpty);
 
-      // Verify that sample compression is OGG
-      final oggSample = sf.samples.firstWhere(
-        (s) => s.compression == SampleCompression.ogg,
-        orElse: () => sf.samples.first,
-      );
+      // Verify all samples have OGG compression and start with 'OggS' magic header
+      for (final sample in sf.samples) {
+        expect(sample.compression, equals(SampleCompression.ogg));
+        expect(sample.byteLength, greaterThan(0));
 
-      expect(oggSample.compression, equals(SampleCompression.ogg));
-      expect(oggSample.byteLength, greaterThan(0));
+        final sampleBytes = await sf.getSampleBytes(sample);
+        expect(sampleBytes.length, equals(sample.byteLength));
 
-      final sampleBytes = await sf.getSampleBytes(oggSample);
-      expect(sampleBytes.length, equals(oggSample.byteLength));
-
-      // Verify OGG header magic 'OggS'
-      expect(sampleBytes.sublist(0, 4), equals([0x4F, 0x67, 0x67, 0x53]));
+        // Verify OGG header magic 'OggS' (0x4F, 0x67, 0x67, 0x53)
+        expect(
+          sampleBytes.sublist(0, 4),
+          equals([0x4F, 0x67, 0x67, 0x53]),
+          reason: 'Sample "${sample.name}" does not start with OggS magic header',
+        );
+      }
     });
   });
 

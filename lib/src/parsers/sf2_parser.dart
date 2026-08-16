@@ -42,7 +42,7 @@ class Sf2Parser {
 
   Sf2Parser(this.source);
 
-  Future<Sf2Data> parse() async {
+  Future<Sf2Data> parse({bool isSf3 = false}) async {
     final bytes = await source.getBytes();
     final reader = RiffReader(bytes);
 
@@ -143,7 +143,7 @@ class Sf2Parser {
     }
 
     // Parse Sample Headers (shdr)
-    final samples = _parseSampleHeaders(shdrBytes, smplOffset);
+    final samples = _parseSampleHeaders(shdrBytes, smplOffset, isSf3: isSf3);
 
     // Map samples by sample index
     final sampleMap = <int, SampleInfo>{};
@@ -177,7 +177,7 @@ class Sf2Parser {
     );
   }
 
-  List<SampleInfo> _parseSampleHeaders(Uint8List? shdrBytes, int smplOffset) {
+  List<SampleInfo> _parseSampleHeaders(Uint8List? shdrBytes, int smplOffset, {bool isSf3 = false}) {
     if (shdrBytes == null) return [];
     final reader = RiffReader(shdrBytes);
     final count = shdrBytes.length ~/ 46;
@@ -200,11 +200,13 @@ class Sf2Parser {
         continue;
       }
 
-      final byteOffset = smplOffset + (start * 2);
-      final byteLength = (end > start) ? (end - start) * 2 : 0;
+      // Check if sampleType bit 0x8000 indicates SF3 Ogg Vorbis sample or if file is SF3
+      final isOgg = isSf3 || (sampleType & 0x8000) != 0;
 
-      // Check if sampleType bit 0x8000 indicates SF3 Ogg Vorbis sample
-      final isOgg = (sampleType & 0x8000) != 0;
+      final byteOffset = isOgg ? (smplOffset + start) : (smplOffset + (start * 2));
+      final byteLength = isOgg
+          ? ((end > start) ? (end - start) : 0)
+          : ((end > start) ? (end - start) * 2 : 0);
 
       list.add(SampleInfo(
         id: list.length,
@@ -218,7 +220,7 @@ class Sf2Parser {
         byteOffset: byteOffset,
         byteLength: byteLength,
         compression: isOgg ? SampleCompression.ogg : SampleCompression.pcm16,
-        channels: (sampleType & 0x0004) != 0 ? 2 : 1,
+        channels: 1,
         sampleType: sampleType,
       ));
     }
