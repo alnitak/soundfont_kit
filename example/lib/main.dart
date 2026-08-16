@@ -841,16 +841,22 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
             '${sample.name} [ID: ${sample.id}]',
             style: TextStyle(
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              color: isSelected
-                  ? Theme.of(context).colorScheme.primary
-                  : null,
+              color: isSelected ? Theme.of(context).colorScheme.primary : null,
             ),
           ),
           subtitle: Text(
             'Rate: ${sample.sampleRate} Hz | '
             'Key: ${sample.originalPitch} | '
             'Compression: ${sample.compression.name.toUpperCase()}\n'
-            '${sample.samplePath != null ? "Path: ${sample.samplePath}" : "Offset: ${sample.byteOffset}, Length: ${(sample.byteLength / 1024).toStringAsFixed(1)} KB"}',
+            '${sample.samplePath != null ? "Path: ${sample.samplePath}" : "Offset: ${sample.byteOffset}, Length: ${(sample.byteLength / 1024).toStringAsFixed(1)} KB"}\n'
+            'channels: ${sample.channels} | '
+            '${sample.isLeft
+                ? "Left"
+                : sample.isRight
+                ? "Right"
+                : sample.isMono
+                ? "Mono"
+                : "Stereo"} | Loop: ${sample.loopStart} - ${sample.loopEnd}',
           ),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
