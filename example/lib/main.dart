@@ -872,9 +872,10 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
           trailing: preset.zones.isNotEmpty
               ? null
               : HoldPlayButton(
+                  key: ValueKey('play_preset_${preset.bank}_${preset.program}'),
                   tooltip: 'Hold to play Preset',
-                  onStartPlay: () {
-                    _player?.stopMixerOutput();
+                  onStartPlay: () async {
+                    await _player?.stopMixerOutput();
                     setState(() {
                       _selectedTarget = SelectedPlaybackTarget.preset(preset);
                     });
@@ -910,10 +911,11 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
                 'RootKey: ${zone.rootKey ?? "-"} | Pan: ${zone.pan ?? 0.0} | Attenuation: ${zone.attenuation ?? 0.0} dB',
               ),
               trailing: HoldPlayButton(
+                key: ValueKey('play_preset_${preset.bank}_${preset.program}_zone_$key'),
                 size: 20,
                 tooltip: 'Hold to play Note $key',
-                onStartPlay: () {
-                  _player?.stopMixerOutput();
+                onStartPlay: () async {
+                  await _player?.stopMixerOutput();
                   setState(() {
                     _selectedTarget = SelectedPlaybackTarget.preset(
                       preset,
@@ -989,9 +991,10 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
           trailing: inst.zones.isNotEmpty
               ? null
               : HoldPlayButton(
+                  key: ValueKey('play_inst_${inst.id}_${inst.name}'),
                   tooltip: 'Hold to play Instrument',
-                  onStartPlay: () {
-                    _player?.stopMixerOutput();
+                  onStartPlay: () async {
+                    await _player?.stopMixerOutput();
                     setState(() {
                       _selectedTarget = SelectedPlaybackTarget.instrument(inst);
                     });
@@ -1027,10 +1030,11 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
                 'Key: ${zone.keyRangeMin}..${zone.keyRangeMax} | RootKey: ${zone.rootKey ?? "-"}',
               ),
               trailing: HoldPlayButton(
+                key: ValueKey('play_inst_${inst.id}_zone_$key'),
                 size: 20,
                 tooltip: 'Hold to play Note $key',
-                onStartPlay: () {
-                  _player?.stopMixerOutput();
+                onStartPlay: () async {
+                  await _player?.stopMixerOutput();
                   setState(() {
                     _selectedTarget = SelectedPlaybackTarget.instrument(
                       inst,
@@ -1106,9 +1110,10 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
               ),
               const SizedBox(width: 8),
               HoldPlayButton(
+                key: ValueKey('play_sample_${sample.id}'),
                 tooltip: 'Hold to play sample',
-                onStartPlay: () {
-                  _player?.stopMixerOutput();
+                onStartPlay: () async {
+                  await _player?.stopMixerOutput();
                   setState(() {
                     _selectedTarget = SelectedPlaybackTarget.sample(
                       sample,
