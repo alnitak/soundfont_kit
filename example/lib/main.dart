@@ -563,11 +563,13 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
     }
   }
 
-  Future<SoundFontVoice> _playSample(SampleInfo sample) async {
+  Future<SoundFontVoice> _playSample(SampleInfo sample, {int? key}) async {
+    final effectiveKey =
+        key ?? (sample.originalPitch > 0 ? sample.originalPitch : 60);
     if (_player == null) {
-      return SoundFontVoice(key: 60, velocity: 100, handles: []);
+      return SoundFontVoice(key: effectiveKey, velocity: 100, handles: []);
     }
-    return await _player!.playSample(sample);
+    return await _player!.playSample(sample, key: effectiveKey);
   }
 
   Future<SoundFontVoice> _playInstrument(

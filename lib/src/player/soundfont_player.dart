@@ -61,7 +61,7 @@ class SoundFontPlayer {
   /// and sample-accurate engine scheduling overrides.
   Future<SoundFontVoice> playSample(
     SampleInfo sample, {
-    int key = 60,
+    int? key,
     int velocity = 100,
     double? volume,
     double? pan,
@@ -75,9 +75,11 @@ class SoundFontPlayer {
     Zone? presetZone,
     bool trackVoice = true,
   }) async {
+    final effectiveKey =
+        key ?? (sample.originalPitch > 0 ? sample.originalPitch : 60);
     final speed = pitchRatio ??
         VoiceCalculator.calculatePitchRatio(
-          key: key,
+          key: effectiveKey,
           sample: sample,
           zone: zone,
           presetZone: presetZone,
@@ -207,7 +209,7 @@ class SoundFontPlayer {
     }
 
     final voice = SoundFontVoice(
-      key: key,
+      key: effectiveKey,
       velocity: velocity,
       handles: [handle],
       sources: [audio],
@@ -216,7 +218,7 @@ class SoundFontPlayer {
     );
 
     if (trackVoice) {
-      _trackVoice(key, voice);
+      _trackVoice(effectiveKey, voice);
     }
     return voice;
   }
