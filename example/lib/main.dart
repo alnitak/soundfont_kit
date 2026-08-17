@@ -1,10 +1,10 @@
 import 'dart:developer' as dev;
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:soundfont_reader/soundfont_reader.dart';
 import 'package:flutter_soloud/flutter_soloud.dart';
@@ -39,10 +39,29 @@ class SoundFontReaderDemoApp extends StatelessWidget {
   const SoundFontReaderDemoApp({super.key});
 
   @override
-  Widget build(BuildContext me) {
+  Widget build(BuildContext context) {
     return MaterialApp(
       title: 'SoundFont Reader Demo',
       debugShowCheckedModeBanner: false,
+      shortcuts: <ShortcutActivator, Intent>{
+        ...WidgetsApp.defaultShortcuts,
+        const SingleActivator(LogicalKeyboardKey.space):
+            const DoNothingIntent(),
+        const SingleActivator(LogicalKeyboardKey.space, shift: true):
+            const DoNothingIntent(),
+        const SingleActivator(LogicalKeyboardKey.arrowUp):
+            const DoNothingIntent(),
+        const SingleActivator(LogicalKeyboardKey.arrowDown):
+            const DoNothingIntent(),
+        const SingleActivator(LogicalKeyboardKey.arrowLeft):
+            const DoNothingIntent(),
+        const SingleActivator(LogicalKeyboardKey.arrowRight):
+            const DoNothingIntent(),
+        const SingleActivator(LogicalKeyboardKey.delete):
+            const DoNothingIntent(),
+        const SingleActivator(LogicalKeyboardKey.backspace):
+            const DoNothingIntent(),
+      },
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF6750A4),
@@ -115,8 +134,10 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
     SoundFontSourceEntry.asset('assets/SFX_StarWars_weapons.SF2'),
   ];
 
-  late final TabController _tabController =
-      TabController(length: 3, vsync: this);
+  late final TabController _tabController = TabController(
+    length: 3,
+    vsync: this,
+  );
   late SoundFontSourceEntry _selectedSource;
   bool _isLoading = false;
   String? _error;
@@ -131,12 +152,56 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
   @override
   void initState() {
     super.initState();
+    _tabController.addListener(_handleTabChanged);
     _selectedSource = _sources.first;
     _loadSoundFontEntry(_selectedSource);
   }
 
+  void _stopActiveVoices() {
+    _player?.allNotesOff(releaseDuration: Duration.zero);
+    if (SoLoud.instance.isInitialized) {
+      try {
+        SoLoud.instance.stopAll();
+      } catch (_) {}
+    }
+  }
+
+  void _handleTabChanged() {
+    if (_tabController.indexIsChanging) return;
+    final sf = _soundFont;
+    if (sf == null) return;
+    final tabIndex = _tabController.index;
+    if (tabIndex == 0 &&
+        _selectedTarget?.type != PlaybackTargetType.preset &&
+        sf.presets.isNotEmpty) {
+      _stopActiveVoices();
+      setState(() {
+        _selectedTarget = SelectedPlaybackTarget.preset(sf.presets.first);
+      });
+    } else if (tabIndex == 1 &&
+        _selectedTarget?.type != PlaybackTargetType.instrument &&
+        sf.instruments.isNotEmpty) {
+      _stopActiveVoices();
+      setState(() {
+        _selectedTarget =
+            SelectedPlaybackTarget.instrument(sf.instruments.first);
+      });
+    } else if (tabIndex == 2 &&
+        _selectedTarget?.type != PlaybackTargetType.sample &&
+        sf.samples.isNotEmpty) {
+      _stopActiveVoices();
+      setState(() {
+        _selectedTarget = SelectedPlaybackTarget.sample(
+          sf.samples.first,
+          markedKey: sf.samples.first.originalPitch,
+        );
+      });
+    }
+  }
+
   @override
   void dispose() {
+    _tabController.removeListener(_handleTabChanged);
     _tabController.dispose();
     _player?.dispose();
     super.dispose();
@@ -146,37 +211,51 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
     final sf = _soundFont;
     if (sf == null) return;
     final tabIndex = _tabController.index;
+    _stopActiveVoices();
 
     switch (tabIndex) {
       case 0:
         if (sf.presets.isEmpty) return;
-        final currentIndex = _selectedTarget?.preset != null
-            ? sf.presets.indexOf(_selectedTarget!.preset!)
-            : 0;
+        final currentIndex =
+            _selectedTarget?.type == PlaybackTargetType.preset &&
+                    _selectedTarget?.preset != null
+                ? sf.presets.indexWhere((p) =>
+                    p.bank == _selectedTarget!.preset!.bank &&
+                    p.program == _selectedTarget!.preset!.program &&
+                    p.name == _selectedTarget!.preset!.name)
+                : 0;
         final prevIndex =
             (currentIndex <= 0) ? sf.presets.length - 1 : currentIndex - 1;
         setState(() {
-          _selectedTarget =
-              SelectedPlaybackTarget.preset(sf.presets[prevIndex]);
+          _selectedTarget = SelectedPlaybackTarget.preset(
+            sf.presets[prevIndex],
+          );
         });
         break;
       case 1:
         if (sf.instruments.isEmpty) return;
-        final currentIndex = _selectedTarget?.instrument != null
-            ? sf.instruments.indexOf(_selectedTarget!.instrument!)
-            : 0;
+        final currentIndex =
+            _selectedTarget?.type == PlaybackTargetType.instrument &&
+                    _selectedTarget?.instrument != null
+                ? sf.instruments.indexWhere((i) =>
+                    i.id == _selectedTarget!.instrument!.id ||
+                    i.name == _selectedTarget!.instrument!.name)
+                : 0;
         final prevIndex =
             (currentIndex <= 0) ? sf.instruments.length - 1 : currentIndex - 1;
         setState(() {
-          _selectedTarget =
-              SelectedPlaybackTarget.instrument(sf.instruments[prevIndex]);
+          _selectedTarget = SelectedPlaybackTarget.instrument(
+            sf.instruments[prevIndex],
+          );
         });
         break;
       case 2:
         if (sf.samples.isEmpty) return;
-        final currentIndex = _selectedTarget?.sample != null
-            ? sf.samples.indexWhere((s) => s.id == _selectedTarget!.sample!.id)
-            : 0;
+        final currentIndex =
+            _selectedTarget?.type == PlaybackTargetType.sample &&
+                    _selectedTarget?.sample != null
+                ? sf.samples.indexWhere((s) => s.id == _selectedTarget!.sample!.id)
+                : 0;
         final prevIndex =
             (currentIndex <= 0) ? sf.samples.length - 1 : currentIndex - 1;
         setState(() {
@@ -193,35 +272,49 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
     final sf = _soundFont;
     if (sf == null) return;
     final tabIndex = _tabController.index;
+    _stopActiveVoices();
 
     switch (tabIndex) {
       case 0:
         if (sf.presets.isEmpty) return;
-        final currentIndex = _selectedTarget?.preset != null
-            ? sf.presets.indexOf(_selectedTarget!.preset!)
-            : -1;
+        final currentIndex =
+            _selectedTarget?.type == PlaybackTargetType.preset &&
+                    _selectedTarget?.preset != null
+                ? sf.presets.indexWhere((p) =>
+                    p.bank == _selectedTarget!.preset!.bank &&
+                    p.program == _selectedTarget!.preset!.program &&
+                    p.name == _selectedTarget!.preset!.name)
+                : -1;
         final nextIndex = (currentIndex + 1) % sf.presets.length;
         setState(() {
-          _selectedTarget =
-              SelectedPlaybackTarget.preset(sf.presets[nextIndex]);
+          _selectedTarget = SelectedPlaybackTarget.preset(
+            sf.presets[nextIndex],
+          );
         });
         break;
       case 1:
         if (sf.instruments.isEmpty) return;
-        final currentIndex = _selectedTarget?.instrument != null
-            ? sf.instruments.indexOf(_selectedTarget!.instrument!)
-            : -1;
+        final currentIndex =
+            _selectedTarget?.type == PlaybackTargetType.instrument &&
+                    _selectedTarget?.instrument != null
+                ? sf.instruments.indexWhere((i) =>
+                    i.id == _selectedTarget!.instrument!.id ||
+                    i.name == _selectedTarget!.instrument!.name)
+                : -1;
         final nextIndex = (currentIndex + 1) % sf.instruments.length;
         setState(() {
-          _selectedTarget =
-              SelectedPlaybackTarget.instrument(sf.instruments[nextIndex]);
+          _selectedTarget = SelectedPlaybackTarget.instrument(
+            sf.instruments[nextIndex],
+          );
         });
         break;
       case 2:
         if (sf.samples.isEmpty) return;
-        final currentIndex = _selectedTarget?.sample != null
-            ? sf.samples.indexWhere((s) => s.id == _selectedTarget!.sample!.id)
-            : -1;
+        final currentIndex =
+            _selectedTarget?.type == PlaybackTargetType.sample &&
+                    _selectedTarget?.sample != null
+                ? sf.samples.indexWhere((s) => s.id == _selectedTarget!.sample!.id)
+                : -1;
         final nextIndex = (currentIndex + 1) % sf.samples.length;
         setState(() {
           _selectedTarget = SelectedPlaybackTarget.sample(
@@ -617,105 +710,102 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
     final sf = _soundFont;
     if (sf == null) return const SizedBox();
 
-    return DefaultTabController(
-      length: 3,
-      child: Column(
-        children: [
-          Container(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              children: [
-                Chip(
-                  avatar: const Icon(Icons.music_note, size: 18),
-                  label: Text('Format: ${sf.format.name.toUpperCase()}'),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        sf.name ?? 'Unnamed SoundFont',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      if (sf.comment != null && sf.comment!.isNotEmpty)
-                        Text(
-                          sf.comment!,
-                          style: Theme.of(context).textTheme.bodySmall,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                if (_isPreloading)
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          value: _preloadProgress > 0 ? _preloadProgress : null,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${(_preloadProgress * 100).toStringAsFixed(0)}%',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  )
-                else if (_isPreloaded)
-                  const Chip(
-                    avatar: Icon(
-                      Icons.check_circle,
-                      size: 18,
-                      color: Colors.greenAccent,
+    return Column(
+      children: [
+        Container(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Chip(
+                avatar: const Icon(Icons.music_note, size: 18),
+                label: Text('Format: ${sf.format.name.toUpperCase()}'),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      sf.name ?? 'Unnamed SoundFont',
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
-                    label: Text('Preloaded'),
-                  )
-                else
-                  FilledButton.tonalIcon(
-                    icon: const Icon(Icons.bolt, size: 18),
-                    label: Text('Preload (${sf.samples.length})'),
-                    onPressed: _startPreloadingAll,
+                    if (sf.comment != null && sf.comment!.isNotEmpty)
+                      Text(
+                        sf.comment!,
+                        style: Theme.of(context).textTheme.bodySmall,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              if (_isPreloading)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        value: _preloadProgress > 0 ? _preloadProgress : null,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${(_preloadProgress * 100).toStringAsFixed(0)}%',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                )
+              else if (_isPreloaded)
+                const Chip(
+                  avatar: Icon(
+                    Icons.check_circle,
+                    size: 18,
+                    color: Colors.greenAccent,
                   ),
-              ],
-            ),
-          ),
-          TabBar(
-            controller: _tabController,
-            tabs: const [
-              Tab(icon: Icon(Icons.tune), text: 'Presets'),
-              Tab(icon: Icon(Icons.piano), text: 'Instruments'),
-              Tab(icon: Icon(Icons.graphic_eq), text: 'Samples'),
+                  label: Text('Preloaded'),
+                )
+              else
+                FilledButton.tonalIcon(
+                  icon: const Icon(Icons.bolt, size: 18),
+                  label: Text('Preload (${sf.samples.length})'),
+                  onPressed: _startPreloadingAll,
+                ),
             ],
           ),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildPresetsTab(sf),
-                _buildInstrumentsTab(sf),
-                _buildSamplesTab(sf),
-              ],
-            ),
+        ),
+        TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(icon: Icon(Icons.tune), text: 'Presets'),
+            Tab(icon: Icon(Icons.piano), text: 'Instruments'),
+            Tab(icon: Icon(Icons.graphic_eq), text: 'Samples'),
+          ],
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _buildPresetsTab(sf),
+              _buildInstrumentsTab(sf),
+              _buildSamplesTab(sf),
+            ],
           ),
-          DockedPianoPanel(
-            soundFont: sf,
-            player: _player,
-            selectedTarget: _selectedTarget,
-            onPreviousItem: _selectPreviousItem,
-            onNextItem: _selectNextItem,
-          ),
-        ],
-      ),
+        ),
+        DockedPianoPanel(
+          soundFont: sf,
+          player: _player,
+          selectedTarget: _selectedTarget,
+          onPreviousItem: _selectPreviousItem,
+          onNextItem: _selectNextItem,
+        ),
+      ],
     );
   }
 
@@ -734,6 +824,16 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
             _selectedTarget?.preset?.program == preset.program;
 
         return ExpansionTile(
+          backgroundColor: Theme.of(context)
+              .colorScheme
+              .primaryContainer
+              .withValues(alpha: 0.12),
+          collapsedBackgroundColor: isSelected
+              ? Theme.of(context)
+                  .colorScheme
+                  .primaryContainer
+                  .withValues(alpha: 0.22)
+              : null,
           shape: isSelected
               ? RoundedRectangleBorder(
                   side: BorderSide(
@@ -754,6 +854,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
               : null,
           onExpansionChanged: (expanded) {
             if (expanded) {
+              _stopActiveVoices();
               setState(() {
                 _selectedTarget = SelectedPlaybackTarget.preset(preset);
               });
@@ -767,15 +868,18 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
             ),
           ),
           subtitle: Text('${preset.zones.length} Zones'),
-          trailing: HoldPlayButton(
-            tooltip: 'Hold to play Preset',
-            onStartPlay: () {
-              setState(() {
-                _selectedTarget = SelectedPlaybackTarget.preset(preset);
-              });
-              return _playPreset(preset);
-            },
-          ),
+          trailing: preset.zones.isNotEmpty
+              ? null
+              : HoldPlayButton(
+                  tooltip: 'Hold to play Preset',
+                  onStartPlay: () {
+                    _stopActiveVoices();
+                    setState(() {
+                      _selectedTarget = SelectedPlaybackTarget.preset(preset);
+                    });
+                    return _playPreset(preset);
+                  },
+                ),
           children: preset.zones.map((zone) {
             final key =
                 zone.rootKey ??
@@ -789,6 +893,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
                 context,
               ).colorScheme.primaryContainer.withValues(alpha: 0.15),
               onTap: () {
+                _stopActiveVoices();
                 setState(() {
                   _selectedTarget = SelectedPlaybackTarget.preset(
                     preset,
@@ -807,6 +912,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
                 size: 20,
                 tooltip: 'Hold to play Note $key',
                 onStartPlay: () {
+                  _stopActiveVoices();
                   setState(() {
                     _selectedTarget = SelectedPlaybackTarget.preset(
                       preset,
@@ -833,9 +939,20 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
         final inst = sf.instruments[index];
         final isSelected =
             _selectedTarget?.type == PlaybackTargetType.instrument &&
-            _selectedTarget?.instrument?.name == inst.name;
+            (_selectedTarget?.instrument?.id == inst.id ||
+                _selectedTarget?.instrument?.name == inst.name);
 
         return ExpansionTile(
+          backgroundColor: Theme.of(context)
+              .colorScheme
+              .primaryContainer
+              .withValues(alpha: 0.12),
+          collapsedBackgroundColor: isSelected
+              ? Theme.of(context)
+                  .colorScheme
+                  .primaryContainer
+                  .withValues(alpha: 0.22)
+              : null,
           shape: isSelected
               ? RoundedRectangleBorder(
                   side: BorderSide(
@@ -856,6 +973,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
               : null,
           onExpansionChanged: (expanded) {
             if (expanded) {
+              _stopActiveVoices();
               setState(() {
                 _selectedTarget = SelectedPlaybackTarget.instrument(inst);
               });
@@ -869,15 +987,18 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
             ),
           ),
           subtitle: Text('${inst.zones.length} Zones'),
-          trailing: HoldPlayButton(
-            tooltip: 'Hold to play Instrument',
-            onStartPlay: () {
-              setState(() {
-                _selectedTarget = SelectedPlaybackTarget.instrument(inst);
-              });
-              return _playInstrument(inst);
-            },
-          ),
+          trailing: inst.zones.isNotEmpty
+              ? null
+              : HoldPlayButton(
+                  tooltip: 'Hold to play Instrument',
+                  onStartPlay: () {
+                    _stopActiveVoices();
+                    setState(() {
+                      _selectedTarget = SelectedPlaybackTarget.instrument(inst);
+                    });
+                    return _playInstrument(inst);
+                  },
+                ),
           children: inst.zones.map((zone) {
             final key =
                 zone.rootKey ??
@@ -891,6 +1012,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
                 context,
               ).colorScheme.primaryContainer.withValues(alpha: 0.15),
               onTap: () {
+                _stopActiveVoices();
                 setState(() {
                   _selectedTarget = SelectedPlaybackTarget.instrument(
                     inst,
@@ -909,6 +1031,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
                 size: 20,
                 tooltip: 'Hold to play Note $key',
                 onStartPlay: () {
+                  _stopActiveVoices();
                   setState(() {
                     _selectedTarget = SelectedPlaybackTarget.instrument(
                       inst,
@@ -943,6 +1066,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
             context,
           ).colorScheme.primaryContainer.withValues(alpha: 0.2),
           onTap: () {
+            _stopActiveVoices();
             setState(() {
               _selectedTarget = SelectedPlaybackTarget.sample(
                 sample,
@@ -984,6 +1108,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
               HoldPlayButton(
                 tooltip: 'Hold to play sample',
                 onStartPlay: () {
+                  _stopActiveVoices();
                   setState(() {
                     _selectedTarget = SelectedPlaybackTarget.sample(
                       sample,

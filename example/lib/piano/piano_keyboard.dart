@@ -32,13 +32,13 @@ class PianoKeyboard extends StatefulWidget {
   /// Optional callback when an octave shift key is pressed (Left Shift = -1, Right Shift = +1).
   final void Function(int deltaOctave)? onOctaveShift;
 
-  /// Optional callback when previous item key (Z) is pressed.
+  /// Optional callback when previous item key (Arrow Up) is pressed.
   final VoidCallback? onPreviousItem;
 
-  /// Optional callback when next item key (X) is pressed.
+  /// Optional callback when next item key (Arrow Down) is pressed.
   final VoidCallback? onNextItem;
 
-  /// Optional callback when stop all key (C) is pressed.
+  /// Optional callback when stop all key (Canc / Delete) is pressed.
   final VoidCallback? onStopAll;
 
   const PianoKeyboard({
@@ -67,6 +67,7 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
 
   /// Set of physically held computer keyboard keys.
   final Set<LogicalKeyboardKey> _pressedPhysicalKeys = {};
+  int? _spacePlayingNote;
 
   static const List<bool> _isBlackNoteInOctave = [
     false, // C
@@ -176,6 +177,10 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
+    if (_spacePlayingNote != null) {
+      widget.onNoteUp(_spacePlayingNote!);
+      _spacePlayingNote = null;
+    }
     for (final key in _pressedPhysicalKeys) {
       final binding = _keyBindings[key];
       if (binding != null) {
@@ -195,31 +200,53 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
       return false;
     }
 
-    // Handle octave shifting with Left Shift (down) and Right Shift (up)
-    if (event.logicalKey == LogicalKeyboardKey.shiftLeft) {
+    // Handle Space key to play/release the currently active selected target
+    if (event.logicalKey == LogicalKeyboardKey.space) {
+      if (event is KeyDownEvent) {
+        if (_spacePlayingNote == null) {
+          final note = widget.markedKey ?? 60;
+          _spacePlayingNote = note;
+          widget.onNoteDown(note, 100);
+          setState(() {});
+        }
+      } else if (event is KeyUpEvent) {
+        if (_spacePlayingNote != null) {
+          widget.onNoteUp(_spacePlayingNote!);
+          _spacePlayingNote = null;
+          setState(() {});
+        }
+      }
+      return true;
+    }
+
+    // Handle octave shifting with Left Arrow / Left Shift (down) and Right Arrow / Right Shift (up)
+    if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
+        event.logicalKey == LogicalKeyboardKey.shiftLeft) {
       if (event is KeyDownEvent) {
         widget.onOctaveShift?.call(-1);
       }
       return true;
-    } else if (event.logicalKey == LogicalKeyboardKey.shiftRight) {
+    } else if (event.logicalKey == LogicalKeyboardKey.arrowRight ||
+        event.logicalKey == LogicalKeyboardKey.shiftRight) {
       if (event is KeyDownEvent) {
         widget.onOctaveShift?.call(1);
       }
       return true;
     }
 
-    // Handle Navigation & Stop shortcuts: Z (previous item), X (next item), C (stop all voices)
-    if (event.logicalKey == LogicalKeyboardKey.keyZ) {
+    // Handle Navigation & Stop shortcuts: Arrow Up (previous item), Arrow Down (next item), Canc/Delete/Backspace (stop all voices)
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
       if (event is KeyDownEvent) {
         widget.onPreviousItem?.call();
       }
       return true;
-    } else if (event.logicalKey == LogicalKeyboardKey.keyX) {
+    } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
       if (event is KeyDownEvent) {
         widget.onNextItem?.call();
       }
       return true;
-    } else if (event.logicalKey == LogicalKeyboardKey.keyC) {
+    } else if (event.logicalKey == LogicalKeyboardKey.delete ||
+        event.logicalKey == LogicalKeyboardKey.backspace) {
       if (event is KeyDownEvent) {
         widget.onStopAll?.call();
       }
@@ -260,6 +287,7 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
   }
 
   bool _isPhysicalKeyPressed(int note) {
+    if (_spacePlayingNote == note) return true;
     for (final key in _pressedPhysicalKeys) {
       final binding = _keyBindings[key];
       if (binding != null &&
@@ -386,78 +414,84 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
                           ),
                       ],
                     ),
-                    alignment: Alignment.bottomCenter,
-                    padding: const EdgeInsets.only(bottom: 3.0),
+                    padding: const EdgeInsets.symmetric(vertical: 3.0),
                     child: Column(
-                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        if (note % 12 == 0)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 2.0),
-                            child: Text(
-                              getNoteName(note),
-                              style: TextStyle(
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.bold,
-                                color: isPressed
-                                    ? Theme.of(
-                                        context,
-                                      ).colorScheme.onPrimaryContainer
-                                    : Colors.black87,
-                              ),
-                            ),
+                        Text(
+                          '$note',
+                          style: const TextStyle(
+                            fontSize: 8.5,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black,
                           ),
-                        if (keyLabel != null)
-                          Container(
-                            margin: const EdgeInsets.only(bottom: 2.0),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 3.5,
-                              vertical: 1.0,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isPressed
-                                  ? Theme.of(context).colorScheme.primary
-                                  : Colors.grey.shade200,
-                              borderRadius: BorderRadius.circular(3.0),
-                              border: Border.all(
-                                color: isPressed
-                                    ? Colors.transparent
-                                    : Colors.grey.shade400,
-                                width: 0.5,
-                              ),
-                            ),
-                            child: Text(
-                              keyLabel,
-                              style: TextStyle(
-                                fontSize: 8.5,
-                                fontWeight: FontWeight.w700,
-                                fontFamily: 'monospace',
-                                color: isPressed
-                                    ? Theme.of(context).colorScheme.onPrimary
-                                    : Colors.black87,
-                              ),
-                            ),
-                          ),
-                        if (isMarked)
-                          Container(
-                            margin: const EdgeInsets.only(
-                              top: 1.0,
-                              bottom: 2.0,
-                            ),
-                            width: 7.0,
-                            height: 7.0,
-                            decoration: BoxDecoration(
-                              color: Colors.redAccent,
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.red.withValues(alpha: 0.5),
-                                  blurRadius: 3,
-                                  spreadRadius: 1,
+                        ),
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (note % 12 == 0)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 2.0),
+                                child: Text(
+                                  getNoteName(note),
+                                  style: const TextStyle(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black,
+                                  ),
                                 ),
-                              ],
-                            ),
-                          ),
+                              ),
+                            if (keyLabel != null)
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 2.0),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 3.5,
+                                  vertical: 1.0,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: isPressed
+                                      ? Theme.of(context).colorScheme.primaryContainer
+                                      : Colors.grey.shade200,
+                                  borderRadius: BorderRadius.circular(3.0),
+                                  border: Border.all(
+                                    color: isPressed
+                                        ? Theme.of(context).colorScheme.primary
+                                        : Colors.grey.shade400,
+                                    width: 0.5,
+                                  ),
+                                ),
+                                child: Text(
+                                  keyLabel,
+                                  style: const TextStyle(
+                                    fontSize: 8.5,
+                                    fontWeight: FontWeight.w700,
+                                    fontFamily: 'monospace',
+                                    color: Colors.black,
+                                  ),
+                                ),
+                              ),
+                            if (isMarked)
+                              Container(
+                                margin: const EdgeInsets.only(
+                                  top: 1.0,
+                                  bottom: 2.0,
+                                ),
+                                width: 7.0,
+                                height: 7.0,
+                                decoration: BoxDecoration(
+                                  color: Colors.redAccent,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.red.withValues(alpha: 0.5),
+                                      blurRadius: 3,
+                                      spreadRadius: 1,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
                       ],
                     ),
                   ),
@@ -510,59 +544,73 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
                         ),
                       ],
                     ),
-                    alignment: Alignment.bottomCenter,
-                    padding: const EdgeInsets.only(bottom: 3.0),
+                    padding: const EdgeInsets.symmetric(vertical: 3.0),
                     child: Column(
-                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        if (keyLabel != null)
-                          Container(
-                            margin: const EdgeInsets.only(bottom: 1.0),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 2.5,
-                              vertical: 1.0,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isPressed
-                                  ? Theme.of(context).colorScheme.onPrimary
-                                        .withValues(alpha: 0.9)
-                                  : const Color(0xFF383838),
-                              borderRadius: BorderRadius.circular(3.0),
-                              border: Border.all(
-                                color: isPressed
-                                    ? Colors.transparent
-                                    : Colors.white24,
-                                width: 0.5,
-                              ),
-                            ),
-                            child: Text(
-                              keyLabel,
-                              style: TextStyle(
-                                fontSize: 8.0,
-                                fontWeight: FontWeight.w700,
-                                fontFamily: 'monospace',
-                                color: isPressed
-                                    ? Theme.of(context).colorScheme.primary
-                                    : Colors.white70,
-                              ),
-                            ),
+                        Text(
+                          '$note',
+                          style: TextStyle(
+                            fontSize: 8.5,
+                            fontWeight: FontWeight.w600,
+                            color: isPressed
+                                ? Theme.of(context).colorScheme.onPrimary
+                                : (hasZone ? Colors.white70 : Colors.white38),
                           ),
-                        if (isMarked)
-                          Container(
-                            width: 6.0,
-                            height: 6.0,
-                            decoration: BoxDecoration(
-                              color: Colors.redAccent,
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.red.withValues(alpha: 0.6),
-                                  blurRadius: 3,
-                                  spreadRadius: 1,
+                        ),
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (keyLabel != null)
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 1.0),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 2.5,
+                                  vertical: 1.0,
                                 ),
-                              ],
-                            ),
-                          ),
+                                decoration: BoxDecoration(
+                                  color: isPressed
+                                      ? Theme.of(context).colorScheme.onPrimary
+                                            .withValues(alpha: 0.9)
+                                      : const Color(0xFF383838),
+                                  borderRadius: BorderRadius.circular(3.0),
+                                  border: Border.all(
+                                    color: isPressed
+                                        ? Colors.transparent
+                                        : Colors.white24,
+                                    width: 0.5,
+                                  ),
+                                ),
+                                child: Text(
+                                  keyLabel,
+                                  style: TextStyle(
+                                    fontSize: 8.0,
+                                    fontWeight: FontWeight.w700,
+                                    fontFamily: 'monospace',
+                                    color: isPressed
+                                        ? Theme.of(context).colorScheme.primary
+                                        : Colors.white70,
+                                  ),
+                                ),
+                              ),
+                            if (isMarked)
+                              Container(
+                                width: 6.0,
+                                height: 6.0,
+                                decoration: BoxDecoration(
+                                  color: Colors.redAccent,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.red.withValues(alpha: 0.6),
+                                      blurRadius: 3,
+                                      spreadRadius: 1,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
                       ],
                     ),
                   ),

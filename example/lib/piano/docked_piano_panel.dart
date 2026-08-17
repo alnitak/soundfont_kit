@@ -212,7 +212,8 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
       widget.player!.sustainMultiplier = _sustainMultiplier;
     }
     if (widget.selectedTarget != oldWidget.selectedTarget) {
-      _stopAllVoices();
+      _activeKeys.clear();
+      _safeSetState(() {});
     }
   }
 
@@ -797,11 +798,12 @@ void showKeyBindingsHelpDialog(BuildContext context) {
                 ),
               ),
               const SizedBox(height: 8),
-              buildRow(buildKbdBadge('Z'), 'Previous item in list'),
-              buildRow(buildKbdBadge('X'), 'Next item in list'),
-              buildRow(buildKbdBadge('C'), 'Stop all playing voices'),
-              buildRow(buildKbdBadge('Left Shift'), 'Shift octave down'),
-              buildRow(buildKbdBadge('Right Shift'), 'Shift octave up'),
+              buildRow(buildKbdBadge('Space'), 'Play selected item / note'),
+              buildRow(buildKbdBadge('▲ Up Arrow'), 'Previous item in list'),
+              buildRow(buildKbdBadge('▼ Down Arrow'), 'Next item in list'),
+              buildRow(buildKbdBadge('Canc / Delete'), 'Stop all playing voices'),
+              buildRow(buildKbdBadge('◄ Left Arrow'), 'Shift octave down'),
+              buildRow(buildKbdBadge('► Right Arrow'), 'Shift octave up'),
               const Divider(height: 24),
               Text(
                 'Piano Keys (1 Chromatic Octave)',
