@@ -103,8 +103,7 @@ class _SampleWaveformState extends State<SampleWaveform> {
           final isEncoded = switch (widget.sample.compression) {
             SampleCompression.ogg ||
             SampleCompression.flac ||
-            SampleCompression.wav =>
-              true,
+            SampleCompression.wav => true,
             _ => false,
           };
 
@@ -206,7 +205,8 @@ class _SampleWaveformState extends State<SampleWaveform> {
     final theme = Theme.of(context);
     final waveColor = widget.waveColor ?? theme.colorScheme.primary;
     final bgColor =
-        widget.backgroundColor ?? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4);
+        widget.backgroundColor ??
+        theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4);
 
     return Container(
       width: widget.width,
@@ -235,6 +235,7 @@ class _SampleWaveformState extends State<SampleWaveform> {
               painter: _WaveformPainter(
                 samples: _samples ?? Float32List(0),
                 color: waveColor,
+                sample: widget.sample,
               ),
             ),
     );
@@ -244,10 +245,12 @@ class _SampleWaveformState extends State<SampleWaveform> {
 class _WaveformPainter extends CustomPainter {
   final Float32List samples;
   final Color color;
+  final SampleInfo sample;
 
   const _WaveformPainter({
     required this.samples,
     required this.color,
+    required this.sample,
   });
 
   @override
@@ -258,48 +261,79 @@ class _WaveformPainter extends CustomPainter {
     final basePaint = Paint()
       ..color = color.withValues(alpha: 0.2)
       ..strokeWidth = 1.0;
-    canvas.drawLine(
-      Offset(0, centerY),
-      Offset(size.width, centerY),
-      basePaint,
-    );
+    canvas.drawLine(Offset(0, centerY), Offset(size.width, centerY), basePaint);
 
-    if (samples.isEmpty) return;
+    if (samples.isNotEmpty) {
+      // Find peak amplitude for normalization
+      double peak = 0.0;
+      for (int i = 0; i < samples.length; i++) {
+        final absVal = samples[i].abs();
+        if (absVal > peak) peak = absVal;
+      }
 
-    // Find peak amplitude for normalization
-    double peak = 0.0;
-    for (int i = 0; i < samples.length; i++) {
-      final absVal = samples[i].abs();
-      if (absVal > peak) peak = absVal;
+      final scale = peak > 0.001 ? (1.0 / peak) : 1.0;
+
+      final paint = Paint()
+        ..color = color
+        ..strokeCap = StrokeCap.round
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = (size.width / samples.length).clamp(1.0, 3.0);
+
+      final stepX = size.width / (samples.length > 1 ? samples.length - 1 : 1);
+
+      for (int i = 0; i < samples.length; i++) {
+        final x = i * stepX;
+        final normalizedAmp = (samples[i].abs() * scale).clamp(0.0, 1.0);
+        final halfHeight = normalizedAmp * (size.height / 2 - 2);
+
+        if (halfHeight > 0.5) {
+          canvas.drawLine(
+            Offset(x, centerY - halfHeight),
+            Offset(x, centerY + halfHeight),
+            paint,
+          );
+        }
+      }
     }
 
-    final scale = peak > 0.001 ? (1.0 / peak) : 1.0;
+    // Draw 1px yellow vertical lines for loop start and loop end positions
+    if (sample.loopEnd > sample.loopStart) {
+      final totalFrames = sample.sampleCount > 0
+          ? sample.sampleCount
+          : (sample.loopEnd > 0 ? sample.loopEnd : 0);
 
-    final paint = Paint()
-      ..color = color
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = (size.width / samples.length).clamp(1.0, 3.0);
-
-    final stepX = size.width / (samples.length > 1 ? samples.length - 1 : 1);
-
-    for (int i = 0; i < samples.length; i++) {
-      final x = i * stepX;
-      final normalizedAmp = (samples[i].abs() * scale).clamp(0.0, 1.0);
-      final halfHeight = normalizedAmp * (size.height / 2 - 2);
-
-      if (halfHeight > 0.5) {
-        canvas.drawLine(
-          Offset(x, centerY - halfHeight),
-          Offset(x, centerY + halfHeight),
-          paint,
+      if (totalFrames > 0) {
+        final startX = (sample.loopStart / totalFrames * size.width).clamp(
+          0.0,
+          size.width,
         );
+        final endX = (sample.loopEnd / totalFrames * size.width).clamp(
+          0.0,
+          size.width,
+        );
+
+        final loopPaint = Paint()
+          ..color = Colors.yellow
+          ..strokeWidth = 1.0
+          ..style = PaintingStyle.stroke;
+
+        canvas.drawLine(
+          Offset(startX, 0),
+          Offset(startX, size.height),
+          loopPaint,
+        );
+
+        canvas.drawLine(Offset(endX, 0), Offset(endX, size.height), loopPaint);
       }
     }
   }
 
   @override
   bool shouldRepaint(covariant _WaveformPainter oldDelegate) {
-    return oldDelegate.samples != samples || oldDelegate.color != color;
+    return oldDelegate.samples != samples ||
+        oldDelegate.color != color ||
+        oldDelegate.sample.loopStart != sample.loopStart ||
+        oldDelegate.sample.loopEnd != sample.loopEnd ||
+        oldDelegate.sample.sampleCount != sample.sampleCount;
   }
 }
