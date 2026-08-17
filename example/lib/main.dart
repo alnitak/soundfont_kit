@@ -1102,6 +1102,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               SampleWaveform(
+                key: ValueKey('sample_waveform_${sample.id}'),
                 soundFont: sf,
                 sample: sample,
                 player: _player,

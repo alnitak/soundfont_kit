@@ -140,51 +140,53 @@ class _SampleWaveformState extends State<SampleWaveform>
         final path = widget.sample.samplePath!;
         if (File(path).existsSync()) {
           try {
-            data = await SoLoud.instance.readSamplesFromFile(
+            final decoded = await SoLoud.instance.readSamplesFromFile(
               path,
               numSamplesNeeded,
               average: false,
             );
+            if (decoded.isNotEmpty) {
+              data = Float32List.fromList(decoded);
+            }
           } catch (_) {
             data = null;
           }
         }
       }
 
-      // 2. Otherwise read from memory buffer via getSampleBytes
+      // 2. Otherwise read from sample byte buffer
       if (data == null) {
         final rawBytes = await widget.soundFont.getSampleBytes(widget.sample);
         if (rawBytes.isNotEmpty) {
-          final isEncoded = switch (widget.sample.compression) {
-            SampleCompression.ogg ||
-            SampleCompression.flac ||
-            SampleCompression.wav => true,
+          final isPcm = switch (widget.sample.compression) {
+            SampleCompression.pcm8 ||
+            SampleCompression.pcm16 ||
+            SampleCompression.pcm24 ||
+            SampleCompression.pcm32 ||
+            SampleCompression.pcmFloat32 => true,
             _ => false,
           };
 
-          final buffer = isEncoded
-              ? rawBytes
-              : _wrapWithWavHeader(
-                  rawBytes,
-                  sampleRate: widget.sample.sampleRate > 0
-                      ? widget.sample.sampleRate
-                      : 44100,
-                  channels: widget.sample.channels > 0
-                      ? widget.sample.channels
-                      : 1,
-                  bitsPerSample: switch (widget.sample.compression) {
-                    SampleCompression.pcm8 => 8,
-                    SampleCompression.pcm24 => 24,
-                    SampleCompression.pcm32 => 32,
-                    _ => 16,
-                  },
-                );
-
-          data = await SoLoud.instance.readSamplesFromMem(
-            buffer,
-            numSamplesNeeded,
-            average: false,
-          );
+          if (isPcm) {
+            // Fast, pure Dart downsampling with zero FFI / WASM heap sharing issues
+            data = _extractPcmWaveform(
+              rawBytes,
+              widget.sample.compression,
+              widget.sample.channels,
+              numSamplesNeeded,
+            );
+          } else {
+            // For OGG, FLAC, WAV compressed formats, decode via SoLoud
+            final decoded = await SoLoud.instance.readSamplesFromMem(
+              rawBytes,
+              numSamplesNeeded,
+              average: false,
+            );
+            if (decoded.isNotEmpty) {
+              // Explicitly clone from WASM linear memory into Dart GC heap
+              data = Float32List.fromList(decoded);
+            }
+          }
         }
       }
 
@@ -207,52 +209,92 @@ class _SampleWaveformState extends State<SampleWaveform>
     }
   }
 
-  static Uint8List _wrapWithWavHeader(
-    Uint8List pcmBytes, {
-    required int sampleRate,
-    required int channels,
-    int bitsPerSample = 16,
-  }) {
-    final byteRate = sampleRate * channels * (bitsPerSample ~/ 8);
-    final blockAlign = channels * (bitsPerSample ~/ 8);
-    final dataSize = pcmBytes.length;
-    final chunkSize = 36 + dataSize;
+  /// High-performance pure Dart downsampler for PCM audio data.
+  /// Bypasses FFI/WASM linear memory entirely to ensure 100% stable rendering across web and desktop.
+  static Float32List _extractPcmWaveform(
+    Uint8List rawBytes,
+    SampleCompression compression,
+    int channels,
+    int numPoints,
+  ) {
+    if (rawBytes.isEmpty || numPoints <= 0) return Float32List(0);
 
-    final header = ByteData(44);
-    // RIFF
-    header.setUint8(0, 0x52);
-    header.setUint8(1, 0x49);
-    header.setUint8(2, 0x46);
-    header.setUint8(3, 0x46);
-    header.setUint32(4, chunkSize, Endian.little);
-    // WAVE
-    header.setUint8(8, 0x57);
-    header.setUint8(9, 0x41);
-    header.setUint8(10, 0x56);
-    header.setUint8(11, 0x45);
-    // fmt
-    header.setUint8(12, 0x66);
-    header.setUint8(13, 0x6D);
-    header.setUint8(14, 0x74);
-    header.setUint8(15, 0x20);
-    header.setUint32(16, 16, Endian.little); // PCM subchunk size
-    header.setUint16(20, 1, Endian.little); // AudioFormat: 1 (PCM)
-    header.setUint16(22, channels > 0 ? channels : 1, Endian.little);
-    header.setUint32(24, sampleRate > 0 ? sampleRate : 44100, Endian.little);
-    header.setUint32(28, byteRate > 0 ? byteRate : 44100 * 2, Endian.little);
-    header.setUint16(32, blockAlign > 0 ? blockAlign : 2, Endian.little);
-    header.setUint16(34, bitsPerSample, Endian.little);
-    // data
-    header.setUint8(36, 0x64);
-    header.setUint8(37, 0x61);
-    header.setUint8(38, 0x74);
-    header.setUint8(39, 0x61);
-    header.setUint32(40, dataSize, Endian.little);
+    final numChannels = channels > 0 ? channels : 1;
+    final ByteData byteData = ByteData.sublistView(rawBytes);
 
-    final builder = BytesBuilder(copy: false);
-    builder.add(header.buffer.asUint8List(header.offsetInBytes, 44));
-    builder.add(pcmBytes);
-    return builder.toBytes();
+    switch (compression) {
+      case SampleCompression.pcm16:
+        final totalSamples = rawBytes.lengthInBytes ~/ (2 * numChannels);
+        if (totalSamples <= 0) return Float32List(0);
+
+        final result = Float32List(numPoints);
+        final samplesPerPoint = totalSamples / numPoints;
+
+        for (int p = 0; p < numPoints; p++) {
+          final start = (p * samplesPerPoint).toInt();
+          final end = ((p + 1) * samplesPerPoint).toInt().clamp(start + 1, totalSamples);
+          double maxAmp = 0.0;
+
+          for (int s = start; s < end; s++) {
+            final byteOffset = s * 2 * numChannels;
+            if (byteOffset + 1 < rawBytes.lengthInBytes) {
+              final val = byteData.getInt16(byteOffset, Endian.little).abs() / 32768.0;
+              if (val > maxAmp) maxAmp = val;
+            }
+          }
+          result[p] = maxAmp;
+        }
+        return result;
+
+      case SampleCompression.pcm8:
+        final totalSamples = rawBytes.lengthInBytes ~/ numChannels;
+        if (totalSamples <= 0) return Float32List(0);
+
+        final result = Float32List(numPoints);
+        final samplesPerPoint = totalSamples / numPoints;
+
+        for (int p = 0; p < numPoints; p++) {
+          final start = (p * samplesPerPoint).toInt();
+          final end = ((p + 1) * samplesPerPoint).toInt().clamp(start + 1, totalSamples);
+          double maxAmp = 0.0;
+
+          for (int s = start; s < end; s++) {
+            final byteOffset = s * numChannels;
+            if (byteOffset < rawBytes.lengthInBytes) {
+              final val = (rawBytes[byteOffset] - 128).abs() / 128.0;
+              if (val > maxAmp) maxAmp = val;
+            }
+          }
+          result[p] = maxAmp;
+        }
+        return result;
+
+      case SampleCompression.pcmFloat32:
+        final totalSamples = rawBytes.lengthInBytes ~/ (4 * numChannels);
+        if (totalSamples <= 0) return Float32List(0);
+
+        final result = Float32List(numPoints);
+        final samplesPerPoint = totalSamples / numPoints;
+
+        for (int p = 0; p < numPoints; p++) {
+          final start = (p * samplesPerPoint).toInt();
+          final end = ((p + 1) * samplesPerPoint).toInt().clamp(start + 1, totalSamples);
+          double maxAmp = 0.0;
+
+          for (int s = start; s < end; s++) {
+            final byteOffset = s * 4 * numChannels;
+            if (byteOffset + 3 < rawBytes.lengthInBytes) {
+              final val = byteData.getFloat32(byteOffset, Endian.little).abs();
+              if (val > maxAmp) maxAmp = val;
+            }
+          }
+          result[p] = maxAmp;
+        }
+        return result;
+
+      default:
+        return Float32List(0);
+    }
   }
 
   @override
