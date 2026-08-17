@@ -103,13 +103,20 @@ class SoundFontInspectorScreen extends StatefulWidget {
       _SoundFontInspectorScreenState();
 }
 
-class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
+class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
+    with SingleTickerProviderStateMixin {
   final List<SoundFontSourceEntry> _sources = [
-    SoundFontSourceEntry.asset('assets/Celesta (minimal).sf2'),
+    SoundFontSourceEntry.asset('assets/RatAttack.sf2'),
+    SoundFontSourceEntry.asset('assets/1115_PassingJet.sf2.zip'),
     SoundFontSourceEntry.asset('assets/Celesta (minimal).sf3'),
-    SoundFontSourceEntry.asset('assets/Celesta (converted).sfz+flac.zip'),
+    SoundFontSourceEntry.asset('assets/Contact.sf2'),
+    SoundFontSourceEntry.asset('assets/Pac-Man-W2_.sf2.zip'),
+    SoundFontSourceEntry.asset('assets/SFX_StarWars_ships.SF2.zip'),
+    SoundFontSourceEntry.asset('assets/SFX_StarWars_weapons.SF2'),
   ];
 
+  late final TabController _tabController =
+      TabController(length: 3, vsync: this);
   late SoundFontSourceEntry _selectedSource;
   bool _isLoading = false;
   String? _error;
@@ -130,8 +137,100 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
 
   @override
   void dispose() {
+    _tabController.dispose();
     _player?.dispose();
     super.dispose();
+  }
+
+  void _selectPreviousItem() {
+    final sf = _soundFont;
+    if (sf == null) return;
+    final tabIndex = _tabController.index;
+
+    switch (tabIndex) {
+      case 0:
+        if (sf.presets.isEmpty) return;
+        final currentIndex = _selectedTarget?.preset != null
+            ? sf.presets.indexOf(_selectedTarget!.preset!)
+            : 0;
+        final prevIndex =
+            (currentIndex <= 0) ? sf.presets.length - 1 : currentIndex - 1;
+        setState(() {
+          _selectedTarget =
+              SelectedPlaybackTarget.preset(sf.presets[prevIndex]);
+        });
+        break;
+      case 1:
+        if (sf.instruments.isEmpty) return;
+        final currentIndex = _selectedTarget?.instrument != null
+            ? sf.instruments.indexOf(_selectedTarget!.instrument!)
+            : 0;
+        final prevIndex =
+            (currentIndex <= 0) ? sf.instruments.length - 1 : currentIndex - 1;
+        setState(() {
+          _selectedTarget =
+              SelectedPlaybackTarget.instrument(sf.instruments[prevIndex]);
+        });
+        break;
+      case 2:
+        if (sf.samples.isEmpty) return;
+        final currentIndex = _selectedTarget?.sample != null
+            ? sf.samples.indexWhere((s) => s.id == _selectedTarget!.sample!.id)
+            : 0;
+        final prevIndex =
+            (currentIndex <= 0) ? sf.samples.length - 1 : currentIndex - 1;
+        setState(() {
+          _selectedTarget = SelectedPlaybackTarget.sample(
+            sf.samples[prevIndex],
+            markedKey: sf.samples[prevIndex].originalPitch,
+          );
+        });
+        break;
+    }
+  }
+
+  void _selectNextItem() {
+    final sf = _soundFont;
+    if (sf == null) return;
+    final tabIndex = _tabController.index;
+
+    switch (tabIndex) {
+      case 0:
+        if (sf.presets.isEmpty) return;
+        final currentIndex = _selectedTarget?.preset != null
+            ? sf.presets.indexOf(_selectedTarget!.preset!)
+            : -1;
+        final nextIndex = (currentIndex + 1) % sf.presets.length;
+        setState(() {
+          _selectedTarget =
+              SelectedPlaybackTarget.preset(sf.presets[nextIndex]);
+        });
+        break;
+      case 1:
+        if (sf.instruments.isEmpty) return;
+        final currentIndex = _selectedTarget?.instrument != null
+            ? sf.instruments.indexOf(_selectedTarget!.instrument!)
+            : -1;
+        final nextIndex = (currentIndex + 1) % sf.instruments.length;
+        setState(() {
+          _selectedTarget =
+              SelectedPlaybackTarget.instrument(sf.instruments[nextIndex]);
+        });
+        break;
+      case 2:
+        if (sf.samples.isEmpty) return;
+        final currentIndex = _selectedTarget?.sample != null
+            ? sf.samples.indexWhere((s) => s.id == _selectedTarget!.sample!.id)
+            : -1;
+        final nextIndex = (currentIndex + 1) % sf.samples.length;
+        setState(() {
+          _selectedTarget = SelectedPlaybackTarget.sample(
+            sf.samples[nextIndex],
+            markedKey: sf.samples[nextIndex].originalPitch,
+          );
+        });
+        break;
+    }
   }
 
   Future<void> _startPreloadingAll() async {
@@ -464,6 +563,12 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
               },
             ),
           ),
+          IconButton(
+            icon: const Icon(Icons.info_outline),
+            tooltip: 'Keyboard Shortcuts Help',
+            onPressed: () => showKeyBindingsHelpDialog(context),
+          ),
+          const SizedBox(width: 8),
         ],
       ),
       body: _buildBody(),
@@ -538,7 +643,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
                         Text(
                           sf.comment!,
                           style: Theme.of(context).textTheme.bodySmall,
-                          maxLines: 1,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
                     ],
@@ -584,8 +689,9 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
               ],
             ),
           ),
-          const TabBar(
-            tabs: [
+          TabBar(
+            controller: _tabController,
+            tabs: const [
               Tab(icon: Icon(Icons.tune), text: 'Presets'),
               Tab(icon: Icon(Icons.piano), text: 'Instruments'),
               Tab(icon: Icon(Icons.graphic_eq), text: 'Samples'),
@@ -593,6 +699,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
           ),
           Expanded(
             child: TabBarView(
+              controller: _tabController,
               children: [
                 _buildPresetsTab(sf),
                 _buildInstrumentsTab(sf),
@@ -604,6 +711,8 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen> {
             soundFont: sf,
             player: _player,
             selectedTarget: _selectedTarget,
+            onPreviousItem: _selectPreviousItem,
+            onNextItem: _selectNextItem,
           ),
         ],
       ),

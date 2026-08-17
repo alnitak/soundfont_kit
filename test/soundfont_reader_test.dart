@@ -7,9 +7,8 @@ import 'package:soundfont_reader/soundfont_reader.dart';
 
 void main() {
   final assetDir = p.join(Directory.current.path, 'example', 'assets');
-  final sf2Path = p.join(assetDir, 'Celesta (minimal).sf2');
+  final sf2Path = p.join(assetDir, 'RatAttack.sf2');
   final sf3Path = p.join(assetDir, 'Celesta (minimal).sf3');
-  final sfzZipPath = p.join(assetDir, 'Celesta (converted).sfz+flac.zip');
 
   group('SoundFontReader SF2 tests', () {
     test('Loads and parses SF2 file correctly', () async {
@@ -61,7 +60,14 @@ void main() {
 
   group('SoundFontReader SFZ Zip tests', () {
     test('Loads and parses zipped SFZ archive correctly', () async {
-      final sf = await SoundFontFile.fromFile(sfzZipPath);
+      final archive = Archive();
+      const sfzContent = '<region> sample=sample1.flac key=F6 lokey=89 hikey=89 pitch_keycenter=89\n';
+      archive.addFile(ArchiveFile('instrument.sfz', sfzContent.length, sfzContent.codeUnits));
+      final flacDummy = [0x66, 0x4C, 0x61, 0x43, 0x00, 0x00, 0x00, 0x22];
+      archive.addFile(ArchiveFile('sample1.flac', flacDummy.length, flacDummy));
+      final zipData = ZipEncoder().encode(archive);
+
+      final sf = await SoundFontFile.fromBytes(Uint8List.fromList(zipData));
 
       expect(sf.format, equals(SoundFontFormat.sfz));
       expect(sf.presets, isNotEmpty);

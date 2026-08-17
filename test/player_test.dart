@@ -5,7 +5,7 @@ import 'package:soundfont_reader/soundfont_reader.dart';
 
 void main() {
   final assetDir = p.join(Directory.current.path, 'example', 'assets');
-  final sf2Path = p.join(assetDir, 'Celesta (minimal).sf2');
+  final sf2Path = p.join(assetDir, 'RatAttack.sf2');
 
   group('VoiceCalculator tests', () {
     test('Calculates pitch ratio accurately', () {

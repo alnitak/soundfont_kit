@@ -32,6 +32,15 @@ class PianoKeyboard extends StatefulWidget {
   /// Optional callback when an octave shift key is pressed (Left Shift = -1, Right Shift = +1).
   final void Function(int deltaOctave)? onOctaveShift;
 
+  /// Optional callback when previous item key (Z) is pressed.
+  final VoidCallback? onPreviousItem;
+
+  /// Optional callback when next item key (X) is pressed.
+  final VoidCallback? onNextItem;
+
+  /// Optional callback when stop all key (C) is pressed.
+  final VoidCallback? onStopAll;
+
   const PianoKeyboard({
     super.key,
     this.startNote = 48, // C3
@@ -39,6 +48,9 @@ class PianoKeyboard extends StatefulWidget {
     required this.onNoteDown,
     required this.onNoteUp,
     this.onOctaveShift,
+    this.onPreviousItem,
+    this.onNextItem,
+    this.onStopAll,
     this.activeKeys = const {},
     this.availableKeys,
     this.markedKey,
@@ -192,6 +204,24 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
     } else if (event.logicalKey == LogicalKeyboardKey.shiftRight) {
       if (event is KeyDownEvent) {
         widget.onOctaveShift?.call(1);
+      }
+      return true;
+    }
+
+    // Handle Navigation & Stop shortcuts: Z (previous item), X (next item), C (stop all voices)
+    if (event.logicalKey == LogicalKeyboardKey.keyZ) {
+      if (event is KeyDownEvent) {
+        widget.onPreviousItem?.call();
+      }
+      return true;
+    } else if (event.logicalKey == LogicalKeyboardKey.keyX) {
+      if (event is KeyDownEvent) {
+        widget.onNextItem?.call();
+      }
+      return true;
+    } else if (event.logicalKey == LogicalKeyboardKey.keyC) {
+      if (event is KeyDownEvent) {
+        widget.onStopAll?.call();
       }
       return true;
     }

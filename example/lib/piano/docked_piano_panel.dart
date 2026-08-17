@@ -156,6 +156,8 @@ class DockedPianoPanel extends StatefulWidget {
   final SoundFontFile? soundFont;
   final SoundFontPlayer? player;
   final SelectedPlaybackTarget? selectedTarget;
+  final VoidCallback? onPreviousItem;
+  final VoidCallback? onNextItem;
   final double initialHeight;
   final double minHeight;
   final double maxHeight;
@@ -165,6 +167,8 @@ class DockedPianoPanel extends StatefulWidget {
     this.soundFont,
     required this.player,
     required this.selectedTarget,
+    this.onPreviousItem,
+    this.onNextItem,
     this.initialHeight = 220.0,
     this.minHeight = 140.0,
     this.maxHeight = 420.0,
@@ -705,6 +709,9 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
                 onNoteDown: _handleNoteDown,
                 onNoteUp: _handleNoteUp,
                 onOctaveShift: _shiftOctave,
+                onPreviousItem: widget.onPreviousItem,
+                onNextItem: widget.onNextItem,
+                onStopAll: _stopAllVoices,
               ),
             ),
           ),
@@ -712,4 +719,129 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
       ),
     );
   }
+}
+
+/// Displays a modal help dialog listing all physical keyboard shortcuts and piano key bindings.
+void showKeyBindingsHelpDialog(BuildContext context) {
+  final theme = Theme.of(context);
+  showDialog(
+    context: context,
+    builder: (context) {
+      Widget buildKbdBadge(String text) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(
+              color: theme.colorScheme.outlineVariant,
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.1),
+                offset: const Offset(0, 1.5),
+                blurRadius: 1,
+              ),
+            ],
+          ),
+          child: Text(
+            text,
+            style: TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+        );
+      }
+
+      Widget buildRow(Widget shortcut, String description) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4.0),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 130,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: shortcut,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  description,
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+
+      return AlertDialog(
+        icon: const Icon(Icons.keyboard, size: 28),
+        title: const Text('Keyboard Shortcuts'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Navigation & Playback',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              buildRow(buildKbdBadge('Z'), 'Previous item in list'),
+              buildRow(buildKbdBadge('X'), 'Next item in list'),
+              buildRow(buildKbdBadge('C'), 'Stop all playing voices'),
+              buildRow(buildKbdBadge('Left Shift'), 'Shift octave down'),
+              buildRow(buildKbdBadge('Right Shift'), 'Shift octave up'),
+              const Divider(height: 24),
+              Text(
+                'Piano Keys (1 Chromatic Octave)',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              buildRow(
+                Wrap(
+                  spacing: 3,
+                  runSpacing: 3,
+                  children: ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K']
+                      .map(buildKbdBadge)
+                      .toList(),
+                ),
+                'White keys (C, D, E, F, G, A, B, C)',
+              ),
+              const SizedBox(height: 4),
+              buildRow(
+                Wrap(
+                  spacing: 3,
+                  runSpacing: 3,
+                  children: ['W', 'E', 'T', 'Y', 'U']
+                      .map(buildKbdBadge)
+                      .toList(),
+                ),
+                'Black keys (C#, D#, F#, G#, A#)',
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      );
+    },
+  );
 }
