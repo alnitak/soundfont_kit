@@ -611,6 +611,16 @@ class SoundFontPlayer {
     _activeVoices.clear();
   }
 
+  /// Immediately terminates all sounds in the SoLoud mixer output and clears active voices.
+  Future<void> stopMixerOutput() async {
+    await allNotesOff(releaseDuration: Duration.zero);
+    if (SoLoud.instance.isInitialized) {
+      try {
+        SoLoud.instance.stopAll();
+      } catch (_) {}
+    }
+  }
+
   /// Preloads audio bytes and optionally prepares the [AudioSource] for [sample] into cache.
   Future<void> preloadSample(
     SampleInfo sample, {

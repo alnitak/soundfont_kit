@@ -220,9 +220,7 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
   void _stopAllVoices() {
     _activeKeys.clear();
     _safeSetState(() {});
-    widget.player?.allNotesOff(
-      releaseDuration: Duration.zero,
-    );
+    widget.player?.stopMixerOutput();
     if (SoLoud.instance.isInitialized) {
       try {
         SoLoud.instance.stopAll();

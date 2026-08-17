@@ -157,15 +157,6 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
     _loadSoundFontEntry(_selectedSource);
   }
 
-  void _stopActiveVoices() {
-    _player?.allNotesOff(releaseDuration: Duration.zero);
-    if (SoLoud.instance.isInitialized) {
-      try {
-        SoLoud.instance.stopAll();
-      } catch (_) {}
-    }
-  }
-
   void _handleTabChanged() {
     if (_tabController.indexIsChanging) return;
     final sf = _soundFont;
@@ -174,22 +165,23 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
     if (tabIndex == 0 &&
         _selectedTarget?.type != PlaybackTargetType.preset &&
         sf.presets.isNotEmpty) {
-      _stopActiveVoices();
+      _player?.stopMixerOutput();
       setState(() {
         _selectedTarget = SelectedPlaybackTarget.preset(sf.presets.first);
       });
     } else if (tabIndex == 1 &&
         _selectedTarget?.type != PlaybackTargetType.instrument &&
         sf.instruments.isNotEmpty) {
-      _stopActiveVoices();
+      _player?.stopMixerOutput();
       setState(() {
-        _selectedTarget =
-            SelectedPlaybackTarget.instrument(sf.instruments.first);
+        _selectedTarget = SelectedPlaybackTarget.instrument(
+          sf.instruments.first,
+        );
       });
     } else if (tabIndex == 2 &&
         _selectedTarget?.type != PlaybackTargetType.sample &&
         sf.samples.isNotEmpty) {
-      _stopActiveVoices();
+      _player?.stopMixerOutput();
       setState(() {
         _selectedTarget = SelectedPlaybackTarget.sample(
           sf.samples.first,
@@ -211,21 +203,24 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
     final sf = _soundFont;
     if (sf == null) return;
     final tabIndex = _tabController.index;
-    _stopActiveVoices();
+    _player?.stopMixerOutput();
 
     switch (tabIndex) {
       case 0:
         if (sf.presets.isEmpty) return;
         final currentIndex =
             _selectedTarget?.type == PlaybackTargetType.preset &&
-                    _selectedTarget?.preset != null
-                ? sf.presets.indexWhere((p) =>
+                _selectedTarget?.preset != null
+            ? sf.presets.indexWhere(
+                (p) =>
                     p.bank == _selectedTarget!.preset!.bank &&
                     p.program == _selectedTarget!.preset!.program &&
-                    p.name == _selectedTarget!.preset!.name)
-                : 0;
-        final prevIndex =
-            (currentIndex <= 0) ? sf.presets.length - 1 : currentIndex - 1;
+                    p.name == _selectedTarget!.preset!.name,
+              )
+            : 0;
+        final prevIndex = (currentIndex <= 0)
+            ? sf.presets.length - 1
+            : currentIndex - 1;
         setState(() {
           _selectedTarget = SelectedPlaybackTarget.preset(
             sf.presets[prevIndex],
@@ -236,13 +231,16 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
         if (sf.instruments.isEmpty) return;
         final currentIndex =
             _selectedTarget?.type == PlaybackTargetType.instrument &&
-                    _selectedTarget?.instrument != null
-                ? sf.instruments.indexWhere((i) =>
+                _selectedTarget?.instrument != null
+            ? sf.instruments.indexWhere(
+                (i) =>
                     i.id == _selectedTarget!.instrument!.id ||
-                    i.name == _selectedTarget!.instrument!.name)
-                : 0;
-        final prevIndex =
-            (currentIndex <= 0) ? sf.instruments.length - 1 : currentIndex - 1;
+                    i.name == _selectedTarget!.instrument!.name,
+              )
+            : 0;
+        final prevIndex = (currentIndex <= 0)
+            ? sf.instruments.length - 1
+            : currentIndex - 1;
         setState(() {
           _selectedTarget = SelectedPlaybackTarget.instrument(
             sf.instruments[prevIndex],
@@ -253,11 +251,12 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
         if (sf.samples.isEmpty) return;
         final currentIndex =
             _selectedTarget?.type == PlaybackTargetType.sample &&
-                    _selectedTarget?.sample != null
-                ? sf.samples.indexWhere((s) => s.id == _selectedTarget!.sample!.id)
-                : 0;
-        final prevIndex =
-            (currentIndex <= 0) ? sf.samples.length - 1 : currentIndex - 1;
+                _selectedTarget?.sample != null
+            ? sf.samples.indexWhere((s) => s.id == _selectedTarget!.sample!.id)
+            : 0;
+        final prevIndex = (currentIndex <= 0)
+            ? sf.samples.length - 1
+            : currentIndex - 1;
         setState(() {
           _selectedTarget = SelectedPlaybackTarget.sample(
             sf.samples[prevIndex],
@@ -272,19 +271,21 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
     final sf = _soundFont;
     if (sf == null) return;
     final tabIndex = _tabController.index;
-    _stopActiveVoices();
+    _player?.stopMixerOutput();
 
     switch (tabIndex) {
       case 0:
         if (sf.presets.isEmpty) return;
         final currentIndex =
             _selectedTarget?.type == PlaybackTargetType.preset &&
-                    _selectedTarget?.preset != null
-                ? sf.presets.indexWhere((p) =>
+                _selectedTarget?.preset != null
+            ? sf.presets.indexWhere(
+                (p) =>
                     p.bank == _selectedTarget!.preset!.bank &&
                     p.program == _selectedTarget!.preset!.program &&
-                    p.name == _selectedTarget!.preset!.name)
-                : -1;
+                    p.name == _selectedTarget!.preset!.name,
+              )
+            : -1;
         final nextIndex = (currentIndex + 1) % sf.presets.length;
         setState(() {
           _selectedTarget = SelectedPlaybackTarget.preset(
@@ -296,11 +297,13 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
         if (sf.instruments.isEmpty) return;
         final currentIndex =
             _selectedTarget?.type == PlaybackTargetType.instrument &&
-                    _selectedTarget?.instrument != null
-                ? sf.instruments.indexWhere((i) =>
+                _selectedTarget?.instrument != null
+            ? sf.instruments.indexWhere(
+                (i) =>
                     i.id == _selectedTarget!.instrument!.id ||
-                    i.name == _selectedTarget!.instrument!.name)
-                : -1;
+                    i.name == _selectedTarget!.instrument!.name,
+              )
+            : -1;
         final nextIndex = (currentIndex + 1) % sf.instruments.length;
         setState(() {
           _selectedTarget = SelectedPlaybackTarget.instrument(
@@ -312,9 +315,9 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
         if (sf.samples.isEmpty) return;
         final currentIndex =
             _selectedTarget?.type == PlaybackTargetType.sample &&
-                    _selectedTarget?.sample != null
-                ? sf.samples.indexWhere((s) => s.id == _selectedTarget!.sample!.id)
-                : -1;
+                _selectedTarget?.sample != null
+            ? sf.samples.indexWhere((s) => s.id == _selectedTarget!.sample!.id)
+            : -1;
         final nextIndex = (currentIndex + 1) % sf.samples.length;
         setState(() {
           _selectedTarget = SelectedPlaybackTarget.sample(
@@ -824,15 +827,13 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
             _selectedTarget?.preset?.program == preset.program;
 
         return ExpansionTile(
-          backgroundColor: Theme.of(context)
-              .colorScheme
-              .primaryContainer
-              .withValues(alpha: 0.12),
+          backgroundColor: Theme.of(
+            context,
+          ).colorScheme.primaryContainer.withValues(alpha: 0.12),
           collapsedBackgroundColor: isSelected
-              ? Theme.of(context)
-                  .colorScheme
-                  .primaryContainer
-                  .withValues(alpha: 0.22)
+              ? Theme.of(
+                  context,
+                ).colorScheme.primaryContainer.withValues(alpha: 0.22)
               : null,
           shape: isSelected
               ? RoundedRectangleBorder(
@@ -854,7 +855,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
               : null,
           onExpansionChanged: (expanded) {
             if (expanded) {
-              _stopActiveVoices();
+              _player?.stopMixerOutput();
               setState(() {
                 _selectedTarget = SelectedPlaybackTarget.preset(preset);
               });
@@ -873,7 +874,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
               : HoldPlayButton(
                   tooltip: 'Hold to play Preset',
                   onStartPlay: () {
-                    _stopActiveVoices();
+                    _player?.stopMixerOutput();
                     setState(() {
                       _selectedTarget = SelectedPlaybackTarget.preset(preset);
                     });
@@ -893,7 +894,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
                 context,
               ).colorScheme.primaryContainer.withValues(alpha: 0.15),
               onTap: () {
-                _stopActiveVoices();
+                _player?.stopMixerOutput();
                 setState(() {
                   _selectedTarget = SelectedPlaybackTarget.preset(
                     preset,
@@ -912,7 +913,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
                 size: 20,
                 tooltip: 'Hold to play Note $key',
                 onStartPlay: () {
-                  _stopActiveVoices();
+                  _player?.stopMixerOutput();
                   setState(() {
                     _selectedTarget = SelectedPlaybackTarget.preset(
                       preset,
@@ -943,15 +944,13 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
                 _selectedTarget?.instrument?.name == inst.name);
 
         return ExpansionTile(
-          backgroundColor: Theme.of(context)
-              .colorScheme
-              .primaryContainer
-              .withValues(alpha: 0.12),
+          backgroundColor: Theme.of(
+            context,
+          ).colorScheme.primaryContainer.withValues(alpha: 0.12),
           collapsedBackgroundColor: isSelected
-              ? Theme.of(context)
-                  .colorScheme
-                  .primaryContainer
-                  .withValues(alpha: 0.22)
+              ? Theme.of(
+                  context,
+                ).colorScheme.primaryContainer.withValues(alpha: 0.22)
               : null,
           shape: isSelected
               ? RoundedRectangleBorder(
@@ -973,7 +972,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
               : null,
           onExpansionChanged: (expanded) {
             if (expanded) {
-              _stopActiveVoices();
+              _player?.stopMixerOutput();
               setState(() {
                 _selectedTarget = SelectedPlaybackTarget.instrument(inst);
               });
@@ -992,7 +991,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
               : HoldPlayButton(
                   tooltip: 'Hold to play Instrument',
                   onStartPlay: () {
-                    _stopActiveVoices();
+                    _player?.stopMixerOutput();
                     setState(() {
                       _selectedTarget = SelectedPlaybackTarget.instrument(inst);
                     });
@@ -1012,7 +1011,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
                 context,
               ).colorScheme.primaryContainer.withValues(alpha: 0.15),
               onTap: () {
-                _stopActiveVoices();
+                _player?.stopMixerOutput();
                 setState(() {
                   _selectedTarget = SelectedPlaybackTarget.instrument(
                     inst,
@@ -1031,7 +1030,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
                 size: 20,
                 tooltip: 'Hold to play Note $key',
                 onStartPlay: () {
-                  _stopActiveVoices();
+                  _player?.stopMixerOutput();
                   setState(() {
                     _selectedTarget = SelectedPlaybackTarget.instrument(
                       inst,
@@ -1066,7 +1065,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
             context,
           ).colorScheme.primaryContainer.withValues(alpha: 0.2),
           onTap: () {
-            _stopActiveVoices();
+            _player?.stopMixerOutput();
             setState(() {
               _selectedTarget = SelectedPlaybackTarget.sample(
                 sample,
@@ -1109,7 +1108,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
               HoldPlayButton(
                 tooltip: 'Hold to play sample',
                 onStartPlay: () {
-                  _stopActiveVoices();
+                  _player?.stopMixerOutput();
                   setState(() {
                     _selectedTarget = SelectedPlaybackTarget.sample(
                       sample,

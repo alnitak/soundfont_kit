@@ -234,17 +234,36 @@ The included [`example/`](example) directory contains a complete Flutter desktop
 1. **Interactive SoundFont Inspector**:
    - Tree inspector for Presets, Instruments, Generator Zones, and Raw Sample descriptors.
    - Raw binary header inspection (RIFF magic, OGG headers, FLAC metadata).
-   - Embedded audio waveform visualization widget (`SampleWaveform`).
+   - Embedded audio waveform visualization widget (`SampleWaveform`) with:
+     - Real-time animated playhead tracking (red vertical line) driven by `SoLoud.instance.getPosition()`.
+     - Yellow vertical markers indicating `loopStart` and `loopEnd` boundary positions.
 2. **Dynamic Docked Piano Keyboard**:
    - Resizable docked bottom panel.
    - Chromatic multi-touch keyboard with vertical touch-velocity sensing (pressing higher on a key plays softer; pressing lower plays louder).
-   - Visual key indicators highlighting the root key and mapped ranges of the currently selected zone/sample.
+   - Visual MIDI key numbers and keybinding badges on both white and black keys.
+   - Red indicator dots highlighting the root key and mapped ranges of the currently selected zone/sample.
+   - Full computer keyboard control and navigation:
+     - <kbd>Space</kbd>: Audition currently selected preset, instrument, or sample.
+     - <kbd>▲</kbd> / <kbd>▼</kbd> (Up / Down): Select previous / next item in the active tab list.
+     - <kbd>◄</kbd> / <kbd>►</kbd> (Left / Right): Shift keyboard octave down / up.
+     - <kbd>Canc</kbd> / <kbd>Delete</kbd>: Emergency stop for all playing voices.
+     - <kbd>A</kbd>..<kbd>K</kbd>: 1-octave chromatic QWERTY keyboard mapping.
+     - Top-right App Bar Info button with a built-in keyboard shortcuts guide dialog.
 3. **Rotary Knobs Parameter Rack**:
    - **`Vol`**: Master volume control.
    - **`Sus x` (Sustain Multiplier)**: Active when the selected target has native sustain (`0.0x` to `10.0x`).
    - **`Sus` (Sustain Time)**: Active when the selected target has no native sustain (`0.05s` to `5.0s`).
-   - Modal selection sheet to toggle and configure multiple simultaneous global audio filters.
-4. **File & Folder Pickers**:
+4. **Global Audio DSP Filters Rack**:
+   - Dedicated **Filters** button with an active filter counter badge.
+   - Interactive configuration sheet to toggle and adjust multiple global effects in real time:
+     - **Freeverb** (Room Size, Damp, Wet/Dry, Width)
+     - **Echo** (Delay Time, Decay, Filter)
+     - **Biquad Resonant Filter** (Low-pass / Band-pass frequency and resonance)
+     - **Flanger** (Delay, Frequency, Depth)
+     - **Bass Boost** (Boost dB)
+     - **Lo-Fi** (Sample rate reduction & bit depth decimation)
+     - **Wave Shaper** (Drive saturation & distortion)
+5. **File & Folder Pickers**:
    - Open individual SoundFont files (`.sf2`, `.sf3`, `.sfz`, `.zip`, `.tar.gz`, etc.).
    - Open entire uncompressed SFZ directory hierarchies with automatic nested sample resolution.
    - Optional preloading prompt with real-time percentage progress bar.
