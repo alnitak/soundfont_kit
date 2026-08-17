@@ -8,7 +8,7 @@ import 'package:soundfont_reader/soundfont_reader.dart';
 void main() {
   final assetDir = p.join(Directory.current.path, 'example', 'assets');
   final sf2Path = p.join(assetDir, 'RatAttack.sf2');
-  final sf3Path = p.join(assetDir, 'Celesta (minimal).sf3');
+  final sf3Path = p.join(assetDir, 'Celesta_minimal.sf3');
 
   group('SoundFontReader SF2 tests', () {
     test('Loads and parses SF2 file correctly', () async {

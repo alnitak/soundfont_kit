@@ -127,7 +127,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
   final List<SoundFontSourceEntry> _sources = [
     SoundFontSourceEntry.asset('assets/RatAttack.sf2'),
     SoundFontSourceEntry.asset('assets/1115_PassingJet.sf2.zip'),
-    SoundFontSourceEntry.asset('assets/Celesta (minimal).sf3'),
+    SoundFontSourceEntry.asset('assets/Celesta_minimal.sf3'),
     SoundFontSourceEntry.asset('assets/Contact.sf2'),
     SoundFontSourceEntry.asset('assets/Pac-Man-W2_.sf2.zip'),
     SoundFontSourceEntry.asset('assets/SFX_StarWars_ships.SF2.zip'),
