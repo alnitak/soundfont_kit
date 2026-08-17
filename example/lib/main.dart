@@ -30,7 +30,7 @@ class _SimpleSoundFontHomePageState extends State<SimpleSoundFontHomePage> {
     'assets/Celesta_minimal.sf3',
     'assets/SFX_StarWars_ships.SF2.zip',
     'assets/SFX_StarWars_weapons.SF2',
-    'assets/Contact.sf2',
+    'assets/TerribleDanger.sf2',
     'assets/RatAttack.sf2',
     'assets/1115_PassingJet.sf2.zip',
     'assets/Pac-Man-W2_.sf2.zip',
