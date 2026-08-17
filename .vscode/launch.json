@@ -7,11 +7,15 @@
         {
             "name": "soundfont_reader",
             "request": "launch",
+            "program": "lib/main_full.dart",
+            "cwd": "${workspaceFolder}/example",
             "type": "dart"
         },
         {
             "name": "soundfont_reader (profile mode)",
             "request": "launch",
+            "program": "lib/main_full.dart",
+            "cwd": "${workspaceFolder}/example",
             "type": "dart",
             "flutterMode": "profile"
         },
@@ -19,6 +23,8 @@
             "name": "soundfont_reader (release mode)",
             "request": "launch",
             "type": "dart",
+            "program": "lib/main_full.dart",
+            "cwd": "${workspaceFolder}/example",
             "flutterMode": "release"
         },
         {
