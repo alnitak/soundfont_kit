@@ -17,6 +17,9 @@ class SoundFontVoice {
   /// The volume envelope release duration.
   final Duration releaseDuration;
 
+  /// Optional ID of the SampleInfo played by this voice.
+  final int? sampleId;
+
   bool _isReleased = false;
 
   /// Whether note-off release has already been triggered for this voice.
@@ -28,6 +31,7 @@ class SoundFontVoice {
     required this.handles,
     this.sources = const [],
     this.releaseDuration = const Duration(milliseconds: 150),
+    this.sampleId,
   });
 
   /// Triggers note-off volume fade and stop on the audio engine timeline.

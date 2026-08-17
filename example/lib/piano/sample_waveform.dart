@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_soloud/flutter_soloud.dart';
 import 'package:soundfont_reader/soundfont_reader.dart';
 
@@ -11,6 +12,7 @@ import 'package:soundfont_reader/soundfont_reader.dart';
 class SampleWaveform extends StatefulWidget {
   final SoundFontFile soundFont;
   final SampleInfo sample;
+  final SoundFontPlayer? player;
   final double width;
   final double height;
   final Color? waveColor;
@@ -20,6 +22,7 @@ class SampleWaveform extends StatefulWidget {
     super.key,
     required this.soundFont,
     required this.sample,
+    this.player,
     this.width = 140,
     this.height = 36,
     this.waveColor,
@@ -30,17 +33,72 @@ class SampleWaveform extends StatefulWidget {
   State<SampleWaveform> createState() => _SampleWaveformState();
 }
 
-class _SampleWaveformState extends State<SampleWaveform> {
+class _SampleWaveformState extends State<SampleWaveform>
+    with SingleTickerProviderStateMixin {
   static final Map<String, Float32List> _cache = {};
 
   Float32List? _samples;
   bool _isLoading = false;
   String? _cacheKey;
+  late final Ticker _ticker;
+  double? _playheadProgress;
 
   @override
   void initState() {
     super.initState();
     _loadWaveform();
+    _ticker = createTicker(_onTick)..start();
+  }
+
+  @override
+  void dispose() {
+    _ticker.dispose();
+    super.dispose();
+  }
+
+  void _onTick(Duration elapsed) {
+    if (!mounted || !SoLoud.instance.isInitialized) return;
+
+    final player = widget.player;
+    SoundHandle? activeHandle;
+
+    if (player != null) {
+      final handles = player.getActiveHandlesForSample(widget.sample);
+      if (handles.isNotEmpty) {
+        activeHandle = handles.last;
+      }
+    }
+
+    if (activeHandle != null &&
+        SoLoud.instance.getIsValidVoiceHandle(activeHandle)) {
+      try {
+        final pos = SoLoud.instance.getPosition(activeHandle);
+        final sampleCount = widget.sample.sampleCount > 0
+            ? widget.sample.sampleCount
+            : (widget.sample.byteLength > 0 ? widget.sample.byteLength ~/ 2 : 0);
+        final sampleRate = widget.sample.sampleRate > 0
+            ? widget.sample.sampleRate
+            : 44100;
+        final totalMicros = (sampleCount / sampleRate * 1000000).toInt();
+
+        if (totalMicros > 0) {
+          final progress =
+              (pos.inMicroseconds / totalMicros).clamp(0.0, 1.0);
+          if (_playheadProgress != progress) {
+            setState(() {
+              _playheadProgress = progress;
+            });
+          }
+          return;
+        }
+      } catch (_) {}
+    }
+
+    if (_playheadProgress != null) {
+      setState(() {
+        _playheadProgress = null;
+      });
+    }
   }
 
   @override
@@ -236,6 +294,7 @@ class _SampleWaveformState extends State<SampleWaveform> {
                 samples: _samples ?? Float32List(0),
                 color: waveColor,
                 sample: widget.sample,
+                playheadProgress: _playheadProgress,
               ),
             ),
     );
@@ -246,11 +305,13 @@ class _WaveformPainter extends CustomPainter {
   final Float32List samples;
   final Color color;
   final SampleInfo sample;
+  final double? playheadProgress;
 
   const _WaveformPainter({
     required this.samples,
     required this.color,
     required this.sample,
+    this.playheadProgress,
   });
 
   @override
@@ -326,12 +387,29 @@ class _WaveformPainter extends CustomPainter {
         canvas.drawLine(Offset(endX, 0), Offset(endX, size.height), loopPaint);
       }
     }
+
+    // Draw 1px red vertical line for current playing position
+    if (playheadProgress != null) {
+      final playheadX =
+          (playheadProgress! * size.width).clamp(0.0, size.width);
+      final playheadPaint = Paint()
+        ..color = Colors.red
+        ..strokeWidth = 1.0
+        ..style = PaintingStyle.stroke;
+
+      canvas.drawLine(
+        Offset(playheadX, 0),
+        Offset(playheadX, size.height),
+        playheadPaint,
+      );
+    }
   }
 
   @override
   bool shouldRepaint(covariant _WaveformPainter oldDelegate) {
     return oldDelegate.samples != samples ||
         oldDelegate.color != color ||
+        oldDelegate.playheadProgress != playheadProgress ||
         oldDelegate.sample.loopStart != sample.loopStart ||
         oldDelegate.sample.loopEnd != sample.loopEnd ||
         oldDelegate.sample.sampleCount != sample.sampleCount;

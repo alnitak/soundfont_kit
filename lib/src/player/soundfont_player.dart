@@ -212,6 +212,7 @@ class SoundFontPlayer {
       handles: [handle],
       sources: [audio],
       releaseDuration: releaseDuration,
+      sampleId: sample.id,
     );
 
     if (trackVoice) {
@@ -922,7 +923,32 @@ class SoundFontPlayer {
       handles: [handle],
       sources: [audio],
       releaseDuration: releaseDuration,
+      sampleId: leftSample.id,
     );
+  }
+
+  /// Returns all active sound handles playing the given [sample].
+  List<SoundHandle> getActiveHandlesForSample(SampleInfo sample) {
+    final result = <SoundHandle>[];
+    final cachedSource = _audioSourceCache['sample_${sample.id}'];
+
+    for (final voiceList in _activeVoices.values) {
+      for (final voice in voiceList) {
+        if (voice.isReleased) continue;
+        final isMatch = voice.sampleId == sample.id ||
+            (cachedSource != null && voice.sources.contains(cachedSource));
+
+        if (isMatch) {
+          for (final handle in voice.handles) {
+            if (SoLoud.instance.isInitialized &&
+                SoLoud.instance.getIsValidVoiceHandle(handle)) {
+              result.add(handle);
+            }
+          }
+        }
+      }
+    }
+    return result;
   }
 
   void _trackVoice(int key, SoundFontVoice voice) {

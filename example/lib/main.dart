@@ -1101,6 +1101,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
               SampleWaveform(
                 soundFont: sf,
                 sample: sample,
+                player: _player,
                 width: 220,
                 height: 50,
               ),
