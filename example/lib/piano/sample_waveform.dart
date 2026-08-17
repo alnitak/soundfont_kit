@@ -41,7 +41,7 @@ class _SampleWaveformState extends State<SampleWaveform>
   bool _isLoading = false;
   String? _cacheKey;
   late final Ticker _ticker;
-  double? _playheadProgress;
+  final ValueNotifier<double?> _playheadNotifier = ValueNotifier<double?>(null);
 
   @override
   void initState() {
@@ -53,6 +53,7 @@ class _SampleWaveformState extends State<SampleWaveform>
   @override
   void dispose() {
     _ticker.dispose();
+    _playheadNotifier.dispose();
     super.dispose();
   }
 
@@ -84,20 +85,16 @@ class _SampleWaveformState extends State<SampleWaveform>
         if (totalMicros > 0) {
           final progress =
               (pos.inMicroseconds / totalMicros).clamp(0.0, 1.0);
-          if (_playheadProgress != progress) {
-            setState(() {
-              _playheadProgress = progress;
-            });
+          if (_playheadNotifier.value != progress) {
+            _playheadNotifier.value = progress;
           }
           return;
         }
       } catch (_) {}
     }
 
-    if (_playheadProgress != null) {
-      setState(() {
-        _playheadProgress = null;
-      });
+    if (_playheadNotifier.value != null) {
+      _playheadNotifier.value = null;
     }
   }
 
@@ -294,7 +291,9 @@ class _SampleWaveformState extends State<SampleWaveform>
                 samples: _samples ?? Float32List(0),
                 color: waveColor,
                 sample: widget.sample,
-                playheadProgress: _playheadProgress,
+              ),
+              foregroundPainter: _PlayheadPainter(
+                notifier: _playheadNotifier,
               ),
             ),
     );
@@ -305,13 +304,11 @@ class _WaveformPainter extends CustomPainter {
   final Float32List samples;
   final Color color;
   final SampleInfo sample;
-  final double? playheadProgress;
 
   const _WaveformPainter({
     required this.samples,
     required this.color,
     required this.sample,
-    this.playheadProgress,
   });
 
   @override
@@ -387,31 +384,45 @@ class _WaveformPainter extends CustomPainter {
         canvas.drawLine(Offset(endX, 0), Offset(endX, size.height), loopPaint);
       }
     }
-
-    // Draw 1px red vertical line for current playing position
-    if (playheadProgress != null) {
-      final playheadX =
-          (playheadProgress! * size.width).clamp(0.0, size.width);
-      final playheadPaint = Paint()
-        ..color = Colors.red
-        ..strokeWidth = 1.0
-        ..style = PaintingStyle.stroke;
-
-      canvas.drawLine(
-        Offset(playheadX, 0),
-        Offset(playheadX, size.height),
-        playheadPaint,
-      );
-    }
   }
 
   @override
   bool shouldRepaint(covariant _WaveformPainter oldDelegate) {
     return oldDelegate.samples != samples ||
         oldDelegate.color != color ||
-        oldDelegate.playheadProgress != playheadProgress ||
         oldDelegate.sample.loopStart != sample.loopStart ||
         oldDelegate.sample.loopEnd != sample.loopEnd ||
         oldDelegate.sample.sampleCount != sample.sampleCount;
+  }
+}
+
+/// A dedicated painter that draws only the animated red playhead line on top of the waveform.
+/// Uses [Listenable] repaint notifications so widget rebuilds and waveform recalculations are skipped.
+class _PlayheadPainter extends CustomPainter {
+  final ValueNotifier<double?> notifier;
+
+  _PlayheadPainter({required this.notifier}) : super(repaint: notifier);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final progress = notifier.value;
+    if (progress == null) return;
+
+    final playheadX = (progress * size.width).clamp(0.0, size.width);
+    final playheadPaint = Paint()
+      ..color = Colors.red
+      ..strokeWidth = 1.0
+      ..style = PaintingStyle.stroke;
+
+    canvas.drawLine(
+      Offset(playheadX, 0),
+      Offset(playheadX, size.height),
+      playheadPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _PlayheadPainter oldDelegate) {
+    return oldDelegate.notifier != notifier;
   }
 }
