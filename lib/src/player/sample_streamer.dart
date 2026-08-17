@@ -44,15 +44,15 @@ class SampleStreamer {
     required SampleInfo sample,
     Uint8List? preloadedBytes,
     int chunkSize = 65536,
-    BufferingType bufferingType = BufferingType.released,
-    bool autoDispose = true,
+    BufferingType bufferingType = BufferingType.preserved,
+    bool autoDispose = false,
   }) {
     final format = resolveBufferType(sample.compression);
     final channels = resolveChannels(sample.channels);
 
     final audio = SoLoud.instance.setBufferStream(
       autoDispose: autoDispose,
-      bufferingType: bufferingType,
+      bufferingType: BufferingType.preserved,
       bufferingTimeNeeds: 0,
       format: format,
       channels: channels,
@@ -73,12 +73,12 @@ class SampleStreamer {
     required Uint8List stereoPcmBytes,
     required int sampleRate,
     int chunkSize = 65536,
-    BufferingType bufferingType = BufferingType.released,
-    bool autoDispose = true,
+    BufferingType bufferingType = BufferingType.preserved,
+    bool autoDispose = false,
   }) {
     final audio = SoLoud.instance.setBufferStream(
       autoDispose: autoDispose,
-      bufferingType: bufferingType,
+      bufferingType: BufferingType.preserved,
       bufferingTimeNeeds: 0,
       format: BufferType.s16le,
       channels: Channels.stereo,

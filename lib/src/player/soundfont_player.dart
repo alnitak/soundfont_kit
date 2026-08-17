@@ -126,17 +126,13 @@ class SoundFontPlayer {
         preloaded = _sampleBytesCache[sample.id];
       }
 
-      final bufferingType = options.cacheAudioSources
-          ? BufferingType.preserved
-          : BufferingType.released;
-
       audio = SampleStreamer.streamSample(
         soundFont: soundFont,
         sample: sample,
         preloadedBytes: preloaded,
         chunkSize: options.streamChunkSize,
-        bufferingType: bufferingType,
-        autoDispose: bufferingType == BufferingType.released,
+        bufferingType: BufferingType.preserved,
+        autoDispose: false,
       );
 
       if (options.cacheAudioSources) {
@@ -839,16 +835,12 @@ class SoundFontPlayer {
     if (options.cacheAudioSources && _audioSourceCache.containsKey(cacheKey)) {
       audio = _audioSourceCache[cacheKey]!;
     } else {
-      final bufferingType = options.cacheAudioSources
-          ? BufferingType.preserved
-          : BufferingType.released;
-
       audio = SampleStreamer.streamStereoPcm(
         stereoPcmBytes: stereoBytes,
         sampleRate: leftSample.sampleRate,
         chunkSize: options.streamChunkSize,
-        bufferingType: bufferingType,
-        autoDispose: bufferingType == BufferingType.released,
+        bufferingType: BufferingType.preserved,
+        autoDispose: false,
       );
 
       if (options.cacheAudioSources) {
