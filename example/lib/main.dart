@@ -144,6 +144,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
   SoundFontFile? _soundFont;
   SoundFontPlayer? _player;
   SelectedPlaybackTarget? _selectedTarget;
+  final Set<int> _auditionActiveKeys = {};
 
   bool _isPreloading = false;
   double _preloadProgress = 0.0;
@@ -167,6 +168,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
         sf.presets.isNotEmpty) {
       _player?.stopMixerOutput();
       setState(() {
+        _auditionActiveKeys.clear();
         _selectedTarget = SelectedPlaybackTarget.preset(sf.presets.first);
       });
     } else if (tabIndex == 1 &&
@@ -174,6 +176,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
         sf.instruments.isNotEmpty) {
       _player?.stopMixerOutput();
       setState(() {
+        _auditionActiveKeys.clear();
         _selectedTarget = SelectedPlaybackTarget.instrument(
           sf.instruments.first,
         );
@@ -183,6 +186,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
         sf.samples.isNotEmpty) {
       _player?.stopMixerOutput();
       setState(() {
+        _auditionActiveKeys.clear();
         _selectedTarget = SelectedPlaybackTarget.sample(
           sf.samples.first,
           markedKey: sf.samples.first.originalPitch,
@@ -807,6 +811,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
           soundFont: sf,
           player: _player,
           selectedTarget: _selectedTarget,
+          externalActiveKeys: _auditionActiveKeys,
           onPreviousItem: _selectPreviousItem,
           onNextItem: _selectNextItem,
         ),
@@ -859,6 +864,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
             if (expanded) {
               _player?.stopMixerOutput();
               setState(() {
+                _auditionActiveKeys.clear();
                 _selectedTarget = SelectedPlaybackTarget.preset(preset);
               });
             }
@@ -878,10 +884,21 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
                   tooltip: 'Hold to play Preset',
                   onStartPlay: () async {
                     await _player?.stopMixerOutput();
+                    final key = preset.zones.isNotEmpty
+                        ? (preset.zones.first.rootKey ?? 60)
+                        : 60;
                     setState(() {
                       _selectedTarget = SelectedPlaybackTarget.preset(preset);
+                      _auditionActiveKeys.clear();
+                      _auditionActiveKeys.add(key);
                     });
                     return _playPreset(preset);
+                  },
+                  onStopPlay: (voice) async {
+                    setState(() {
+                      _auditionActiveKeys.clear();
+                    });
+                    await voice.release();
                   },
                 ),
           children: preset.zones.map((zone) {
@@ -899,6 +916,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
               onTap: () {
                 _player?.stopMixerOutput();
                 setState(() {
+                  _auditionActiveKeys.clear();
                   _selectedTarget = SelectedPlaybackTarget.preset(
                     preset,
                     markedKey: key,
@@ -923,8 +941,16 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
                       preset,
                       markedKey: key,
                     );
+                    _auditionActiveKeys.clear();
+                    _auditionActiveKeys.add(key);
                   });
                   return _playPreset(preset, key: key);
+                },
+                onStopPlay: (voice) async {
+                  setState(() {
+                    _auditionActiveKeys.remove(key);
+                  });
+                  await voice.release();
                 },
               ),
             );
@@ -978,6 +1004,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
             if (expanded) {
               _player?.stopMixerOutput();
               setState(() {
+                _auditionActiveKeys.clear();
                 _selectedTarget = SelectedPlaybackTarget.instrument(inst);
               });
             }
@@ -997,10 +1024,21 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
                   tooltip: 'Hold to play Instrument',
                   onStartPlay: () async {
                     await _player?.stopMixerOutput();
+                    final key = inst.zones.isNotEmpty
+                        ? (inst.zones.first.rootKey ?? 60)
+                        : 60;
                     setState(() {
                       _selectedTarget = SelectedPlaybackTarget.instrument(inst);
+                      _auditionActiveKeys.clear();
+                      _auditionActiveKeys.add(key);
                     });
                     return _playInstrument(inst);
+                  },
+                  onStopPlay: (voice) async {
+                    setState(() {
+                      _auditionActiveKeys.clear();
+                    });
+                    await voice.release();
                   },
                 ),
           children: inst.zones.map((zone) {
@@ -1018,6 +1056,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
               onTap: () {
                 _player?.stopMixerOutput();
                 setState(() {
+                  _auditionActiveKeys.clear();
                   _selectedTarget = SelectedPlaybackTarget.instrument(
                     inst,
                     markedKey: key,
@@ -1042,8 +1081,16 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
                       inst,
                       markedKey: key,
                     );
+                    _auditionActiveKeys.clear();
+                    _auditionActiveKeys.add(key);
                   });
                   return _playInstrument(inst, key: key);
+                },
+                onStopPlay: (voice) async {
+                  setState(() {
+                    _auditionActiveKeys.remove(key);
+                  });
+                  await voice.release();
                 },
               ),
             );
@@ -1073,6 +1120,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
           onTap: () {
             _player?.stopMixerOutput();
             setState(() {
+              _auditionActiveKeys.clear();
               _selectedTarget = SelectedPlaybackTarget.sample(
                 sample,
                 markedKey: sample.originalPitch,
@@ -1117,13 +1165,25 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
                 tooltip: 'Hold to play sample',
                 onStartPlay: () async {
                   await _player?.stopMixerOutput();
+                  final key =
+                      sample.originalPitch > 0 ? sample.originalPitch : 60;
                   setState(() {
                     _selectedTarget = SelectedPlaybackTarget.sample(
                       sample,
                       markedKey: sample.originalPitch,
                     );
+                    _auditionActiveKeys.clear();
+                    _auditionActiveKeys.add(key);
                   });
-                  return _playSample(sample);
+                  return _playSample(sample, key: key);
+                },
+                onStopPlay: (voice) async {
+                  final key =
+                      sample.originalPitch > 0 ? sample.originalPitch : 60;
+                  setState(() {
+                    _auditionActiveKeys.remove(key);
+                  });
+                  await voice.release();
                 },
               ),
             ],

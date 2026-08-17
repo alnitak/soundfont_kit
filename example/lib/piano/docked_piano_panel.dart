@@ -156,6 +156,7 @@ class DockedPianoPanel extends StatefulWidget {
   final SoundFontFile? soundFont;
   final SoundFontPlayer? player;
   final SelectedPlaybackTarget? selectedTarget;
+  final Set<int>? externalActiveKeys;
   final VoidCallback? onPreviousItem;
   final VoidCallback? onNextItem;
   final double initialHeight;
@@ -167,6 +168,7 @@ class DockedPianoPanel extends StatefulWidget {
     this.soundFont,
     required this.player,
     required this.selectedTarget,
+    this.externalActiveKeys,
     this.onPreviousItem,
     this.onNextItem,
     this.initialHeight = 220.0,
@@ -213,6 +215,13 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
     }
     if (widget.selectedTarget != oldWidget.selectedTarget) {
       _activeKeys.clear();
+      final markedKey = widget.selectedTarget?.resolvedMarkedKey;
+      if (markedKey != null && markedKey > 0) {
+        final targetOctave = (markedKey - 12) ~/ 12;
+        if (targetOctave < _startOctave || targetOctave > _startOctave + 2) {
+          _startOctave = (targetOctave - 1).clamp(1, 7);
+        }
+      }
       _safeSetState(() {});
     }
   }
@@ -702,7 +711,7 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
               child: PianoKeyboard(
                 startNote: _startNote,
                 keyCount: 37, // 3 full octaves
-                activeKeys: _activeKeys,
+                activeKeys: {..._activeKeys, ...?widget.externalActiveKeys},
                 availableKeys: target?.availableKeys,
                 markedKey: target?.resolvedMarkedKey,
                 onNoteDown: _handleNoteDown,
