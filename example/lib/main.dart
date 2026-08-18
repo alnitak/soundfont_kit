@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_soloud/flutter_soloud.dart';
-import 'package:soundfont_reader/soundfont_reader.dart';
+import 'package:soundfont_kit/soundfont_kit.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

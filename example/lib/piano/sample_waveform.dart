@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_soloud/flutter_soloud.dart';
-import 'package:soundfont_reader/soundfont_reader.dart';
+import 'package:soundfont_kit/soundfont_kit.dart';
 
 /// A widget that displays the audio waveform for a [SampleInfo] from a [SoundFontFile],
 /// reading the audio data using `SoLoud.instance.readSamplesFromMem` or `readSamplesFromFile`.
@@ -76,15 +76,16 @@ class _SampleWaveformState extends State<SampleWaveform>
         final pos = SoLoud.instance.getPosition(activeHandle);
         final sampleCount = widget.sample.sampleCount > 0
             ? widget.sample.sampleCount
-            : (widget.sample.byteLength > 0 ? widget.sample.byteLength ~/ 2 : 0);
+            : (widget.sample.byteLength > 0
+                  ? widget.sample.byteLength ~/ 2
+                  : 0);
         final sampleRate = widget.sample.sampleRate > 0
             ? widget.sample.sampleRate
             : 44100;
         final totalMicros = (sampleCount / sampleRate * 1000000).toInt();
 
         if (totalMicros > 0) {
-          final progress =
-              (pos.inMicroseconds / totalMicros).clamp(0.0, 1.0);
+          final progress = (pos.inMicroseconds / totalMicros).clamp(0.0, 1.0);
           if (_playheadNotifier.value != progress) {
             _playheadNotifier.value = progress;
           }
@@ -232,13 +233,17 @@ class _SampleWaveformState extends State<SampleWaveform>
 
         for (int p = 0; p < numPoints; p++) {
           final start = (p * samplesPerPoint).toInt();
-          final end = ((p + 1) * samplesPerPoint).toInt().clamp(start + 1, totalSamples);
+          final end = ((p + 1) * samplesPerPoint).toInt().clamp(
+            start + 1,
+            totalSamples,
+          );
           double maxAmp = 0.0;
 
           for (int s = start; s < end; s++) {
             final byteOffset = s * 2 * numChannels;
             if (byteOffset + 1 < rawBytes.lengthInBytes) {
-              final val = byteData.getInt16(byteOffset, Endian.little).abs() / 32768.0;
+              final val =
+                  byteData.getInt16(byteOffset, Endian.little).abs() / 32768.0;
               if (val > maxAmp) maxAmp = val;
             }
           }
@@ -255,7 +260,10 @@ class _SampleWaveformState extends State<SampleWaveform>
 
         for (int p = 0; p < numPoints; p++) {
           final start = (p * samplesPerPoint).toInt();
-          final end = ((p + 1) * samplesPerPoint).toInt().clamp(start + 1, totalSamples);
+          final end = ((p + 1) * samplesPerPoint).toInt().clamp(
+            start + 1,
+            totalSamples,
+          );
           double maxAmp = 0.0;
 
           for (int s = start; s < end; s++) {
@@ -278,7 +286,10 @@ class _SampleWaveformState extends State<SampleWaveform>
 
         for (int p = 0; p < numPoints; p++) {
           final start = (p * samplesPerPoint).toInt();
-          final end = ((p + 1) * samplesPerPoint).toInt().clamp(start + 1, totalSamples);
+          final end = ((p + 1) * samplesPerPoint).toInt().clamp(
+            start + 1,
+            totalSamples,
+          );
           double maxAmp = 0.0;
 
           for (int s = start; s < end; s++) {
@@ -334,9 +345,7 @@ class _SampleWaveformState extends State<SampleWaveform>
                 color: waveColor,
                 sample: widget.sample,
               ),
-              foregroundPainter: _PlayheadPainter(
-                notifier: _playheadNotifier,
-              ),
+              foregroundPainter: _PlayheadPainter(notifier: _playheadNotifier),
             ),
     );
   }

@@ -1,4 +1,4 @@
-# SoundFont Reader (`soundfont_reader`)
+# SoundFont Kit (`soundfont_kit`)
 
 A high-performance, pure Dart reader and playback engine for SoundFont files (**SF2**, **SF3**, and **SFZ**), powered by the [`flutter_soloud`](https://pub.dev/packages/flutter_soloud) low-latency audio engine.
 
@@ -35,13 +35,13 @@ A high-performance, pure Dart reader and playback engine for SoundFont files (**
 
 ## Getting Started
 
-Add `soundfont_reader` and `flutter_soloud` to your `pubspec.yaml`:
+Add `soundfont_kit` and `flutter_soloud` to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
   flutter:
     sdk: flutter
-  soundfont_reader: ^1.0.0
+  soundfont_kit: ^1.0.0
   flutter_soloud: ^3.0.0
 ```
 
@@ -50,7 +50,7 @@ Initialize the `flutter_soloud` audio engine prior to playback (e.g. in your `ma
 ```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_soloud/flutter_soloud.dart';
-import 'package:soundfont_reader/soundfont_reader.dart';
+import 'package:soundfont_kit/soundfont_kit.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

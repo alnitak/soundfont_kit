@@ -1,8 +1,8 @@
-name: soundfont_reader
-description: "A new Flutter package project."
+name: soundfont_kit
+description: "A high-performance SoundFont (SF2, SF3, SFZ) reader and playback engine for Flutter."
 publish_to: 'none'
 version: 0.0.1
-homepage:
+homepage: https://github.com/alnitak/soundfont_kit
 
 environment:
   sdk: ^3.12.2

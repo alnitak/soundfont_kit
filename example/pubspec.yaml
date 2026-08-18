@@ -1,5 +1,5 @@
 name: example
-description: "SoundFont Reader example"
+description: "SoundFont Kit example"
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -11,7 +11,7 @@ dependencies:
     sdk: flutter
   flutter_soloud:
     path: ../../flutter_soloud
-  soundfont_reader:
+  soundfont_kit:
     path: ../
 
   cupertino_icons: ^1.0.8

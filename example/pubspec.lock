@@ -436,7 +436,7 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  soundfont_reader:
+  soundfont_kit:
     dependency: "direct main"
     description:
       path: ".."

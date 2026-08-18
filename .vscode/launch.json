@@ -5,14 +5,14 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "soundfont_reader",
+            "name": "soundfont_kit",
             "request": "launch",
             "program": "lib/main_full.dart",
             "cwd": "${workspaceFolder}/example",
             "type": "dart"
         },
         {
-            "name": "soundfont_reader (profile mode)",
+            "name": "soundfont_kit (profile mode)",
             "request": "launch",
             "program": "lib/main_full.dart",
             "cwd": "${workspaceFolder}/example",
@@ -20,7 +20,7 @@
             "flutterMode": "profile"
         },
         {
-            "name": "soundfont_reader (release mode)",
+            "name": "soundfont_kit (release mode)",
             "request": "launch",
             "type": "dart",
             "program": "lib/main_full.dart",

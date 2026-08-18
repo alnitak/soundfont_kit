@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
-import 'package:soundfont_reader/soundfont_reader.dart';
+import 'package:soundfont_kit/soundfont_kit.dart';
 
 void main() {
   final assetDir = p.join(Directory.current.path, 'example', 'assets');
