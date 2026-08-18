@@ -37,8 +37,8 @@ class SoundFontPlayer {
   SoundFontPlayer({
     required this.soundFont,
     this.options = const SoundFontPlayerOptions(),
-  })  : _sustainTime = options.sustainTime,
-        _sustainMultiplier = options.sustainMultiplier;
+  }) : _sustainTime = options.sustainTime,
+       _sustainMultiplier = options.sustainMultiplier;
 
   double? _sustainTime;
   double _sustainMultiplier = 1.0;
@@ -77,7 +77,8 @@ class SoundFontPlayer {
   }) async {
     final effectiveKey =
         key ?? (sample.originalPitch > 0 ? sample.originalPitch : 60);
-    final speed = pitchRatio ??
+    final speed =
+        pitchRatio ??
         VoiceCalculator.calculatePitchRatio(
           key: effectiveKey,
           sample: sample,
@@ -85,7 +86,8 @@ class SoundFontPlayer {
           presetZone: presetZone,
         );
 
-    final vol = volume ??
+    final vol =
+        volume ??
         VoiceCalculator.calculateVolume(
           velocity: velocity,
           zone: zone,
@@ -93,7 +95,8 @@ class SoundFontPlayer {
           masterVolume: options.masterVolume,
         );
 
-    final p = pan ??
+    final p =
+        pan ??
         VoiceCalculator.calculatePan(
           zone: zone,
           presetZone: presetZone,
@@ -143,12 +146,14 @@ class SoundFontPlayer {
     }
 
     final validLoop = shouldLoop && loopEnd != null && loopEnd > loopStart;
-    final useScheduled = !validLoop &&
+    final useScheduled =
+        !validLoop &&
         (atTime != null || duration != null || options.useScheduledPlayback);
 
     SoundHandle handle;
     if (useScheduled) {
-      final scheduledAt = atTime ??
+      final scheduledAt =
+          atTime ??
           (SoLoud.instance.isInitialized
               ? SoLoud.instance.getEngineTime()
               : Duration.zero);
@@ -168,14 +173,10 @@ class SoundFontPlayer {
       );
 
       if (hasAttack) {
-        final attackDuration =
-            Duration(microseconds: (attackSec * 1000000).round());
-        SoLoud.instance.fadeScheduled(
-          handle,
-          scheduledAt,
-          vol,
-          attackDuration,
+        final attackDuration = Duration(
+          microseconds: (attackSec * 1000000).round(),
         );
+        SoLoud.instance.fadeScheduled(handle, scheduledAt, vol, attackDuration);
       }
 
       if (duration != null) {
@@ -238,9 +239,11 @@ class SoundFontPlayer {
   }) async {
     // Find matching zones for this key and velocity
     var matchingZones = instrument.zones
-        .where((z) =>
-            z.matches(key, velocity) &&
-            (z.sampleRef != null || z.sampleID != null))
+        .where(
+          (z) =>
+              z.matches(key, velocity) &&
+              (z.sampleRef != null || z.sampleID != null),
+        )
         .toList();
 
     // Fallback if no specific zone matches: pick first zone with a sample
@@ -264,7 +267,8 @@ class SoundFontPlayer {
 
     for (int i = 0; i < matchingZones.length; i++) {
       final zone = matchingZones[i];
-      final sample = zone.sampleRef ??
+      final sample =
+          zone.sampleRef ??
           (zone.sampleID != null && zone.sampleID! < soundFont.samples.length
               ? soundFont.samples[zone.sampleID!]
               : null);
@@ -350,8 +354,9 @@ class SoundFontPlayer {
     Duration? atTime,
     Duration? duration,
   }) async {
-    var matchingPresetZones =
-        preset.zones.where((pz) => pz.matches(key, velocity)).toList();
+    var matchingPresetZones = preset.zones
+        .where((pz) => pz.matches(key, velocity))
+        .toList();
 
     if (matchingPresetZones.isEmpty) {
       matchingPresetZones = preset.zones.take(1).toList();
@@ -366,7 +371,8 @@ class SoundFontPlayer {
     Duration maxRelease = options.defaultReleaseDuration;
 
     for (final pz in matchingPresetZones) {
-      final inst = (pz.instrumentID != null &&
+      final inst =
+          (pz.instrumentID != null &&
               pz.instrumentID! < soundFont.instruments.length)
           ? soundFont.instruments[pz.instrumentID!]
           : null;
@@ -389,14 +395,18 @@ class SoundFontPlayer {
           maxRelease = voice.releaseDuration;
         }
       } else if (pz.sampleRef != null || pz.sampleID != null) {
-        final sample = pz.sampleRef ??
+        final sample =
+            pz.sampleRef ??
             (pz.sampleID != null && pz.sampleID! < soundFont.samples.length
                 ? soundFont.samples[pz.sampleID!]
                 : null);
         if (sample != null) {
           if (options.joinStereoChannels &&
               StereoJoiner.isStereoCandidate(sample)) {
-            final pairedSample = StereoJoiner.findLinkedSample(soundFont, sample);
+            final pairedSample = StereoJoiner.findLinkedSample(
+              soundFont,
+              sample,
+            );
             if (pairedSample != null) {
               final leftSample = sample.isLeft ? sample : pairedSample;
               final rightSample = sample.isRight ? sample : pairedSample;
@@ -463,16 +473,15 @@ class SoundFontPlayer {
     int velocity = 100,
     double? customVolume,
     double? customPan,
-  }) =>
-      playPreset(
-        preset,
-        key: key,
-        velocity: velocity,
-        customVolume: customVolume,
-        customPan: customPan,
-        atTime: atTime,
-        duration: duration,
-      );
+  }) => playPreset(
+    preset,
+    key: key,
+    velocity: velocity,
+    customVolume: customVolume,
+    customPan: customPan,
+    atTime: atTime,
+    duration: duration,
+  );
 
   /// Schedules an [Instrument] playback at an absolute engine [atTime] with optional [duration].
   Future<SoundFontVoice> playInstrumentScheduled(
@@ -483,16 +492,15 @@ class SoundFontPlayer {
     int velocity = 100,
     double? customVolume,
     double? customPan,
-  }) =>
-      playInstrument(
-        instrument,
-        key: key,
-        velocity: velocity,
-        customVolume: customVolume,
-        customPan: customPan,
-        atTime: atTime,
-        duration: duration,
-      );
+  }) => playInstrument(
+    instrument,
+    key: key,
+    velocity: velocity,
+    customVolume: customVolume,
+    customPan: customPan,
+    atTime: atTime,
+    duration: duration,
+  );
 
   /// Schedules a [SampleInfo] playback at an absolute engine [atTime] with optional [duration].
   Future<SoundFontVoice> playSampleScheduled(
@@ -506,19 +514,18 @@ class SoundFontPlayer {
     double? pitchRatio,
     Zone? zone,
     Zone? presetZone,
-  }) =>
-      playSample(
-        sample,
-        key: key,
-        velocity: velocity,
-        volume: volume,
-        pan: pan,
-        pitchRatio: pitchRatio,
-        atTime: atTime,
-        duration: duration,
-        zone: zone,
-        presetZone: presetZone,
-      );
+  }) => playSample(
+    sample,
+    key: key,
+    velocity: velocity,
+    volume: volume,
+    pan: pan,
+    pitchRatio: pitchRatio,
+    atTime: atTime,
+    duration: duration,
+    zone: zone,
+    presetZone: presetZone,
+  );
 
   /// Note-on trigger: plays specified [preset], [instrument], or default bank/instrument.
   Future<SoundFontVoice> noteOn(
@@ -663,9 +670,11 @@ class SoundFontPlayer {
     Uint8List? stereoBytes = _stereoBytesCache[stereoKey];
 
     if (stereoBytes == null) {
-      final leftBytes = _sampleBytesCache[leftSample.id] ??
+      final leftBytes =
+          _sampleBytesCache[leftSample.id] ??
           await soundFont.getSampleBytes(leftSample);
-      final rightBytes = _sampleBytesCache[rightSample.id] ??
+      final rightBytes =
+          _sampleBytesCache[rightSample.id] ??
           await soundFont.getSampleBytes(rightSample);
 
       if (leftBytes.isNotEmpty && rightBytes.isNotEmpty) {
@@ -702,7 +711,8 @@ class SoundFontPlayer {
   }) async {
     final samples = <SampleInfo>{};
     for (final zone in instrument.zones) {
-      final sample = zone.sampleRef ??
+      final sample =
+          zone.sampleRef ??
           (zone.sampleID != null && zone.sampleID! < soundFont.samples.length
               ? soundFont.samples[zone.sampleID!]
               : null);
@@ -726,20 +736,23 @@ class SoundFontPlayer {
   }) async {
     final samples = <SampleInfo>{};
     for (final pz in preset.zones) {
-      final inst = (pz.instrumentID != null &&
+      final inst =
+          (pz.instrumentID != null &&
               pz.instrumentID! < soundFont.instruments.length)
           ? soundFont.instruments[pz.instrumentID!]
           : null;
       if (inst != null) {
         for (final iz in inst.zones) {
-          final s = iz.sampleRef ??
+          final s =
+              iz.sampleRef ??
               (iz.sampleID != null && iz.sampleID! < soundFont.samples.length
                   ? soundFont.samples[iz.sampleID!]
                   : null);
           if (s != null) samples.add(s);
         }
       }
-      final s = pz.sampleRef ??
+      final s =
+          pz.sampleRef ??
           (pz.sampleID != null && pz.sampleID! < soundFont.samples.length
               ? soundFont.samples[pz.sampleID!]
               : null);
@@ -773,8 +786,11 @@ class SoundFontPlayer {
         if (sample.isLeft) {
           final right = StereoJoiner.findLinkedSample(soundFont, sample);
           if (right != null) {
-            await preloadStereoPair(sample, right,
-                createAudioSource: createAudioSources);
+            await preloadStereoPair(
+              sample,
+              right,
+              createAudioSource: createAudioSources,
+            );
           }
         }
       }
@@ -800,7 +816,8 @@ class SoundFontPlayer {
       presetZone: presetZone,
     );
 
-    final vol = customVolume ??
+    final vol =
+        customVolume ??
         VoiceCalculator.calculateVolume(
           velocity: velocity,
           zone: zone,
@@ -808,10 +825,7 @@ class SoundFontPlayer {
           masterVolume: options.masterVolume,
         );
 
-    final p = customPan ??
-        VoiceCalculator.calculatePan(
-          presetZone: presetZone,
-        );
+    final p = customPan ?? VoiceCalculator.calculatePan(presetZone: presetZone);
 
     final loopInfo = VoiceCalculator.calculateLoopRegion(
       sample: leftSample,
@@ -830,9 +844,11 @@ class SoundFontPlayer {
     Uint8List? stereoBytes = _stereoBytesCache[stereoKey];
 
     if (stereoBytes == null) {
-      final leftBytes = _sampleBytesCache[leftSample.id] ??
+      final leftBytes =
+          _sampleBytesCache[leftSample.id] ??
           await soundFont.getSampleBytes(leftSample);
-      final rightBytes = _sampleBytesCache[rightSample.id] ??
+      final rightBytes =
+          _sampleBytesCache[rightSample.id] ??
           await soundFont.getSampleBytes(rightSample);
 
       stereoBytes = StereoJoiner.interleavePcm16(
@@ -861,15 +877,18 @@ class SoundFontPlayer {
       }
     }
 
-    final validLoop = loopInfo.isLooping &&
+    final validLoop =
+        loopInfo.isLooping &&
         loopInfo.loopEnd != null &&
         loopInfo.loopEnd! > loopInfo.loopStart;
-    final useScheduled = !validLoop &&
+    final useScheduled =
+        !validLoop &&
         (atTime != null || duration != null || options.useScheduledPlayback);
 
     SoundHandle handle;
     if (useScheduled) {
-      final scheduledAt = atTime ??
+      final scheduledAt =
+          atTime ??
           (SoLoud.instance.isInitialized
               ? SoLoud.instance.getEngineTime()
               : Duration.zero);
@@ -889,14 +908,10 @@ class SoundFontPlayer {
       );
 
       if (hasAttack) {
-        final attackDuration =
-            Duration(microseconds: (attackSec * 1000000).round());
-        SoLoud.instance.fadeScheduled(
-          handle,
-          scheduledAt,
-          vol,
-          attackDuration,
+        final attackDuration = Duration(
+          microseconds: (attackSec * 1000000).round(),
         );
+        SoLoud.instance.fadeScheduled(handle, scheduledAt, vol, attackDuration);
       }
 
       if (duration != null) {
@@ -947,7 +962,8 @@ class SoundFontPlayer {
     for (final voiceList in _activeVoices.values) {
       for (final voice in voiceList) {
         if (voice.isReleased) continue;
-        final isMatch = voice.sampleId == sample.id ||
+        final isMatch =
+            voice.sampleId == sample.id ||
             (cachedSource != null && voice.sources.contains(cachedSource));
 
         if (isMatch) {

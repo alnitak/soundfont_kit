@@ -13,7 +13,7 @@ import 'piano/docked_piano_panel.dart';
 import 'piano/sample_waveform.dart';
 
 void main() async {
-  Logger.root.level = kDebugMode ? Level.ALL : Level.INFO;
+  Logger.root.level = kDebugMode ? Level.INFO : Level.INFO;
   Logger.root.onRecord.listen((record) {
     dev.log(
       record.message,
@@ -29,7 +29,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   /// Initialize the player.
-  await SoLoud.instance.init();
+  await SoLoud.instance.init(bufferSize: 8192);
   SoLoud.instance.setMaxActiveVoiceCount(128);
 
   runApp(const SoundFontReaderDemoApp());
@@ -931,7 +931,9 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
                 'RootKey: ${zone.rootKey ?? "-"} | Pan: ${zone.pan ?? 0.0} | Attenuation: ${zone.attenuation ?? 0.0} dB',
               ),
               trailing: HoldPlayButton(
-                key: ValueKey('play_preset_${preset.bank}_${preset.program}_zone_$key'),
+                key: ValueKey(
+                  'play_preset_${preset.bank}_${preset.program}_zone_$key',
+                ),
                 size: 20,
                 tooltip: 'Hold to play Note $key',
                 onStartPlay: () async {
@@ -1165,8 +1167,9 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
                 tooltip: 'Hold to play sample',
                 onStartPlay: () async {
                   await _player?.stopMixerOutput();
-                  final key =
-                      sample.originalPitch > 0 ? sample.originalPitch : 60;
+                  final key = sample.originalPitch > 0
+                      ? sample.originalPitch
+                      : 60;
                   setState(() {
                     _selectedTarget = SelectedPlaybackTarget.sample(
                       sample,
@@ -1178,8 +1181,9 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
                   return _playSample(sample, key: key);
                 },
                 onStopPlay: (voice) async {
-                  final key =
-                      sample.originalPitch > 0 ? sample.originalPitch : 60;
+                  final key = sample.originalPitch > 0
+                      ? sample.originalPitch
+                      : 60;
                   setState(() {
                     _auditionActiveKeys.remove(key);
                   });
