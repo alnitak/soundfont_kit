@@ -22,7 +22,7 @@ abstract class SoundFontSource {
   Stream<Uint8List> getByteStream([
     int? offset,
     int? length,
-    int chunkSize = 65536,
+    int chunkSize = 16384,
   ]) async* {
     final totalBytes = await getBytes(offset, length);
     for (int i = 0; i < totalBytes.length; i += chunkSize) {
@@ -36,7 +36,7 @@ abstract class SoundFontSource {
   /// Returns a stream of byte chunks for a subfile.
   Stream<Uint8List> getSubFileByteStream(
     String relativePath, {
-    int chunkSize = 65536,
+    int chunkSize = 16384,
   }) async* {
     final totalBytes = await getSubFileBytes(relativePath);
     for (int i = 0; i < totalBytes.length; i += chunkSize) {

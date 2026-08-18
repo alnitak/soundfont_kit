@@ -43,7 +43,7 @@ class SampleStreamer {
     required SoundFontFile soundFont,
     required SampleInfo sample,
     Uint8List? preloadedBytes,
-    int chunkSize = 65536,
+    int chunkSize = 16384,
     BufferingType bufferingType = BufferingType.preserved,
     bool autoDispose = false,
   }) {
@@ -60,7 +60,7 @@ class SampleStreamer {
     );
 
     if (preloadedBytes != null && preloadedBytes.isNotEmpty) {
-      _feedBytesAsync(audio, preloadedBytes, chunkSize);
+      _feedBytesSync(audio, preloadedBytes, chunkSize);
     } else {
       _feedStreamAsync(audio, soundFont.getSampleByteStream(sample, chunkSize: chunkSize));
     }
@@ -72,7 +72,7 @@ class SampleStreamer {
   static AudioSource streamStereoPcm({
     required Uint8List stereoPcmBytes,
     required int sampleRate,
-    int chunkSize = 65536,
+    int chunkSize = 16384,
     BufferingType bufferingType = BufferingType.preserved,
     bool autoDispose = false,
   }) {
@@ -85,30 +85,28 @@ class SampleStreamer {
       sampleRate: sampleRate > 0 ? sampleRate : 44100,
     );
 
-    _feedBytesAsync(audio, stereoPcmBytes, chunkSize);
+    _feedBytesSync(audio, stereoPcmBytes, chunkSize);
     return audio;
   }
 
-  static void _feedBytesAsync(
+  static void _feedBytesSync(
     AudioSource audio,
     Uint8List bytes,
     int chunkSize,
   ) {
-    scheduleMicrotask(() async {
-      try {
-        for (int i = 0; i < bytes.length; i += chunkSize) {
-          if (!SoLoud.instance.isValidAudioSource(audio)) break;
-          final end = (i + chunkSize < bytes.length) ? i + chunkSize : bytes.length;
-          final chunk = Uint8List.sublistView(bytes, i, end);
-          SoLoud.instance.addAudioDataStream(audio, chunk);
-        }
-        if (SoLoud.instance.isValidAudioSource(audio)) {
-          SoLoud.instance.setDataIsEnded(audio);
-        }
-      } catch (_) {
-        // Source may have been stopped or disposed early
+    try {
+      for (int i = 0; i < bytes.length; i += chunkSize) {
+        if (!SoLoud.instance.isValidAudioSource(audio)) break;
+        final end = (i + chunkSize < bytes.length) ? i + chunkSize : bytes.length;
+        final chunk = Uint8List.sublistView(bytes, i, end);
+        SoLoud.instance.addAudioDataStream(audio, chunk);
       }
-    });
+      if (SoLoud.instance.isValidAudioSource(audio)) {
+        SoLoud.instance.setDataIsEnded(audio);
+      }
+    } catch (_) {
+      // Source may have been stopped or disposed early
+    }
   }
 
   static void _feedStreamAsync(

@@ -146,63 +146,51 @@ class SoundFontPlayer {
     }
 
     final validLoop = shouldLoop && loopEnd != null && loopEnd > loopStart;
-    final useScheduled =
-        !validLoop &&
-        (atTime != null || duration != null || options.useScheduledPlayback);
+    final scheduledAt =
+        atTime ??
+        (duration != null && SoLoud.instance.isInitialized
+            ? SoLoud.instance.getEngineTime()
+            : Duration.zero);
 
-    SoundHandle handle;
-    if (useScheduled) {
-      final scheduledAt =
-          atTime ??
-          (SoLoud.instance.isInitialized
-              ? SoLoud.instance.getEngineTime()
-              : Duration.zero);
+    final attackSec = zone?.volEnvAttack ?? presetZone?.volEnvAttack;
+    final hasAttack = attackSec != null && attackSec > 0.005;
 
-      final attackSec = zone?.volEnvAttack ?? presetZone?.volEnvAttack;
-      final hasAttack = attackSec != null && attackSec > 0.005;
+    final handle = SoLoud.instance.playScheduled(
+      audio,
+      scheduledAt,
+      duration: (duration != null && releaseDuration == Duration.zero)
+          ? duration
+          : null,
+      volume: hasAttack ? 0.0 : vol,
+      pan: p,
+      busId: options.defaultBusId,
+    );
 
-      handle = SoLoud.instance.playScheduled(
-        audio,
-        scheduledAt,
-        duration: (duration != null && releaseDuration == Duration.zero)
-            ? duration
-            : null,
-        volume: hasAttack ? 0.0 : vol,
-        pan: p,
-        busId: options.defaultBusId,
+    if (validLoop) {
+      SoLoud.instance.setLooping(handle, true);
+      SoLoud.instance.setLoopPoint(handle, loopStart);
+    }
+
+    if (hasAttack) {
+      final attackDuration = Duration(
+        microseconds: (attackSec * 1000000).round(),
       );
+      SoLoud.instance.fadeScheduled(handle, scheduledAt, vol, attackDuration);
+    }
 
-      if (hasAttack) {
-        final attackDuration = Duration(
-          microseconds: (attackSec * 1000000).round(),
+    if (duration != null) {
+      final noteOffTime = scheduledAt + duration;
+      if (releaseDuration > Duration.zero) {
+        SoLoud.instance.fadeScheduled(
+          handle,
+          noteOffTime,
+          0.0,
+          releaseDuration,
+          thenStop: true,
         );
-        SoLoud.instance.fadeScheduled(handle, scheduledAt, vol, attackDuration);
+      } else {
+        SoLoud.instance.stopScheduled(handle, noteOffTime);
       }
-
-      if (duration != null) {
-        final noteOffTime = scheduledAt + duration;
-        if (releaseDuration > Duration.zero) {
-          SoLoud.instance.fadeScheduled(
-            handle,
-            noteOffTime,
-            0.0,
-            releaseDuration,
-            thenStop: true,
-          );
-        } else {
-          SoLoud.instance.stopScheduled(handle, noteOffTime);
-        }
-      }
-    } else {
-      handle = SoLoud.instance.play(
-        audio,
-        volume: vol,
-        pan: p,
-        looping: validLoop,
-        loopingStartAt: validLoop ? loopStart : Duration.zero,
-        loopingEndAt: validLoop ? loopEnd : null,
-        busId: options.defaultBusId,
-      );
     }
 
     if (speed != 1.0) {
@@ -881,63 +869,51 @@ class SoundFontPlayer {
         loopInfo.isLooping &&
         loopInfo.loopEnd != null &&
         loopInfo.loopEnd! > loopInfo.loopStart;
-    final useScheduled =
-        !validLoop &&
-        (atTime != null || duration != null || options.useScheduledPlayback);
+    final scheduledAt =
+        atTime ??
+        (duration != null && SoLoud.instance.isInitialized
+            ? SoLoud.instance.getEngineTime()
+            : Duration.zero);
 
-    SoundHandle handle;
-    if (useScheduled) {
-      final scheduledAt =
-          atTime ??
-          (SoLoud.instance.isInitialized
-              ? SoLoud.instance.getEngineTime()
-              : Duration.zero);
+    final attackSec = zone?.volEnvAttack ?? presetZone?.volEnvAttack;
+    final hasAttack = attackSec != null && attackSec > 0.005;
 
-      final attackSec = zone?.volEnvAttack ?? presetZone?.volEnvAttack;
-      final hasAttack = attackSec != null && attackSec > 0.005;
+    final handle = SoLoud.instance.playScheduled(
+      audio,
+      scheduledAt,
+      duration: (duration != null && releaseDuration == Duration.zero)
+          ? duration
+          : null,
+      volume: hasAttack ? 0.0 : vol,
+      pan: p,
+      busId: options.defaultBusId,
+    );
 
-      handle = SoLoud.instance.playScheduled(
-        audio,
-        scheduledAt,
-        duration: (duration != null && releaseDuration == Duration.zero)
-            ? duration
-            : null,
-        volume: hasAttack ? 0.0 : vol,
-        pan: p,
-        busId: options.defaultBusId,
+    if (validLoop) {
+      SoLoud.instance.setLooping(handle, true);
+      SoLoud.instance.setLoopPoint(handle, loopInfo.loopStart);
+    }
+
+    if (hasAttack) {
+      final attackDuration = Duration(
+        microseconds: (attackSec * 1000000).round(),
       );
+      SoLoud.instance.fadeScheduled(handle, scheduledAt, vol, attackDuration);
+    }
 
-      if (hasAttack) {
-        final attackDuration = Duration(
-          microseconds: (attackSec * 1000000).round(),
+    if (duration != null) {
+      final noteOffTime = scheduledAt + duration;
+      if (releaseDuration > Duration.zero) {
+        SoLoud.instance.fadeScheduled(
+          handle,
+          noteOffTime,
+          0.0,
+          releaseDuration,
+          thenStop: true,
         );
-        SoLoud.instance.fadeScheduled(handle, scheduledAt, vol, attackDuration);
+      } else {
+        SoLoud.instance.stopScheduled(handle, noteOffTime);
       }
-
-      if (duration != null) {
-        final noteOffTime = scheduledAt + duration;
-        if (releaseDuration > Duration.zero) {
-          SoLoud.instance.fadeScheduled(
-            handle,
-            noteOffTime,
-            0.0,
-            releaseDuration,
-            thenStop: true,
-          );
-        } else {
-          SoLoud.instance.stopScheduled(handle, noteOffTime);
-        }
-      }
-    } else {
-      handle = SoLoud.instance.play(
-        audio,
-        volume: vol,
-        pan: p,
-        looping: validLoop,
-        loopingStartAt: validLoop ? loopInfo.loopStart : Duration.zero,
-        loopingEndAt: validLoop ? loopInfo.loopEnd : null,
-        busId: options.defaultBusId,
-      );
     }
 
     if (speed != 1.0) {

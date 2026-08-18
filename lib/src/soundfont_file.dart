@@ -47,7 +47,7 @@ abstract class SoundFontFile {
   /// Retrieves a stream of audio byte chunks for a specific [SampleInfo].
   Stream<Uint8List> getSampleByteStream(
     SampleInfo sample, {
-    int chunkSize = 65536,
+    int chunkSize = 16384,
   });
 
   /// Creates a [SoundFontPlayer] instance for audio playback of this SoundFont.
@@ -246,7 +246,7 @@ class _Sf2SoundFontFile extends SoundFontFile {
   @override
   Stream<Uint8List> getSampleByteStream(
     SampleInfo sample, {
-    int chunkSize = 65536,
+    int chunkSize = 16384,
   }) {
     if (sample.byteLength <= 0) {
       return Stream.value(Uint8List(0));
@@ -289,7 +289,7 @@ class _SfzSoundFontFile extends SoundFontFile {
   @override
   Stream<Uint8List> getSampleByteStream(
     SampleInfo sample, {
-    int chunkSize = 65536,
+    int chunkSize = 16384,
   }) {
     if (sample.samplePath != null && sample.samplePath!.isNotEmpty) {
       return _data.activeSource.getSubFileByteStream(

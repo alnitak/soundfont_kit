@@ -40,7 +40,7 @@ class SoundFontPlayerOptions {
   const SoundFontPlayerOptions({
     this.joinStereoChannels = true,
     this.cacheAudioSources = true,
-    this.streamChunkSize = 65536,
+    this.streamChunkSize = 16384,
     this.defaultBusId = 0,
     this.defaultReleaseDuration = const Duration(milliseconds: 150),
     this.masterVolume = 1.0,

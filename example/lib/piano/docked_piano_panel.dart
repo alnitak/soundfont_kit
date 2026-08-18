@@ -772,17 +772,11 @@ void showKeyBindingsHelpDialog(BuildContext context) {
             children: [
               SizedBox(
                 width: 130,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: shortcut,
-                ),
+                child: Align(alignment: Alignment.centerLeft, child: shortcut),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  description,
-                  style: theme.textTheme.bodyMedium,
-                ),
+                child: Text(description, style: theme.textTheme.bodyMedium),
               ),
             ],
           ),
@@ -808,7 +802,10 @@ void showKeyBindingsHelpDialog(BuildContext context) {
               buildRow(buildKbdBadge('Space'), 'Play selected item / note'),
               buildRow(buildKbdBadge('▲ Up Arrow'), 'Previous item in list'),
               buildRow(buildKbdBadge('▼ Down Arrow'), 'Next item in list'),
-              buildRow(buildKbdBadge('Canc / Delete'), 'Stop all playing voices'),
+              buildRow(
+                buildKbdBadge('Canc / Delete'),
+                'Stop all playing voices',
+              ),
               buildRow(buildKbdBadge('◄ Left Arrow'), 'Shift octave down'),
               buildRow(buildKbdBadge('► Right Arrow'), 'Shift octave up'),
               const Divider(height: 24),
@@ -824,9 +821,16 @@ void showKeyBindingsHelpDialog(BuildContext context) {
                 Wrap(
                   spacing: 3,
                   runSpacing: 3,
-                  children: ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K']
-                      .map(buildKbdBadge)
-                      .toList(),
+                  children: [
+                    'A',
+                    'S',
+                    'D',
+                    'F',
+                    'G',
+                    'H',
+                    'J',
+                    'K',
+                  ].map(buildKbdBadge).toList(),
                 ),
                 'White keys (C, D, E, F, G, A, B, C)',
               ),
@@ -835,9 +839,13 @@ void showKeyBindingsHelpDialog(BuildContext context) {
                 Wrap(
                   spacing: 3,
                   runSpacing: 3,
-                  children: ['W', 'E', 'T', 'Y', 'U']
-                      .map(buildKbdBadge)
-                      .toList(),
+                  children: [
+                    'W',
+                    'E',
+                    'T',
+                    'Y',
+                    'U',
+                  ].map(buildKbdBadge).toList(),
                 ),
                 'Black keys (C#, D#, F#, G#, A#)',
               ),
