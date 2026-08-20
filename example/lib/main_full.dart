@@ -29,7 +29,11 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   /// Initialize the player.
-  await SoLoud.instance.init(bufferSize: 8192);
+  await SoLoud.instance.init(
+    bufferSize: 8192,
+    devicePeriodFrames: 256,
+    renderAheadFrames: 8192,
+  );
   SoLoud.instance.setMaxActiveVoiceCount(128);
 
   runApp(const SoundFontReaderDemoApp());

@@ -40,29 +40,26 @@ class SoundFontVoice {
     _isReleased = true;
 
     final duration = customRelease ?? releaseDuration;
+    final scheduledAt = atTime ??
+        (SoLoud.instance.isInitialized
+            ? (SoLoud.instance.isRenderAheadEnabled
+                ? SoLoud.instance.getPlayheadTime()
+                : SoLoud.instance.getEngineTime())
+            : Duration.zero);
 
     for (final handle in handles) {
       if (!SoLoud.instance.getIsValidVoiceHandle(handle)) continue;
       try {
-        if (atTime != null) {
-          if (duration > Duration.zero) {
-            SoLoud.instance.fadeScheduled(
-              handle,
-              atTime,
-              0.0,
-              duration,
-              thenStop: true,
-            );
-          } else {
-            SoLoud.instance.stopScheduled(handle, atTime);
-          }
+        if (duration > Duration.zero) {
+          SoLoud.instance.fadeScheduled(
+            handle,
+            scheduledAt,
+            0.0,
+            duration,
+            thenStop: true,
+          );
         } else {
-          if (duration > Duration.zero) {
-            SoLoud.instance.fadeVolume(handle, 0.0, duration);
-            SoLoud.instance.scheduleStop(handle, duration);
-          } else {
-            await SoLoud.instance.stop(handle);
-          }
+          SoLoud.instance.stopScheduled(handle, scheduledAt);
         }
       } catch (_) {
         try {

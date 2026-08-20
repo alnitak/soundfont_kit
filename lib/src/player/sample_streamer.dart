@@ -95,13 +95,8 @@ class SampleStreamer {
     int chunkSize,
   ) {
     try {
-      for (int i = 0; i < bytes.length; i += chunkSize) {
-        if (!SoLoud.instance.isValidAudioSource(audio)) break;
-        final end = (i + chunkSize < bytes.length) ? i + chunkSize : bytes.length;
-        final chunk = Uint8List.sublistView(bytes, i, end);
-        SoLoud.instance.addAudioDataStream(audio, chunk);
-      }
       if (SoLoud.instance.isValidAudioSource(audio)) {
+        SoLoud.instance.addAudioDataStream(audio, bytes);
         SoLoud.instance.setDataIsEnded(audio);
       }
     } catch (_) {

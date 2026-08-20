@@ -126,9 +126,13 @@ class SoundFontPlayer {
     if (options.cacheAudioSources && _audioSourceCache.containsKey(cacheKey)) {
       audio = _audioSourceCache[cacheKey]!;
     } else {
-      Uint8List? preloaded;
-      if (_sampleBytesCache.containsKey(sample.id)) {
-        preloaded = _sampleBytesCache[sample.id];
+      Uint8List? preloaded = _sampleBytesCache[sample.id];
+      if (preloaded == null) {
+        final bytes = await soundFont.getSampleBytes(sample);
+        if (bytes.isNotEmpty) {
+          _sampleBytesCache[sample.id] = bytes;
+          preloaded = bytes;
+        }
       }
 
       audio = SampleStreamer.streamSample(
@@ -146,11 +150,7 @@ class SoundFontPlayer {
     }
 
     final validLoop = shouldLoop && loopEnd != null && loopEnd > loopStart;
-    final scheduledAt =
-        atTime ??
-        (duration != null && SoLoud.instance.isInitialized
-            ? SoLoud.instance.getEngineTime()
-            : Duration.zero);
+    final scheduledAt = atTime ?? Duration.zero;
 
     final attackSec = zone?.volEnvAttack ?? presetZone?.volEnvAttack;
     final hasAttack = attackSec != null && attackSec > 0.005;
@@ -158,10 +158,8 @@ class SoundFontPlayer {
     final handle = SoLoud.instance.playScheduled(
       audio,
       scheduledAt,
-      duration: (duration != null && releaseDuration == Duration.zero)
-          ? duration
-          : null,
-      volume: hasAttack ? 0.0 : vol,
+      duration: duration,
+      volume: vol,
       pan: p,
       busId: options.defaultBusId,
     );
@@ -714,6 +712,17 @@ class SoundFontPlayer {
       index++;
       onProgress?.call(total > 0 ? index / total : 1.0, index, total);
     }
+
+    if (options.joinStereoChannels) {
+      for (final s in samples) {
+        if (s.isLeft) {
+          final right = StereoJoiner.findLinkedSample(soundFont, s);
+          if (right != null) {
+            await preloadStereoPair(s, right, createAudioSource: createAudioSources);
+          }
+        }
+      }
+    }
   }
 
   /// Preloads all samples needed for [preset] with optional progress callback.
@@ -753,6 +762,17 @@ class SoundFontPlayer {
       await preloadSample(s, createAudioSource: createAudioSources);
       index++;
       onProgress?.call(total > 0 ? index / total : 1.0, index, total);
+    }
+
+    if (options.joinStereoChannels) {
+      for (final s in samples) {
+        if (s.isLeft) {
+          final right = StereoJoiner.findLinkedSample(soundFont, s);
+          if (right != null) {
+            await preloadStereoPair(s, right, createAudioSource: createAudioSources);
+          }
+        }
+      }
     }
   }
 
@@ -829,29 +849,37 @@ class SoundFontPlayer {
     );
 
     final stereoKey = '${leftSample.id}_${rightSample.id}';
-    Uint8List? stereoBytes = _stereoBytesCache[stereoKey];
-
-    if (stereoBytes == null) {
-      final leftBytes =
-          _sampleBytesCache[leftSample.id] ??
-          await soundFont.getSampleBytes(leftSample);
-      final rightBytes =
-          _sampleBytesCache[rightSample.id] ??
-          await soundFont.getSampleBytes(rightSample);
-
-      stereoBytes = StereoJoiner.interleavePcm16(
-        leftBytes: leftBytes,
-        rightBytes: rightBytes,
-      );
-      _stereoBytesCache[stereoKey] = stereoBytes;
-    }
-
-    AudioSource audio;
     final cacheKey = 'stereo_$stereoKey';
+    AudioSource audio;
 
     if (options.cacheAudioSources && _audioSourceCache.containsKey(cacheKey)) {
       audio = _audioSourceCache[cacheKey]!;
     } else {
+      Uint8List? stereoBytes = _stereoBytesCache[stereoKey];
+
+      if (stereoBytes == null) {
+        Uint8List? leftBytes = _sampleBytesCache[leftSample.id];
+        if (leftBytes == null) {
+          leftBytes = await soundFont.getSampleBytes(leftSample);
+          if (leftBytes.isNotEmpty) {
+            _sampleBytesCache[leftSample.id] = leftBytes;
+          }
+        }
+        Uint8List? rightBytes = _sampleBytesCache[rightSample.id];
+        if (rightBytes == null) {
+          rightBytes = await soundFont.getSampleBytes(rightSample);
+          if (rightBytes.isNotEmpty) {
+            _sampleBytesCache[rightSample.id] = rightBytes;
+          }
+        }
+
+        stereoBytes = StereoJoiner.interleavePcm16(
+          leftBytes: leftBytes,
+          rightBytes: rightBytes,
+        );
+        _stereoBytesCache[stereoKey] = stereoBytes;
+      }
+
       audio = SampleStreamer.streamStereoPcm(
         stereoPcmBytes: stereoBytes,
         sampleRate: leftSample.sampleRate,
@@ -869,11 +897,7 @@ class SoundFontPlayer {
         loopInfo.isLooping &&
         loopInfo.loopEnd != null &&
         loopInfo.loopEnd! > loopInfo.loopStart;
-    final scheduledAt =
-        atTime ??
-        (duration != null && SoLoud.instance.isInitialized
-            ? SoLoud.instance.getEngineTime()
-            : Duration.zero);
+    final scheduledAt = atTime ?? Duration.zero;
 
     final attackSec = zone?.volEnvAttack ?? presetZone?.volEnvAttack;
     final hasAttack = attackSec != null && attackSec > 0.005;
@@ -881,10 +905,8 @@ class SoundFontPlayer {
     final handle = SoLoud.instance.playScheduled(
       audio,
       scheduledAt,
-      duration: (duration != null && releaseDuration == Duration.zero)
-          ? duration
-          : null,
-      volume: hasAttack ? 0.0 : vol,
+      duration: duration,
+      volume: vol,
       pan: p,
       busId: options.defaultBusId,
     );
