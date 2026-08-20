@@ -31,10 +31,11 @@ void main() async {
   /// Initialize the player.
   await SoLoud.instance.init(
     bufferSize: 8192,
-    devicePeriodFrames: 256,
+    devicePeriodFrames: 1024,
     renderAheadFrames: 8192,
   );
-  SoLoud.instance.setMaxActiveVoiceCount(128);
+  SoLoud.instance.setMaxActiveVoiceCount(32);
+  SoLoud.instance.setAudioDeviceIdleTimeout(null);
 
   runApp(const SoundFontReaderDemoApp());
 }

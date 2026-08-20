@@ -34,6 +34,9 @@ class SoundFontPlayer {
   /// In-memory cache for preserved [AudioSource] instances.
   final Map<String, AudioSource> _audioSourceCache = {};
 
+  /// Set of currently held/active MIDI keys to avoid orphaned voices when noteOff fires during async creation.
+  final Set<int> _heldKeys = {};
+
   SoundFontPlayer({
     required this.soundFont,
     this.options = const SoundFontPlayerOptions(),
@@ -77,6 +80,9 @@ class SoundFontPlayer {
   }) async {
     final effectiveKey =
         key ?? (sample.originalPitch > 0 ? sample.originalPitch : 60);
+    if (trackVoice) {
+      _heldKeys.add(effectiveKey);
+    }
     final speed =
         pitchRatio ??
         VoiceCalculator.calculatePitchRatio(
@@ -161,13 +167,15 @@ class SoundFontPlayer {
       duration: duration,
       volume: vol,
       pan: p,
+      scale: speed,
+      looping: validLoop,
+      loopingStartAt: validLoop ? loopStart : Duration.zero,
       busId: options.defaultBusId,
     );
-
-    if (validLoop) {
-      SoLoud.instance.setLooping(handle, true);
-      SoLoud.instance.setLoopPoint(handle, loopStart);
-    }
+    print(
+      'Active voices count: ${SoLoud.instance.getActiveVoiceCount()}  '
+      'Active sounds: ${SoLoud.instance.activeSounds.length}',
+    );
 
     if (hasAttack) {
       final attackDuration = Duration(
@@ -189,10 +197,6 @@ class SoundFontPlayer {
       } else {
         SoLoud.instance.stopScheduled(handle, noteOffTime);
       }
-    }
-
-    if (speed != 1.0) {
-      SoLoud.instance.setRelativePlaySpeed(handle, speed);
     }
 
     final voice = SoundFontVoice(
@@ -223,6 +227,10 @@ class SoundFontPlayer {
     Zone? presetZone,
     bool trackVoice = true,
   }) async {
+    if (trackVoice) {
+      _heldKeys.add(key);
+    }
+
     // Find matching zones for this key and velocity
     var matchingZones = instrument.zones
         .where(
@@ -339,7 +347,11 @@ class SoundFontPlayer {
     double? customPan,
     Duration? atTime,
     Duration? duration,
+    bool trackVoice = true,
   }) async {
+    if (trackVoice) {
+      _heldKeys.add(key);
+    }
     var matchingPresetZones = preset.zones
         .where((pz) => pz.matches(key, velocity))
         .toList();
@@ -446,7 +458,9 @@ class SoundFontPlayer {
       releaseDuration: maxRelease,
     );
 
-    _trackVoice(key, compoundVoice);
+    if (trackVoice) {
+      _trackVoice(key, compoundVoice);
+    }
     return compoundVoice;
   }
 
@@ -589,6 +603,7 @@ class SoundFontPlayer {
 
   /// Note-off trigger: initiates release volume envelope on all voices for [key].
   Future<void> noteOff(int key, {Duration? releaseDuration}) async {
+    _heldKeys.remove(key);
     final voices = _activeVoices.remove(key);
     if (voices == null || voices.isEmpty) return;
 
@@ -599,6 +614,7 @@ class SoundFontPlayer {
 
   /// Stops all active voices across all keys.
   Future<void> allNotesOff({Duration? releaseDuration}) async {
+    _heldKeys.clear();
     final allKeys = _activeVoices.keys.toList();
     for (final key in allKeys) {
       await noteOff(key, releaseDuration: releaseDuration);
@@ -718,7 +734,11 @@ class SoundFontPlayer {
         if (s.isLeft) {
           final right = StereoJoiner.findLinkedSample(soundFont, s);
           if (right != null) {
-            await preloadStereoPair(s, right, createAudioSource: createAudioSources);
+            await preloadStereoPair(
+              s,
+              right,
+              createAudioSource: createAudioSources,
+            );
           }
         }
       }
@@ -769,7 +789,11 @@ class SoundFontPlayer {
         if (s.isLeft) {
           final right = StereoJoiner.findLinkedSample(soundFont, s);
           if (right != null) {
-            await preloadStereoPair(s, right, createAudioSource: createAudioSources);
+            await preloadStereoPair(
+              s,
+              right,
+              createAudioSource: createAudioSources,
+            );
           }
         }
       }
@@ -908,13 +932,15 @@ class SoundFontPlayer {
       duration: duration,
       volume: vol,
       pan: p,
+      scale: speed,
+      looping: validLoop,
+      loopingStartAt: validLoop ? loopInfo.loopStart : Duration.zero,
       busId: options.defaultBusId,
     );
-
-    if (validLoop) {
-      SoLoud.instance.setLooping(handle, true);
-      SoLoud.instance.setLoopPoint(handle, loopInfo.loopStart);
-    }
+    print(
+      'Active voices count: ${SoLoud.instance.getActiveVoiceCount()}  '
+      'Active sounds: ${SoLoud.instance.activeSounds.length}',
+    );
 
     if (hasAttack) {
       final attackDuration = Duration(
@@ -936,10 +962,6 @@ class SoundFontPlayer {
       } else {
         SoLoud.instance.stopScheduled(handle, noteOffTime);
       }
-    }
-
-    if (speed != 1.0) {
-      SoLoud.instance.setRelativePlaySpeed(handle, speed);
     }
 
     return SoundFontVoice(
@@ -978,6 +1000,11 @@ class SoundFontPlayer {
   }
 
   void _trackVoice(int key, SoundFontVoice voice) {
+    if (!_heldKeys.contains(key)) {
+      // Key was already released while this voice was being prepared asynchronously
+      voice.release();
+      return;
+    }
     _activeVoices.putIfAbsent(key, () => []).add(voice);
   }
 
