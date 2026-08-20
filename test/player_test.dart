@@ -89,8 +89,8 @@ void main() {
 
       final loopInfo = VoiceCalculator.calculateLoopRegion(sample: sample);
       expect(loopInfo.isLooping, isTrue);
-      expect(loopInfo.loopStart, equals(const Duration(milliseconds: 100)));
-      expect(loopInfo.loopEnd, equals(const Duration(milliseconds: 200)));
+      expect(loopInfo.startFrames, equals(4410));
+      expect(loopInfo.endFrames, equals(8820));
     });
   });
 

@@ -70,8 +70,8 @@ class SoundFontPlayer {
     double? pan,
     double? pitchRatio,
     bool? looping,
-    Duration? loopingStartAt,
-    Duration? loopingEndAt,
+    int? loopingStartOffsetAt,
+    int? loopingEndOffsetAt,
     Duration? atTime,
     Duration? duration,
     Zone? zone,
@@ -115,8 +115,8 @@ class SoundFontPlayer {
     );
 
     final shouldLoop = looping ?? loopInfo.isLooping;
-    final loopStart = loopingStartAt ?? loopInfo.loopStart;
-    final loopEnd = loopingEndAt ?? loopInfo.loopEnd;
+    final startOffset = loopingStartOffsetAt ?? loopInfo.startFrames;
+    final endOffset = loopingEndOffsetAt ?? loopInfo.endFrames;
 
     final releaseDuration = VoiceCalculator.calculateReleaseDuration(
       zone: zone,
@@ -155,7 +155,9 @@ class SoundFontPlayer {
       }
     }
 
-    final validLoop = shouldLoop && loopEnd != null && loopEnd > loopStart;
+    final validLoop = shouldLoop &&
+        endOffset != null &&
+        endOffset > startOffset;
     final scheduledAt = atTime ?? Duration.zero;
 
     final attackSec = zone?.volEnvAttack ?? presetZone?.volEnvAttack;
@@ -169,7 +171,8 @@ class SoundFontPlayer {
       pan: p,
       scale: speed,
       looping: validLoop,
-      loopingStartAt: validLoop ? loopStart : Duration.zero,
+      loopingStartOffsetAt: validLoop ? startOffset : null,
+      loopingEndOffsetAt: validLoop ? endOffset : null,
       busId: options.defaultBusId,
     );
     print(
@@ -919,8 +922,8 @@ class SoundFontPlayer {
 
     final validLoop =
         loopInfo.isLooping &&
-        loopInfo.loopEnd != null &&
-        loopInfo.loopEnd! > loopInfo.loopStart;
+        loopInfo.endFrames != null &&
+        loopInfo.endFrames! > loopInfo.startFrames;
     final scheduledAt = atTime ?? Duration.zero;
 
     final attackSec = zone?.volEnvAttack ?? presetZone?.volEnvAttack;
@@ -934,7 +937,8 @@ class SoundFontPlayer {
       pan: p,
       scale: speed,
       looping: validLoop,
-      loopingStartAt: validLoop ? loopInfo.loopStart : Duration.zero,
+      loopingStartOffsetAt: validLoop ? loopInfo.startFrames : null,
+      loopingEndOffsetAt: validLoop ? loopInfo.endFrames : null,
       busId: options.defaultBusId,
     );
     print(

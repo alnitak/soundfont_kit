@@ -93,10 +93,13 @@ class VoiceCalculator {
     return pan.clamp(-1.0, 1.0);
   }
 
-  /// Calculates loop region timestamps ([loopingStartAt], [loopingEndAt])
+  /// Calculates loop region frame boundaries ([startFrames], [endFrames])
   /// from sample frame loop boundaries.
-  static ({bool isLooping, Duration loopStart, Duration? loopEnd})
-      calculateLoopRegion({
+  static ({
+    bool isLooping,
+    int startFrames,
+    int? endFrames,
+  }) calculateLoopRegion({
     required SampleInfo sample,
     Zone? zone,
   }) {
@@ -111,32 +114,18 @@ class VoiceCalculator {
     final shouldLoop = loopMode == LoopMode.continuous ||
         loopMode == LoopMode.sustain;
 
-    if (!shouldLoop || sample.sampleRate <= 0 || endFrames <= startFrames) {
+    if (!shouldLoop || endFrames <= startFrames) {
       return (
         isLooping: false,
-        loopStart: Duration.zero,
-        loopEnd: null,
+        startFrames: 0,
+        endFrames: null,
       );
     }
-
-    final startMicros = ((startFrames / sample.sampleRate) * 1000000).round();
-    final endMicros = ((endFrames / sample.sampleRate) * 1000000).round();
-
-    if (endMicros <= startMicros) {
-      return (
-        isLooping: false,
-        loopStart: Duration.zero,
-        loopEnd: null,
-      );
-    }
-
-    final loopStart = Duration(microseconds: math.max(0, startMicros));
-    final loopEnd = Duration(microseconds: endMicros);
 
     return (
       isLooping: true,
-      loopStart: loopStart,
-      loopEnd: loopEnd,
+      startFrames: startFrames,
+      endFrames: endFrames,
     );
   }
 
