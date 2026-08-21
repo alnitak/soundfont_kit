@@ -173,9 +173,9 @@ class SoundFontGlobalFilters {
             id: 'delay',
             name: 'Delay Time',
             min: filters.echoFilter.queryDelay.min,
-            max: filters.echoFilter.queryDelay.max.isFinite
+            max: filters.echoFilter.queryDelay.max <= 10.0
                 ? filters.echoFilter.queryDelay.max
-                : 2.0,
+                : 3.0,
             defaultValue: filters.echoFilter.queryDelay.def,
             unit: 's',
             getValue: () => filters.echoFilter.delay.value,
