@@ -517,7 +517,7 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
                           label: 'Sus x',
                           value: _sustainMultiplier,
                           min: 0.0,
-                          max: 10.0,
+                          max: 4.0,
                           defaultValue: 1.0,
                           unit: 'x',
                           size: 30.0,
