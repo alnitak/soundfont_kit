@@ -27,6 +27,7 @@ class SimpleSoundFontHomePage extends StatefulWidget {
 
 class _SimpleSoundFontHomePageState extends State<SimpleSoundFontHomePage> {
   final List<String> _bundledAssets = [
+    'assets/yahamaU1.SF2',
     'assets/Celesta_minimal.sf3',
     'assets/SFX_StarWars_ships.SF2.zip',
     'assets/SFX_StarWars_weapons.SF2',

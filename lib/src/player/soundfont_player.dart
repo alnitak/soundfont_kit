@@ -155,9 +155,8 @@ class SoundFontPlayer {
       }
     }
 
-    final validLoop = shouldLoop &&
-        endOffset != null &&
-        endOffset > startOffset;
+    final validLoop =
+        shouldLoop && endOffset != null && endOffset > startOffset;
     final scheduledAt = atTime ?? Duration.zero;
 
     final attackSec = zone?.volEnvAttack ?? presetZone?.volEnvAttack;

@@ -3,7 +3,7 @@
     "tasks": [
         {
             "label": "compile macos debug",
-            "command": "cd ${workspaceFolder}/example; flutter build macos -t lib/main.dart --debug",
+            "command": "cd ${workspaceFolder}/example; flutter build macos -t lib/main_full.dart --debug",
             "type": "shell"
         }
     ]
