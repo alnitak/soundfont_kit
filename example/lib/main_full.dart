@@ -1,5 +1,6 @@
 import 'dart:developer' as dev;
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
@@ -30,9 +31,9 @@ void main() async {
 
   /// Initialize the player.
   await SoLoud.instance.init(
-    bufferSize: 8192,
-    devicePeriodFrames: 1024,
-    renderAheadFrames: 8192,
+    bufferSize: 1024,
+    devicePeriodFrames: 128,
+    renderAheadFrames: 1024,
   );
   SoLoud.instance.setMaxActiveVoiceCount(32);
   SoLoud.instance.setAudioDeviceIdleTimeout(null);
@@ -130,6 +131,7 @@ class SoundFontInspectorScreen extends StatefulWidget {
 class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
     with SingleTickerProviderStateMixin {
   final List<SoundFontSourceEntry> _sources = [
+    SoundFontSourceEntry.asset('assets/yahamaU1.SF2'),
     SoundFontSourceEntry.asset('assets/RatAttack.sf2'),
     SoundFontSourceEntry.asset('assets/1115_PassingJet.sf2.zip'),
     SoundFontSourceEntry.asset('assets/Celesta_minimal.sf3'),
@@ -154,10 +156,20 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
   bool _isPreloading = false;
   double _preloadProgress = 0.0;
   bool _isPreloaded = false;
+  late final AppLifecycleListener _lifecycleListener;
 
   @override
   void initState() {
     super.initState();
+    _lifecycleListener = AppLifecycleListener(
+      onExitRequested: () async {
+        _player?.dispose();
+        if (SoLoud.instance.isInitialized) {
+          SoLoud.instance.deinit();
+        }
+        return AppExitResponse.exit;
+      },
+    );
     _tabController.addListener(_handleTabChanged);
     _selectedSource = _sources.first;
     _loadSoundFontEntry(_selectedSource);
@@ -202,6 +214,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
 
   @override
   void dispose() {
+    _lifecycleListener.dispose();
     _tabController.removeListener(_handleTabChanged);
     _tabController.dispose();
     _player?.dispose();
