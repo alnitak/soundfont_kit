@@ -743,34 +743,64 @@ class SoundFontPlayer {
       if (sample != null) samples.add(sample);
     }
 
+    final total = samples.length;
+    if (total == 0) {
+      onProgress?.call(1.0, 0, 0);
+      return;
+    }
+
+    final stereoPairs = <(SampleInfo, SampleInfo)>[];
     final pairedSampleIds = <int>{};
+
     if (options.joinStereoChannels) {
-      for (final s in samples) {
-        if (s.isLeft) {
-          final right = StereoJoiner.findLinkedSample(soundFont, s);
+      for (final sample in samples) {
+        if (sample.isLeft && !pairedSampleIds.contains(sample.id)) {
+          final right = StereoJoiner.findLinkedSample(soundFont, sample);
           if (right != null) {
-            pairedSampleIds.add(s.id);
+            stereoPairs.add((sample, right));
+            pairedSampleIds.add(sample.id);
             pairedSampleIds.add(right.id);
-            await preloadStereoPair(
-              s,
-              right,
-              createAudioSource: createAudioSources,
-            );
           }
         }
       }
     }
 
-    int index = 0;
-    final total = samples.length;
-    for (final s in samples) {
-      final isPaired = pairedSampleIds.contains(s.id);
-      await preloadSample(
-        s,
-        createAudioSource: createAudioSources && !isPaired,
+    final monoSamples = <SampleInfo>[];
+    for (final sample in samples) {
+      if (!pairedSampleIds.contains(sample.id)) {
+        monoSamples.add(sample);
+      }
+    }
+
+    int loadedCount = 0;
+
+    for (final (left, right) in stereoPairs) {
+      await preloadStereoPair(
+        left,
+        right,
+        createAudioSource: createAudioSources,
       );
-      index++;
-      onProgress?.call(total > 0 ? index / total : 1.0, index, total);
+      final countIncrement =
+          (samples.contains(left) ? 1 : 0) + (samples.contains(right) ? 1 : 0);
+      loadedCount += countIncrement > 0 ? countIncrement : 2;
+      onProgress?.call(
+        (loadedCount / total).clamp(0.0, 1.0),
+        loadedCount.clamp(0, total),
+        total,
+      );
+    }
+
+    for (final sample in monoSamples) {
+      await preloadSample(
+        sample,
+        createAudioSource: createAudioSources,
+      );
+      loadedCount += 1;
+      onProgress?.call(
+        (loadedCount / total).clamp(0.0, 1.0),
+        loadedCount.clamp(0, total),
+        total,
+      );
     }
   }
 
@@ -805,34 +835,64 @@ class SoundFontPlayer {
       if (s != null) samples.add(s);
     }
 
+    final total = samples.length;
+    if (total == 0) {
+      onProgress?.call(1.0, 0, 0);
+      return;
+    }
+
+    final stereoPairs = <(SampleInfo, SampleInfo)>[];
     final pairedSampleIds = <int>{};
+
     if (options.joinStereoChannels) {
-      for (final s in samples) {
-        if (s.isLeft) {
-          final right = StereoJoiner.findLinkedSample(soundFont, s);
+      for (final sample in samples) {
+        if (sample.isLeft && !pairedSampleIds.contains(sample.id)) {
+          final right = StereoJoiner.findLinkedSample(soundFont, sample);
           if (right != null) {
-            pairedSampleIds.add(s.id);
+            stereoPairs.add((sample, right));
+            pairedSampleIds.add(sample.id);
             pairedSampleIds.add(right.id);
-            await preloadStereoPair(
-              s,
-              right,
-              createAudioSource: createAudioSources,
-            );
           }
         }
       }
     }
 
-    int index = 0;
-    final total = samples.length;
-    for (final s in samples) {
-      final isPaired = pairedSampleIds.contains(s.id);
-      await preloadSample(
-        s,
-        createAudioSource: createAudioSources && !isPaired,
+    final monoSamples = <SampleInfo>[];
+    for (final sample in samples) {
+      if (!pairedSampleIds.contains(sample.id)) {
+        monoSamples.add(sample);
+      }
+    }
+
+    int loadedCount = 0;
+
+    for (final (left, right) in stereoPairs) {
+      await preloadStereoPair(
+        left,
+        right,
+        createAudioSource: createAudioSources,
       );
-      index++;
-      onProgress?.call(total > 0 ? index / total : 1.0, index, total);
+      final countIncrement =
+          (samples.contains(left) ? 1 : 0) + (samples.contains(right) ? 1 : 0);
+      loadedCount += countIncrement > 0 ? countIncrement : 2;
+      onProgress?.call(
+        (loadedCount / total).clamp(0.0, 1.0),
+        loadedCount.clamp(0, total),
+        total,
+      );
+    }
+
+    for (final sample in monoSamples) {
+      await preloadSample(
+        sample,
+        createAudioSource: createAudioSources,
+      );
+      loadedCount += 1;
+      onProgress?.call(
+        (loadedCount / total).clamp(0.0, 1.0),
+        loadedCount.clamp(0, total),
+        total,
+      );
     }
   }
 
@@ -841,35 +901,63 @@ class SoundFontPlayer {
     void Function(double progress, int loaded, int total)? onProgress,
     bool createAudioSources = true,
   }) async {
+    final total = soundFont.samples.length;
+    if (total == 0) {
+      onProgress?.call(1.0, 0, 0);
+      return;
+    }
+
+    final stereoPairs = <(SampleInfo, SampleInfo)>[];
     final pairedSampleIds = <int>{};
 
-    // Preload stereo pairs first if enabled
+    // Group stereo pairs first if enabled
     if (options.joinStereoChannels) {
       for (final sample in soundFont.samples) {
-        if (sample.isLeft) {
+        if (sample.isLeft && !pairedSampleIds.contains(sample.id)) {
           final right = StereoJoiner.findLinkedSample(soundFont, sample);
           if (right != null) {
+            stereoPairs.add((sample, right));
             pairedSampleIds.add(sample.id);
             pairedSampleIds.add(right.id);
-            await preloadStereoPair(
-              sample,
-              right,
-              createAudioSource: createAudioSources,
-            );
           }
         }
       }
     }
 
-    final total = soundFont.samples.length;
-    for (int i = 0; i < total; i++) {
-      final sample = soundFont.samples[i];
-      final isPaired = pairedSampleIds.contains(sample.id);
+    final monoSamples = <SampleInfo>[];
+    for (final sample in soundFont.samples) {
+      if (!pairedSampleIds.contains(sample.id)) {
+        monoSamples.add(sample);
+      }
+    }
+
+    int loadedCount = 0;
+
+    for (final (left, right) in stereoPairs) {
+      await preloadStereoPair(
+        left,
+        right,
+        createAudioSource: createAudioSources,
+      );
+      loadedCount += 2;
+      onProgress?.call(
+        (loadedCount / total).clamp(0.0, 1.0),
+        loadedCount.clamp(0, total),
+        total,
+      );
+    }
+
+    for (final sample in monoSamples) {
       await preloadSample(
         sample,
-        createAudioSource: createAudioSources && !isPaired,
+        createAudioSource: createAudioSources,
       );
-      onProgress?.call(total > 0 ? (i + 1) / total : 1.0, i + 1, total);
+      loadedCount += 1;
+      onProgress?.call(
+        (loadedCount / total).clamp(0.0, 1.0),
+        loadedCount.clamp(0, total),
+        total,
+      );
     }
   }
 
