@@ -59,7 +59,13 @@ class SoundFontVoice {
             thenStop: true,
           );
         } else {
-          SoLoud.instance.stopScheduled(handle, scheduledAt);
+          SoLoud.instance.fadeScheduled(
+            handle,
+            scheduledAt,
+            0.0,
+            const Duration(milliseconds: 5),
+            thenStop: true,
+          );
         }
       } catch (_) {
         try {
@@ -67,7 +73,15 @@ class SoundFontVoice {
             SoLoud.instance.fadeVolume(handle, 0.0, duration);
             SoLoud.instance.scheduleStop(handle, duration);
           } else {
-            await SoLoud.instance.stop(handle);
+            SoLoud.instance.fadeVolume(
+              handle,
+              0.0,
+              const Duration(milliseconds: 5),
+            );
+            SoLoud.instance.scheduleStop(
+              handle,
+              const Duration(milliseconds: 5),
+            );
           }
         } catch (_) {}
       }

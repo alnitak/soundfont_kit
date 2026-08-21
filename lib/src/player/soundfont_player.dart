@@ -174,10 +174,6 @@ class SoundFontPlayer {
       loopingEndOffsetAt: validLoop ? endOffset : null,
       busId: options.defaultBusId,
     );
-    print(
-      'Active voices count: ${SoLoud.instance.getActiveVoiceCount()}  '
-      'Active sounds: ${SoLoud.instance.activeSounds.length}',
-    );
 
     if (hasAttack) {
       final attackDuration = Duration(
@@ -723,19 +719,14 @@ class SoundFontPlayer {
       if (sample != null) samples.add(sample);
     }
 
-    int index = 0;
-    final total = samples.length;
-    for (final s in samples) {
-      await preloadSample(s, createAudioSource: createAudioSources);
-      index++;
-      onProgress?.call(total > 0 ? index / total : 1.0, index, total);
-    }
-
+    final pairedSampleIds = <int>{};
     if (options.joinStereoChannels) {
       for (final s in samples) {
         if (s.isLeft) {
           final right = StereoJoiner.findLinkedSample(soundFont, s);
           if (right != null) {
+            pairedSampleIds.add(s.id);
+            pairedSampleIds.add(right.id);
             await preloadStereoPair(
               s,
               right,
@@ -744,6 +735,18 @@ class SoundFontPlayer {
           }
         }
       }
+    }
+
+    int index = 0;
+    final total = samples.length;
+    for (final s in samples) {
+      final isPaired = pairedSampleIds.contains(s.id);
+      await preloadSample(
+        s,
+        createAudioSource: createAudioSources && !isPaired,
+      );
+      index++;
+      onProgress?.call(total > 0 ? index / total : 1.0, index, total);
     }
   }
 
@@ -778,19 +781,14 @@ class SoundFontPlayer {
       if (s != null) samples.add(s);
     }
 
-    int index = 0;
-    final total = samples.length;
-    for (final s in samples) {
-      await preloadSample(s, createAudioSource: createAudioSources);
-      index++;
-      onProgress?.call(total > 0 ? index / total : 1.0, index, total);
-    }
-
+    final pairedSampleIds = <int>{};
     if (options.joinStereoChannels) {
       for (final s in samples) {
         if (s.isLeft) {
           final right = StereoJoiner.findLinkedSample(soundFont, s);
           if (right != null) {
+            pairedSampleIds.add(s.id);
+            pairedSampleIds.add(right.id);
             await preloadStereoPair(
               s,
               right,
@@ -800,6 +798,18 @@ class SoundFontPlayer {
         }
       }
     }
+
+    int index = 0;
+    final total = samples.length;
+    for (final s in samples) {
+      final isPaired = pairedSampleIds.contains(s.id);
+      await preloadSample(
+        s,
+        createAudioSource: createAudioSources && !isPaired,
+      );
+      index++;
+      onProgress?.call(total > 0 ? index / total : 1.0, index, total);
+    }
   }
 
   /// Preloads all samples in the entire [soundFont] with optional progress callback.
@@ -807,19 +817,16 @@ class SoundFontPlayer {
     void Function(double progress, int loaded, int total)? onProgress,
     bool createAudioSources = true,
   }) async {
-    final total = soundFont.samples.length;
-    for (int i = 0; i < total; i++) {
-      final sample = soundFont.samples[i];
-      await preloadSample(sample, createAudioSource: createAudioSources);
-      onProgress?.call(total > 0 ? (i + 1) / total : 1.0, i + 1, total);
-    }
+    final pairedSampleIds = <int>{};
 
-    // Preload stereo pairs if enabled
+    // Preload stereo pairs first if enabled
     if (options.joinStereoChannels) {
       for (final sample in soundFont.samples) {
         if (sample.isLeft) {
           final right = StereoJoiner.findLinkedSample(soundFont, sample);
           if (right != null) {
+            pairedSampleIds.add(sample.id);
+            pairedSampleIds.add(right.id);
             await preloadStereoPair(
               sample,
               right,
@@ -828,6 +835,17 @@ class SoundFontPlayer {
           }
         }
       }
+    }
+
+    final total = soundFont.samples.length;
+    for (int i = 0; i < total; i++) {
+      final sample = soundFont.samples[i];
+      final isPaired = pairedSampleIds.contains(sample.id);
+      await preloadSample(
+        sample,
+        createAudioSource: createAudioSources && !isPaired,
+      );
+      onProgress?.call(total > 0 ? (i + 1) / total : 1.0, i + 1, total);
     }
   }
 
@@ -939,10 +957,6 @@ class SoundFontPlayer {
       loopingStartOffsetAt: validLoop ? loopInfo.startFrames : null,
       loopingEndOffsetAt: validLoop ? loopInfo.endFrames : null,
       busId: options.defaultBusId,
-    );
-    print(
-      'Active voices count: ${SoLoud.instance.getActiveVoiceCount()}  '
-      'Active sounds: ${SoLoud.instance.activeSounds.length}',
     );
 
     if (hasAttack) {
