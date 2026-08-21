@@ -126,7 +126,7 @@ class SoundFontPlayer {
       sustainMultiplier: _sustainMultiplier,
     );
 
-    AudioSource audio;
+    AudioSource? audio;
     final cacheKey = 'sample_${sample.id}';
 
     if (options.cacheAudioSources && _audioSourceCache.containsKey(cacheKey)) {
@@ -141,7 +141,17 @@ class SoundFontPlayer {
         }
       }
 
-      audio = SampleStreamer.streamSample(
+      if (preloaded != null && preloaded.isNotEmpty) {
+        audio = await SampleStreamer.loadAudioSourceFromBytes(
+          bytes: preloaded,
+          compression: sample.compression,
+          sampleRate: sample.sampleRate,
+          channels: sample.channels,
+          sourceKey: cacheKey,
+        );
+      }
+
+      audio ??= SampleStreamer.streamSample(
         soundFont: soundFont,
         sample: sample,
         preloadedBytes: preloaded,
@@ -179,21 +189,34 @@ class SoundFontPlayer {
       final attackDuration = Duration(
         microseconds: (attackSec * 1000000).round(),
       );
-      SoLoud.instance.fadeScheduled(handle, scheduledAt, vol, attackDuration);
+      if (atTime != null) {
+        SoLoud.instance.fadeScheduled(handle, scheduledAt, vol, attackDuration);
+      } else {
+        SoLoud.instance.fadeVolume(handle, vol, attackDuration);
+      }
     }
 
     if (duration != null) {
-      final noteOffTime = scheduledAt + duration;
-      if (releaseDuration > Duration.zero) {
-        SoLoud.instance.fadeScheduled(
-          handle,
-          noteOffTime,
-          0.0,
-          releaseDuration,
-          thenStop: true,
-        );
+      if (atTime != null) {
+        final noteOffTime = scheduledAt + duration;
+        if (releaseDuration > Duration.zero) {
+          SoLoud.instance.fadeScheduled(
+            handle,
+            noteOffTime,
+            0.0,
+            releaseDuration,
+            thenStop: true,
+          );
+        } else {
+          SoLoud.instance.stopScheduled(handle, noteOffTime);
+        }
       } else {
-        SoLoud.instance.stopScheduled(handle, noteOffTime);
+        if (releaseDuration > Duration.zero) {
+          SoLoud.instance.fadeVolume(handle, 0.0, releaseDuration);
+          SoLoud.instance.scheduleStop(handle, duration + releaseDuration);
+        } else {
+          SoLoud.instance.scheduleStop(handle, duration);
+        }
       }
     }
 
@@ -648,15 +671,16 @@ class SoundFontPlayer {
         options.cacheAudioSources &&
         !_audioSourceCache.containsKey(cacheKey) &&
         bytes.isNotEmpty) {
-      final audio = SampleStreamer.streamSample(
-        soundFont: soundFont,
-        sample: sample,
-        preloadedBytes: bytes,
-        chunkSize: options.streamChunkSize,
-        bufferingType: BufferingType.preserved,
-        autoDispose: false,
+      final audio = await SampleStreamer.loadAudioSourceFromBytes(
+        bytes: bytes,
+        compression: sample.compression,
+        sampleRate: sample.sampleRate,
+        channels: sample.channels,
+        sourceKey: cacheKey,
       );
-      _audioSourceCache[cacheKey] = audio;
+      if (audio != null) {
+        _audioSourceCache[cacheKey] = audio;
+      }
     }
   }
 
@@ -667,39 +691,39 @@ class SoundFontPlayer {
     bool createAudioSource = true,
   }) async {
     final stereoKey = '${leftSample.id}_${rightSample.id}';
-    Uint8List? stereoBytes = _stereoBytesCache[stereoKey];
-
-    if (stereoBytes == null) {
-      final leftBytes =
-          _sampleBytesCache[leftSample.id] ??
-          await soundFont.getSampleBytes(leftSample);
-      final rightBytes =
-          _sampleBytesCache[rightSample.id] ??
-          await soundFont.getSampleBytes(rightSample);
-
-      if (leftBytes.isNotEmpty && rightBytes.isNotEmpty) {
-        stereoBytes = StereoJoiner.interleavePcm16(
-          leftBytes: leftBytes,
-          rightBytes: rightBytes,
-        );
-        _stereoBytesCache[stereoKey] = stereoBytes;
-      }
-    }
-
     final cacheKey = 'stereo_$stereoKey';
+
     if (createAudioSource &&
         options.cacheAudioSources &&
-        !_audioSourceCache.containsKey(cacheKey) &&
-        stereoBytes != null &&
-        stereoBytes.isNotEmpty) {
-      final audio = SampleStreamer.streamStereoPcm(
-        stereoPcmBytes: stereoBytes,
-        sampleRate: leftSample.sampleRate,
-        chunkSize: options.streamChunkSize,
-        bufferingType: BufferingType.preserved,
-        autoDispose: false,
-      );
-      _audioSourceCache[cacheKey] = audio;
+        !_audioSourceCache.containsKey(cacheKey)) {
+      Uint8List? leftBytes = _sampleBytesCache[leftSample.id];
+      if (leftBytes == null) {
+        leftBytes = await soundFont.getSampleBytes(leftSample);
+        if (leftBytes.isNotEmpty) {
+          _sampleBytesCache[leftSample.id] = leftBytes;
+        }
+      }
+
+      Uint8List? rightBytes = _sampleBytesCache[rightSample.id];
+      if (rightBytes == null) {
+        rightBytes = await soundFont.getSampleBytes(rightSample);
+        if (rightBytes.isNotEmpty) {
+          _sampleBytesCache[rightSample.id] = rightBytes;
+        }
+      }
+
+      if (leftBytes.isNotEmpty && rightBytes.isNotEmpty) {
+        final audio = await SampleStreamer.joinTwoAudioSources(
+          leftBytes: leftBytes,
+          rightBytes: rightBytes,
+          leftSample: leftSample,
+          rightSample: rightSample,
+          sourceKey: cacheKey,
+        );
+        if (audio != null) {
+          _audioSourceCache[cacheKey] = audio;
+        }
+      }
     }
   }
 
@@ -894,47 +918,44 @@ class SoundFontPlayer {
 
     final stereoKey = '${leftSample.id}_${rightSample.id}';
     final cacheKey = 'stereo_$stereoKey';
-    AudioSource audio;
+    AudioSource? audio;
 
     if (options.cacheAudioSources && _audioSourceCache.containsKey(cacheKey)) {
       audio = _audioSourceCache[cacheKey]!;
     } else {
-      Uint8List? stereoBytes = _stereoBytesCache[stereoKey];
-
-      if (stereoBytes == null) {
-        Uint8List? leftBytes = _sampleBytesCache[leftSample.id];
-        if (leftBytes == null) {
-          leftBytes = await soundFont.getSampleBytes(leftSample);
-          if (leftBytes.isNotEmpty) {
-            _sampleBytesCache[leftSample.id] = leftBytes;
-          }
+      Uint8List? leftBytes = _sampleBytesCache[leftSample.id];
+      if (leftBytes == null) {
+        leftBytes = await soundFont.getSampleBytes(leftSample);
+        if (leftBytes.isNotEmpty) {
+          _sampleBytesCache[leftSample.id] = leftBytes;
         }
-        Uint8List? rightBytes = _sampleBytesCache[rightSample.id];
-        if (rightBytes == null) {
-          rightBytes = await soundFont.getSampleBytes(rightSample);
-          if (rightBytes.isNotEmpty) {
-            _sampleBytesCache[rightSample.id] = rightBytes;
-          }
-        }
+      }
 
-        stereoBytes = StereoJoiner.interleavePcm16(
+      Uint8List? rightBytes = _sampleBytesCache[rightSample.id];
+      if (rightBytes == null) {
+        rightBytes = await soundFont.getSampleBytes(rightSample);
+        if (rightBytes.isNotEmpty) {
+          _sampleBytesCache[rightSample.id] = rightBytes;
+        }
+      }
+
+      if (leftBytes.isNotEmpty && rightBytes.isNotEmpty) {
+        audio = await SampleStreamer.joinTwoAudioSources(
           leftBytes: leftBytes,
           rightBytes: rightBytes,
+          leftSample: leftSample,
+          rightSample: rightSample,
+          sourceKey: cacheKey,
         );
-        _stereoBytesCache[stereoKey] = stereoBytes;
       }
 
-      audio = SampleStreamer.streamStereoPcm(
-        stereoPcmBytes: stereoBytes,
-        sampleRate: leftSample.sampleRate,
-        chunkSize: options.streamChunkSize,
-        bufferingType: BufferingType.preserved,
-        autoDispose: false,
-      );
-
-      if (options.cacheAudioSources) {
+      if (audio != null && options.cacheAudioSources) {
         _audioSourceCache[cacheKey] = audio;
       }
+    }
+
+    if (audio == null) {
+      return SoundFontVoice(key: key, velocity: velocity, handles: []);
     }
 
     final validLoop =
@@ -963,21 +984,34 @@ class SoundFontPlayer {
       final attackDuration = Duration(
         microseconds: (attackSec * 1000000).round(),
       );
-      SoLoud.instance.fadeScheduled(handle, scheduledAt, vol, attackDuration);
+      if (atTime != null) {
+        SoLoud.instance.fadeScheduled(handle, scheduledAt, vol, attackDuration);
+      } else {
+        SoLoud.instance.fadeVolume(handle, vol, attackDuration);
+      }
     }
 
     if (duration != null) {
-      final noteOffTime = scheduledAt + duration;
-      if (releaseDuration > Duration.zero) {
-        SoLoud.instance.fadeScheduled(
-          handle,
-          noteOffTime,
-          0.0,
-          releaseDuration,
-          thenStop: true,
-        );
+      if (atTime != null) {
+        final noteOffTime = scheduledAt + duration;
+        if (releaseDuration > Duration.zero) {
+          SoLoud.instance.fadeScheduled(
+            handle,
+            noteOffTime,
+            0.0,
+            releaseDuration,
+            thenStop: true,
+          );
+        } else {
+          SoLoud.instance.stopScheduled(handle, noteOffTime);
+        }
       } else {
-        SoLoud.instance.stopScheduled(handle, noteOffTime);
+        if (releaseDuration > Duration.zero) {
+          SoLoud.instance.fadeVolume(handle, 0.0, releaseDuration);
+          SoLoud.instance.scheduleStop(handle, duration + releaseDuration);
+        } else {
+          SoLoud.instance.scheduleStop(handle, duration);
+        }
       }
     }
 

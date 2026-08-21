@@ -2,7 +2,6 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import '../models/sample_info.dart';
-import '../models/soundfont_format.dart';
 import '../soundfont_file.dart';
 
 /// Helper to identify and join stereo 16-bit PCM sample pairs.
@@ -11,8 +10,7 @@ class StereoJoiner {
 
   /// Checks if [sample] has a paired opposite-channel sample.
   static bool isStereoCandidate(SampleInfo sample) {
-    return (sample.isLeft || sample.isRight) &&
-        sample.compression == SampleCompression.pcm16;
+    return sample.isLeft || sample.isRight;
   }
 
   /// Finds the paired stereo [SampleInfo] for a given [sample] in [soundFont].

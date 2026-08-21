@@ -40,49 +40,28 @@ class SoundFontVoice {
     _isReleased = true;
 
     final duration = customRelease ?? releaseDuration;
-    final scheduledAt = atTime ??
-        (SoLoud.instance.isInitialized
-            ? (SoLoud.instance.isRenderAheadEnabled
-                ? SoLoud.instance.getPlayheadTime()
-                : SoLoud.instance.getEngineTime())
-            : Duration.zero);
+    final fadeDuration = duration > Duration.zero
+        ? duration
+        : const Duration(milliseconds: 15);
 
     for (final handle in handles) {
       if (!SoLoud.instance.getIsValidVoiceHandle(handle)) continue;
       try {
-        if (duration > Duration.zero) {
+        if (atTime != null) {
           SoLoud.instance.fadeScheduled(
             handle,
-            scheduledAt,
+            atTime,
             0.0,
-            duration,
+            fadeDuration,
             thenStop: true,
           );
         } else {
-          SoLoud.instance.fadeScheduled(
-            handle,
-            scheduledAt,
-            0.0,
-            const Duration(milliseconds: 5),
-            thenStop: true,
-          );
+          SoLoud.instance.fadeVolume(handle, 0.0, fadeDuration);
+          SoLoud.instance.scheduleStop(handle, fadeDuration);
         }
       } catch (_) {
         try {
-          if (duration > Duration.zero) {
-            SoLoud.instance.fadeVolume(handle, 0.0, duration);
-            SoLoud.instance.scheduleStop(handle, duration);
-          } else {
-            SoLoud.instance.fadeVolume(
-              handle,
-              0.0,
-              const Duration(milliseconds: 5),
-            );
-            SoLoud.instance.scheduleStop(
-              handle,
-              const Duration(milliseconds: 5),
-            );
-          }
+          SoLoud.instance.stop(handle);
         } catch (_) {}
       }
     }

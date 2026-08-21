@@ -33,7 +33,7 @@ void main() async {
   await SoLoud.instance.init(
     bufferSize: 1024,
     devicePeriodFrames: 128,
-    renderAheadFrames: 1024,
+    renderAheadFrames: 0,
   );
   SoLoud.instance.setMaxActiveVoiceCount(32);
   SoLoud.instance.setAudioDeviceIdleTimeout(null);
