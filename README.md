@@ -1,14 +1,13 @@
 # SoundFont Kit (`soundfont_kit`)
 
-A high-performance, pure Dart reader and playback engine for SoundFont files (**SF2**, **SF3**, and **SFZ**), powered by the [`flutter_soloud`](https://pub.dev/packages/flutter_soloud) low-latency audio engine.
+A high-performance, pure Dart reader and playback engine for SoundFont files (**SF2**, **SF3**, and **SFZ**), powered by the [flutter_soloud](https://pub.dev/packages/flutter_soloud) low-latency audio engine.
 
 ---
 
 ## Features
 
-See [web example](https://marcobavagnoli.com/soundfont/)
-
-
+- See [***web example***](https://marcobavagnoli.com/soundfont/)
+- See [***piano 3D***](https://marcobavagnoli.com/piano_3d) which uses [flutter_scene](https://pub.dev/packages/flutter_scene)
 - **Multi-Format Support**:
   - **SF2** (SoundFont 2.04) — Full RIFF/sfbk parser (presets, instruments, zones, generators, modulators, and 16-bit PCM samples).
   - **SF3** (SoundFont 3.0) — OGG Vorbis compressed sample streams with sub-chunk header extraction.
