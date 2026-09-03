@@ -6,6 +6,9 @@ A high-performance, pure Dart reader and playback engine for SoundFont files (**
 
 ## Features
 
+See [web example](https://marcobavagnoli.com/soundfont/)
+
+
 - **Multi-Format Support**:
   - **SF2** (SoundFont 2.04) — Full RIFF/sfbk parser (presets, instruments, zones, generators, modulators, and 16-bit PCM samples).
   - **SF3** (SoundFont 3.0) — OGG Vorbis compressed sample streams with sub-chunk header extraction.

@@ -1,8 +1,8 @@
 #!/bin/sh
 # This is a generated file; do not edit or check into version control.
 export "FLUTTER_ROOT=/Volumes/NVME/dev/flutter"
-export "FLUTTER_APPLICATION_PATH=/Volumes/NVME/workspace/libs/soundfont_reader"
-export "FLUTTER_FRAMEWORK_SWIFT_PACKAGE_PATH=/Volumes/NVME/workspace/libs/soundfont_reader/macos/Flutter/ephemeral/Packages/.packages/FlutterFramework"
+export "FLUTTER_APPLICATION_PATH=/Volumes/NVME/workspace/libs/soundfont_kit"
+export "FLUTTER_FRAMEWORK_SWIFT_PACKAGE_PATH=/Volumes/NVME/workspace/libs/soundfont_kit/macos/Flutter/ephemeral/Packages/.packages/FlutterFramework"
 export "COCOAPODS_PARALLEL_CODE_SIGN=true"
 export "FLUTTER_BUILD_DIR=build"
 export "FLUTTER_BUILD_NAME=0.0.1"
