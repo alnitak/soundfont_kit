@@ -11,10 +11,10 @@ platforms:
   windows:
   web:
 topics:
-  - games
-  - audio
   - soundfont
-  - SF2 - SF3 - SFZ
+  - sf2
+  - sf3
+  - sfz
   - midi
 
 screenshots:
