@@ -67,6 +67,24 @@ void main() async {
 
 ---
 
+## AI Agent Skills
+
+`soundfont_kit` includes bundled **Agent Skills** (`SKILL.md` instruction files) to help AI coding agents (Claude, Cursor, Gemini, GitHub Copilot, Cline, Codex, OpenCode, etc.) generate correct, high-performance code for all features and functionalities of this package.
+
+Install or update the skills in your project by running:
+
+```bash
+dart run soundfont_kit:skills
+```
+
+To check whether installed skills are up to date without modifying any files:
+
+```bash
+dart run soundfont_kit:skills --check
+```
+
+---
+
 ## Usage Guide
 
 ### 1. Loading a SoundFont File
