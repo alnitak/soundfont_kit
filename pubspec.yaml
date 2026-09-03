@@ -1,9 +1,8 @@
 name: soundfont_kit
 description: "A high-performance SoundFont (SF2, SF3, SFZ) reader and playback engine for Flutter."
-publish_to: 'none'
 version: 1.0.0
 homepage: https://github.com/alnitak/soundfont_kit
-maintainer: Marco Bavagnoli (@lildeimos)
+maintainer: Marco Bavagnoli (@alnitak)
 platforms:
   android:
   ios:
