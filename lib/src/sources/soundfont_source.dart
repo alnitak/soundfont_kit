@@ -6,7 +6,8 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
-import '../utils/file_utils.dart' if (dart.library.html) '../utils/file_utils_web.dart';
+import '../utils/file_utils.dart'
+    if (dart.library.html) '../utils/file_utils_web.dart';
 
 /// Abstract data source for SoundFont files.
 abstract class SoundFontSource {
@@ -98,7 +99,8 @@ class MemorySource extends SoundFontSource {
   @override
   Future<Uint8List> getSubFileBytes(String relativePath) {
     throw UnsupportedError(
-        'MemorySource does not support relative sub-file loading without a Zip archive');
+      'MemorySource does not support relative sub-file loading without a Zip archive',
+    );
   }
 
   @override
@@ -144,7 +146,10 @@ class AssetSource extends SoundFontSource {
   @override
   Future<Uint8List> getBytes([int? offset, int? length]) async {
     final byteData = await rootBundle.load(assetPath);
-    final bytes = byteData.buffer.asUint8List(byteData.offsetInBytes, byteData.lengthInBytes);
+    final bytes = byteData.buffer.asUint8List(
+      byteData.offsetInBytes,
+      byteData.lengthInBytes,
+    );
     if (offset == null && length == null) return bytes;
     final start = offset ?? 0;
     final end = length != null ? start + length : bytes.length;
@@ -155,7 +160,10 @@ class AssetSource extends SoundFontSource {
   Future<Uint8List> getSubFileBytes(String relativePath) async {
     final fullPath = p.normalize(p.join(basePath, relativePath));
     final byteData = await rootBundle.load(fullPath);
-    return byteData.buffer.asUint8List(byteData.offsetInBytes, byteData.lengthInBytes);
+    return byteData.buffer.asUint8List(
+      byteData.offsetInBytes,
+      byteData.lengthInBytes,
+    );
   }
 
   @override
@@ -178,7 +186,8 @@ class UrlSource extends SoundFontSource {
   UrlSource(this.url);
 
   @override
-  String get basePath => url.contains('/') ? url.substring(0, url.lastIndexOf('/')) : url;
+  String get basePath =>
+      url.contains('/') ? url.substring(0, url.lastIndexOf('/')) : url;
 
   @override
   Future<Uint8List> getBytes([int? offset, int? length]) async {
@@ -195,7 +204,9 @@ class UrlSource extends SoundFontSource {
     final subUrl = '$basePath/$relativePath';
     final res = await http.get(Uri.parse(subUrl));
     if (res.statusCode != 200) {
-      throw Exception('Failed to load remote subfile $subUrl: ${res.statusCode}');
+      throw Exception(
+        'Failed to load remote subfile $subUrl: ${res.statusCode}',
+      );
     }
     return res.bodyBytes;
   }
@@ -259,12 +270,18 @@ class ZipSource extends SoundFontSource {
 
   @override
   Future<Uint8List> getSubFileBytes(String relativePath) async {
-    final target = p.normalize(relativePath).replaceAll('\\', '/').toLowerCase();
-    
+    final target = p
+        .normalize(relativePath)
+        .replaceAll('\\', '/')
+        .toLowerCase();
+
     // Try exact match or relative match
     var entry = _fileMap[target];
     if (entry == null && basePath != null && basePath!.isNotEmpty) {
-      final combined = p.normalize(p.join(basePath!, relativePath)).replaceAll('\\', '/').toLowerCase();
+      final combined = p
+          .normalize(p.join(basePath!, relativePath))
+          .replaceAll('\\', '/')
+          .toLowerCase();
       entry = _fileMap[combined];
     }
     if (entry == null) {
@@ -287,7 +304,10 @@ class ZipSource extends SoundFontSource {
 
   @override
   Future<bool> hasSubFile(String relativePath) async {
-    final target = p.normalize(relativePath).replaceAll('\\', '/').toLowerCase();
+    final target = p
+        .normalize(relativePath)
+        .replaceAll('\\', '/')
+        .toLowerCase();
     if (_fileMap.containsKey(target)) return true;
     for (final key in _fileMap.keys) {
       if (key.endsWith(target)) return true;

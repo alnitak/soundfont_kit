@@ -48,12 +48,16 @@ class Sf2Parser {
 
     final header = reader.readFourCC();
     if (header != 'RIFF') {
-      throw FormatException('Invalid SoundFont file: Header is "$header", expected "RIFF"');
+      throw FormatException(
+        'Invalid SoundFont file: Header is "$header", expected "RIFF"',
+      );
     }
     reader.readUint32(); // riffSize
     final formType = reader.readFourCC();
     if (formType != 'sfbk') {
-      throw FormatException('Invalid SoundFont form type: "$formType", expected "sfbk"');
+      throw FormatException(
+        'Invalid SoundFont form type: "$formType", expected "sfbk"',
+      );
     }
 
     String? sfName;
@@ -152,7 +156,13 @@ class Sf2Parser {
     }
 
     // Parse Instruments (inst, ibag, imod, igen)
-    final instruments = _parseInstruments(instBytes, ibagBytes, imodBytes, igenBytes, sampleMap);
+    final instruments = _parseInstruments(
+      instBytes,
+      ibagBytes,
+      imodBytes,
+      igenBytes,
+      sampleMap,
+    );
 
     // Map instruments by instrument index
     final instMap = <int, Instrument>{};
@@ -161,7 +171,14 @@ class Sf2Parser {
     }
 
     // Parse Presets (phdr, pbag, pmod, pgen)
-    final presets = _parsePresets(phdrBytes, pbagBytes, pmodBytes, pgenBytes, instMap, sampleMap);
+    final presets = _parsePresets(
+      phdrBytes,
+      pbagBytes,
+      pmodBytes,
+      pgenBytes,
+      instMap,
+      sampleMap,
+    );
 
     return Sf2Data(
       name: sfName,
@@ -177,7 +194,11 @@ class Sf2Parser {
     );
   }
 
-  List<SampleInfo> _parseSampleHeaders(Uint8List? shdrBytes, int smplOffset, {bool isSf3 = false}) {
+  List<SampleInfo> _parseSampleHeaders(
+    Uint8List? shdrBytes,
+    int smplOffset, {
+    bool isSf3 = false,
+  }) {
     if (shdrBytes == null) return [];
     final reader = RiffReader(shdrBytes);
     final count = shdrBytes.length ~/ 46;
@@ -203,27 +224,31 @@ class Sf2Parser {
       // Check if sampleType bit 0x8000 indicates SF3 Ogg Vorbis sample or if file is SF3
       final isOgg = isSf3 || (sampleType & 0x8000) != 0;
 
-      final byteOffset = isOgg ? (smplOffset + start) : (smplOffset + (start * 2));
+      final byteOffset = isOgg
+          ? (smplOffset + start)
+          : (smplOffset + (start * 2));
       final byteLength = isOgg
           ? ((end > start) ? (end - start) : 0)
           : ((end > start) ? (end - start) * 2 : 0);
 
-      list.add(SampleInfo(
-        id: list.length,
-        name: name,
-        sampleRate: sampleRate,
-        originalPitch: originalPitch,
-        pitchCorrection: pitchCorrection,
-        loopStart: startloop - start,
-        loopEnd: endloop - start,
-        sampleCount: end - start,
-        byteOffset: byteOffset,
-        byteLength: byteLength,
-        compression: isOgg ? SampleCompression.ogg : SampleCompression.pcm16,
-        channels: 1,
-        sampleType: sampleType,
-        sampleLink: sampleLink,
-      ));
+      list.add(
+        SampleInfo(
+          id: list.length,
+          name: name,
+          sampleRate: sampleRate,
+          originalPitch: originalPitch,
+          pitchCorrection: pitchCorrection,
+          loopStart: startloop - start,
+          loopEnd: endloop - start,
+          sampleCount: end - start,
+          byteOffset: byteOffset,
+          byteLength: byteLength,
+          compression: isOgg ? SampleCompression.ogg : SampleCompression.pcm16,
+          channels: 1,
+          sampleType: sampleType,
+          sampleLink: sampleLink,
+        ),
+      );
     }
     return list;
   }
@@ -274,25 +299,33 @@ class Sf2Parser {
 
       for (int b = startBag; b < endBag && b < bagRecords.length; b++) {
         final bag = bagRecords[b];
-        final nextBagGen = (b + 1 < bagRecords.length) ? bagRecords[b + 1].genIdx : (igenBytes.length ~/ 4);
+        final nextBagGen = (b + 1 < bagRecords.length)
+            ? bagRecords[b + 1].genIdx
+            : (igenBytes.length ~/ 4);
 
         final gens = _parseGenerators(genReader, bag.genIdx, nextBagGen);
 
         final isGlobal = !gens.containsKey(53); // 53 = sampleID
 
         if (isGlobal) {
-          globalZone = _createZoneFromGens(gens, globalZone: null, sampleMap: sampleMap);
+          globalZone = _createZoneFromGens(
+            gens,
+            globalZone: null,
+            sampleMap: sampleMap,
+          );
         } else {
-          final zone = _createZoneFromGens(gens, globalZone: globalZone, sampleMap: sampleMap);
+          final zone = _createZoneFromGens(
+            gens,
+            globalZone: globalZone,
+            sampleMap: sampleMap,
+          );
           zones.add(zone);
         }
       }
 
-      instruments.add(Instrument(
-        id: instruments.length,
-        name: rec.name,
-        zones: zones,
-      ));
+      instruments.add(
+        Instrument(id: instruments.length, name: rec.name, zones: zones),
+      );
     }
 
     return instruments;
@@ -327,15 +360,17 @@ class Sf2Parser {
       final library = phdrReader.readUint32();
       final genre = phdrReader.readUint32();
       final morphology = phdrReader.readUint32();
-      phdrRecords.add(_PhdrRecord(
-        name: name,
-        preset: preset,
-        bank: bank,
-        bagIdx: bagIdx,
-        library: library,
-        genre: genre,
-        morphology: morphology,
-      ));
+      phdrRecords.add(
+        _PhdrRecord(
+          name: name,
+          preset: preset,
+          bank: bank,
+          bagIdx: bagIdx,
+          library: library,
+          genre: genre,
+          morphology: morphology,
+        ),
+      );
     }
 
     final bagRecords = <_BagRecord>[];
@@ -358,35 +393,51 @@ class Sf2Parser {
 
       for (int b = startBag; b < endBag && b < bagRecords.length; b++) {
         final bag = bagRecords[b];
-        final nextBagGen = (b + 1 < bagRecords.length) ? bagRecords[b + 1].genIdx : (pgenBytes.length ~/ 4);
+        final nextBagGen = (b + 1 < bagRecords.length)
+            ? bagRecords[b + 1].genIdx
+            : (pgenBytes.length ~/ 4);
 
         final gens = _parseGenerators(genReader, bag.genIdx, nextBagGen);
 
         final isGlobal = !gens.containsKey(41); // 41 = instrument
 
         if (isGlobal) {
-          globalZone = _createZoneFromGens(gens, globalZone: null, sampleMap: sampleMap);
+          globalZone = _createZoneFromGens(
+            gens,
+            globalZone: null,
+            sampleMap: sampleMap,
+          );
         } else {
-          final zone = _createZoneFromGens(gens, globalZone: globalZone, sampleMap: sampleMap);
+          final zone = _createZoneFromGens(
+            gens,
+            globalZone: globalZone,
+            sampleMap: sampleMap,
+          );
           zones.add(zone);
         }
       }
 
-      presets.add(Preset(
-        bank: rec.bank,
-        program: rec.preset,
-        name: rec.name,
-        zones: zones,
-        library: rec.library,
-        genre: rec.genre,
-        morphology: rec.morphology,
-      ));
+      presets.add(
+        Preset(
+          bank: rec.bank,
+          program: rec.preset,
+          name: rec.name,
+          zones: zones,
+          library: rec.library,
+          genre: rec.genre,
+          morphology: rec.morphology,
+        ),
+      );
     }
 
     return presets;
   }
 
-  Map<int, int> _parseGenerators(RiffReader genReader, int startIdx, int endIdx) {
+  Map<int, int> _parseGenerators(
+    RiffReader genReader,
+    int startIdx,
+    int endIdx,
+  ) {
     final map = <int, int>{};
     genReader.offset = startIdx * 4;
     for (int g = startIdx; g < endIdx; g++) {
@@ -462,11 +513,21 @@ class Sf2Parser {
       sampleRef: sampleRef,
       instrumentID: instID,
       loopMode: loopMode,
-      volEnvAttack: _timecentsToSeconds(gens[34] ?? _toRaw16(globalZone?.volEnvAttack)),
-      volEnvHold: _timecentsToSeconds(gens[35] ?? _toRaw16(globalZone?.volEnvHold)),
-      volEnvDecay: _timecentsToSeconds(gens[36] ?? _toRaw16(globalZone?.volEnvDecay)),
-      volEnvSustain: gens.containsKey(37) ? (gens[37]! / 1000.0) : globalZone?.volEnvSustain,
-      volEnvRelease: _timecentsToSeconds(gens[38] ?? _toRaw16(globalZone?.volEnvRelease)),
+      volEnvAttack: _timecentsToSeconds(
+        gens[34] ?? _toRaw16(globalZone?.volEnvAttack),
+      ),
+      volEnvHold: _timecentsToSeconds(
+        gens[35] ?? _toRaw16(globalZone?.volEnvHold),
+      ),
+      volEnvDecay: _timecentsToSeconds(
+        gens[36] ?? _toRaw16(globalZone?.volEnvDecay),
+      ),
+      volEnvSustain: gens.containsKey(37)
+          ? (gens[37]! / 1000.0)
+          : globalZone?.volEnvSustain,
+      volEnvRelease: _timecentsToSeconds(
+        gens[38] ?? _toRaw16(globalZone?.volEnvRelease),
+      ),
       generators: Map.unmodifiable(gens),
     );
   }

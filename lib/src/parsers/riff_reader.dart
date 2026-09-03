@@ -8,8 +8,8 @@ class RiffReader {
   int offset;
 
   RiffReader(Uint8List data, [this.offset = 0])
-      : bytes = data,
-        byteData = ByteData.sublistView(data);
+    : bytes = data,
+      byteData = ByteData.sublistView(data);
 
   int get length => bytes.length;
   int get remaining => length - offset;
@@ -52,7 +52,10 @@ class RiffReader {
   }
 
   String readFourCC() {
-    final str = ascii.decode(bytes.sublist(offset, offset + 4), allowInvalid: true);
+    final str = ascii.decode(
+      bytes.sublist(offset, offset + 4),
+      allowInvalid: true,
+    );
     offset += 4;
     return str;
   }

@@ -450,7 +450,9 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
                                 ),
                                 decoration: BoxDecoration(
                                   color: isPressed
-                                      ? Theme.of(context).colorScheme.primaryContainer
+                                      ? Theme.of(
+                                          context,
+                                        ).colorScheme.primaryContainer
                                       : Colors.grey.shade200,
                                   borderRadius: BorderRadius.circular(3.0),
                                   border: Border.all(

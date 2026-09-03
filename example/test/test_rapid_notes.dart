@@ -10,11 +10,11 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(
-    const MethodChannel('plugins.flutter.io/path_provider'),
-    (methodCall) async {
-      return Directory.systemTemp.path;
-    },
-  );
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (methodCall) async {
+          return Directory.systemTemp.path;
+        },
+      );
 
   test('Rapid note changing crackle analysis', () async {
     const sampleRate = 44100;
@@ -25,20 +25,29 @@ void main() {
       renderAheadFrames: 1024,
     );
 
-    final sfPath = p.join(Directory.current.path, 'example', 'assets', 'Celesta_minimal.sf3');
+    final sfPath = p.join(
+      Directory.current.path,
+      'example',
+      'assets',
+      'Celesta_minimal.sf3',
+    );
     final sf = await SoundFontFile.fromFile(sfPath);
-    final player = sf.createPlayer(options: const SoundFontPlayerOptions(joinStereoChannels: true));
+    final player = sf.createPlayer(
+      options: const SoundFontPlayerOptions(joinStereoChannels: true),
+    );
     final preset = sf.presets.first;
 
     final capturedFloats = <double>[];
-    final sub = SoLoud.instance.startMixerOutputStream(
-      format: MixerOutputFormat.pcmF32le,
-      sampleRate: sampleRate,
-      channels: 2,
-      notificationThresholdBytes: 128 * 4 * 2,
-    ).listen((uint8) {
-      capturedFloats.addAll(Float32List.sublistView(uint8));
-    });
+    final sub = SoLoud.instance
+        .startMixerOutputStream(
+          format: MixerOutputFormat.pcmF32le,
+          sampleRate: sampleRate,
+          channels: 2,
+          notificationThresholdBytes: 128 * 4 * 2,
+        )
+        .listen((uint8) {
+          capturedFloats.addAll(Float32List.sublistView(uint8));
+        });
 
     await Future.delayed(const Duration(milliseconds: 50));
 
@@ -73,7 +82,8 @@ void main() {
 
     for (int i = 1; i < totalFrames; i++) {
       final dL = (capturedFloats[i * 2] - capturedFloats[(i - 1) * 2]).abs();
-      final dR = (capturedFloats[i * 2 + 1] - capturedFloats[(i - 1) * 2 + 1]).abs();
+      final dR = (capturedFloats[i * 2 + 1] - capturedFloats[(i - 1) * 2 + 1])
+          .abs();
       final d = dL > dR ? dL : dR;
 
       if (d > maxJump) {
@@ -82,11 +92,15 @@ void main() {
       }
       if (d > 0.05) {
         clickCount++;
-        print('Click at frame $i (${(i / sampleRate * 1000).toStringAsFixed(1)}ms): delta = ${d.toStringAsFixed(4)}');
+        print(
+          'Click at frame $i (${(i / sampleRate * 1000).toStringAsFixed(1)}ms): delta = ${d.toStringAsFixed(4)}',
+        );
       }
     }
 
-    print('\nTotal Frames: $totalFrames, Max Jump: ${maxJump.toStringAsFixed(5)} at frame $maxJumpFrame, Clicks (>0.05): $clickCount\n');
+    print(
+      '\nTotal Frames: $totalFrames, Max Jump: ${maxJump.toStringAsFixed(5)} at frame $maxJumpFrame, Clicks (>0.05): $clickCount\n',
+    );
 
     await player.dispose();
     SoLoud.instance.deinit();

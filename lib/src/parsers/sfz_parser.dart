@@ -85,7 +85,9 @@ class SfzParser {
 
       String fullSamplePath = sampleVal.replaceAll('\\', '/');
       if (defaultPath.isNotEmpty && !fullSamplePath.startsWith(defaultPath)) {
-        fullSamplePath = p.normalize(p.join(defaultPath, fullSamplePath)).replaceAll('\\', '/');
+        fullSamplePath = p
+            .normalize(p.join(defaultPath, fullSamplePath))
+            .replaceAll('\\', '/');
       }
 
       final ext = p.extension(fullSamplePath).toLowerCase();
@@ -210,11 +212,7 @@ class SfzParser {
 
     final name = sfzName ?? controlOpcodes['default_path'] ?? 'SFZ Instrument';
 
-    final instrument = Instrument(
-      id: 0,
-      name: name,
-      zones: zones,
-    );
+    final instrument = Instrument(id: 0, name: name, zones: zones);
 
     final presetZone = Zone(
       keyRangeMin: 0,
@@ -224,12 +222,7 @@ class SfzParser {
       instrumentID: 0,
     );
 
-    final preset = Preset(
-      bank: 0,
-      program: 0,
-      name: name,
-      zones: [presetZone],
-    );
+    final preset = Preset(bank: 0, program: 0, name: name, zones: [presetZone]);
 
     return SfzData(
       name: name,

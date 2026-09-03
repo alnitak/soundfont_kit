@@ -791,10 +791,7 @@ class SoundFontPlayer {
     }
 
     for (final sample in monoSamples) {
-      await preloadSample(
-        sample,
-        createAudioSource: createAudioSources,
-      );
+      await preloadSample(sample, createAudioSource: createAudioSources);
       loadedCount += 1;
       onProgress?.call(
         (loadedCount / total).clamp(0.0, 1.0),
@@ -883,10 +880,7 @@ class SoundFontPlayer {
     }
 
     for (final sample in monoSamples) {
-      await preloadSample(
-        sample,
-        createAudioSource: createAudioSources,
-      );
+      await preloadSample(sample, createAudioSource: createAudioSources);
       loadedCount += 1;
       onProgress?.call(
         (loadedCount / total).clamp(0.0, 1.0),
@@ -948,10 +942,7 @@ class SoundFontPlayer {
     }
 
     for (final sample in monoSamples) {
-      await preloadSample(
-        sample,
-        createAudioSource: createAudioSources,
-      );
+      await preloadSample(sample, createAudioSource: createAudioSources);
       loadedCount += 1;
       onProgress?.call(
         (loadedCount / total).clamp(0.0, 1.0),

@@ -69,13 +69,17 @@ class _RotaryKnobState extends State<RotaryKnob> {
   }
 
   void _onPanUpdate(DragUpdateDetails details) {
-    if (!widget.enabled || _dragStartY == null || _dragStartValue == null) return;
+    if (!widget.enabled || _dragStartY == null || _dragStartValue == null)
+      return;
 
     final dy = _dragStartY! - details.globalPosition.dy;
     final range = widget.max - widget.min;
     // 150 pixels of drag travels the entire range
     final deltaValue = (dy / 150.0) * range;
-    final newValue = (_dragStartValue! + deltaValue).clamp(widget.min, widget.max);
+    final newValue = (_dragStartValue! + deltaValue).clamp(
+      widget.min,
+      widget.max,
+    );
     widget.onChanged(newValue);
   }
 
@@ -225,7 +229,11 @@ class _KnobPainter extends CustomPainter {
       ..color = primaryColor
       ..style = PaintingStyle.fill;
 
-    canvas.drawCircle(pointerPos, (strokeWidth * 0.7).clamp(1.5, 2.5), pointerPaint);
+    canvas.drawCircle(
+      pointerPos,
+      (strokeWidth * 0.7).clamp(1.5, 2.5),
+      pointerPaint,
+    );
   }
 
   @override

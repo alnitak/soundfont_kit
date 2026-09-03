@@ -32,37 +32,44 @@ void main() {
   });
 
   group('SoundFontReader SF3 tests', () {
-    test('Loads and parses SF3 file correctly and verifies OGG stream offsets', () async {
-      final sf = await SoundFontFile.fromFile(sf3Path);
+    test(
+      'Loads and parses SF3 file correctly and verifies OGG stream offsets',
+      () async {
+        final sf = await SoundFontFile.fromFile(sf3Path);
 
-      expect(sf.format, equals(SoundFontFormat.sf3));
-      expect(sf.presets, isNotEmpty);
-      expect(sf.instruments, isNotEmpty);
-      expect(sf.samples, isNotEmpty);
+        expect(sf.format, equals(SoundFontFormat.sf3));
+        expect(sf.presets, isNotEmpty);
+        expect(sf.instruments, isNotEmpty);
+        expect(sf.samples, isNotEmpty);
 
-      // Verify all samples have OGG compression and start with 'OggS' magic header
-      for (final sample in sf.samples) {
-        expect(sample.compression, equals(SampleCompression.ogg));
-        expect(sample.byteLength, greaterThan(0));
+        // Verify all samples have OGG compression and start with 'OggS' magic header
+        for (final sample in sf.samples) {
+          expect(sample.compression, equals(SampleCompression.ogg));
+          expect(sample.byteLength, greaterThan(0));
 
-        final sampleBytes = await sf.getSampleBytes(sample);
-        expect(sampleBytes.length, equals(sample.byteLength));
+          final sampleBytes = await sf.getSampleBytes(sample);
+          expect(sampleBytes.length, equals(sample.byteLength));
 
-        // Verify OGG header magic 'OggS' (0x4F, 0x67, 0x67, 0x53)
-        expect(
-          sampleBytes.sublist(0, 4),
-          equals([0x4F, 0x67, 0x67, 0x53]),
-          reason: 'Sample "${sample.name}" does not start with OggS magic header',
-        );
-      }
-    });
+          // Verify OGG header magic 'OggS' (0x4F, 0x67, 0x67, 0x53)
+          expect(
+            sampleBytes.sublist(0, 4),
+            equals([0x4F, 0x67, 0x67, 0x53]),
+            reason:
+                'Sample "${sample.name}" does not start with OggS magic header',
+          );
+        }
+      },
+    );
   });
 
   group('SoundFontReader SFZ Zip tests', () {
     test('Loads and parses zipped SFZ archive correctly', () async {
       final archive = Archive();
-      const sfzContent = '<region> sample=sample1.flac key=F6 lokey=89 hikey=89 pitch_keycenter=89\n';
-      archive.addFile(ArchiveFile('instrument.sfz', sfzContent.length, sfzContent.codeUnits));
+      const sfzContent =
+          '<region> sample=sample1.flac key=F6 lokey=89 hikey=89 pitch_keycenter=89\n';
+      archive.addFile(
+        ArchiveFile('instrument.sfz', sfzContent.length, sfzContent.codeUnits),
+      );
       final flacDummy = [0x66, 0x4C, 0x61, 0x43, 0x00, 0x00, 0x00, 0x22];
       archive.addFile(ArchiveFile('sample1.flac', flacDummy.length, flacDummy));
       final zipData = ZipEncoder().encode(archive);
@@ -72,7 +79,9 @@ void main() {
       expect(sf.format, equals(SoundFontFormat.sfz));
       expect(sf.presets, isNotEmpty);
       expect(sf.instruments.first.zones, isNotEmpty);
-      final zoneF6 = sf.instruments.first.zones.firstWhere((z) => z.opcodes['key'] == 'F6');
+      final zoneF6 = sf.instruments.first.zones.firstWhere(
+        (z) => z.opcodes['key'] == 'F6',
+      );
       expect(zoneF6.keyRangeMin, equals(89));
       expect(zoneF6.keyRangeMax, equals(89));
       expect(zoneF6.rootKey, equals(89));

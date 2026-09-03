@@ -21,7 +21,8 @@ class StereoJoiner {
     if (!isStereoCandidate(sample)) return null;
 
     // Check direct sampleLink index
-    if (sample.sampleLink >= 0 && sample.sampleLink < soundFont.samples.length) {
+    if (sample.sampleLink >= 0 &&
+        sample.sampleLink < soundFont.samples.length) {
       final linked = soundFont.samples[sample.sampleLink];
       if (linked.id != sample.id &&
           ((sample.isLeft && linked.isRight) ||
@@ -34,8 +35,7 @@ class StereoJoiner {
     final baseName = _stripChannelSuffix(sample.name);
     for (final other in soundFont.samples) {
       if (other.id == sample.id) continue;
-      if (sample.isLeft && other.isRight ||
-          sample.isRight && other.isLeft) {
+      if (sample.isLeft && other.isRight || sample.isRight && other.isLeft) {
         if (_stripChannelSuffix(other.name) == baseName) {
           return other;
         }
@@ -47,9 +47,12 @@ class StereoJoiner {
 
   static String _stripChannelSuffix(String name) {
     var clean = name.trim();
-    if (clean.endsWith('-L') || clean.endsWith('-R') ||
-        clean.endsWith('_L') || clean.endsWith('_R') ||
-        clean.endsWith('.L') || clean.endsWith('.R')) {
+    if (clean.endsWith('-L') ||
+        clean.endsWith('-R') ||
+        clean.endsWith('_L') ||
+        clean.endsWith('_R') ||
+        clean.endsWith('.L') ||
+        clean.endsWith('.R')) {
       clean = clean.substring(0, clean.length - 2);
     } else if (clean.endsWith(' L') || clean.endsWith(' R')) {
       clean = clean.substring(0, clean.length - 2);
@@ -75,9 +78,12 @@ class StereoJoiner {
     final outData = ByteData.sublistView(interleaved);
 
     for (int i = 0; i < frameCount; i++) {
-      final leftSample = i < leftFrames ? leftData.getInt16(i * 2, Endian.little) : 0;
-      final rightSample =
-          i < rightFrames ? rightData.getInt16(i * 2, Endian.little) : 0;
+      final leftSample = i < leftFrames
+          ? leftData.getInt16(i * 2, Endian.little)
+          : 0;
+      final rightSample = i < rightFrames
+          ? rightData.getInt16(i * 2, Endian.little)
+          : 0;
 
       outData.setInt16(i * 4, leftSample, Endian.little);
       outData.setInt16(i * 4 + 2, rightSample, Endian.little);

@@ -40,7 +40,8 @@ class SampleInfo {
   int get byteEnd => byteOffset + byteLength;
 
   /// Whether this sample is tagged as mono in SoundFont 2 (sampleType 1 or 0x8001)
-  bool get isMono => (sampleType & 0x07) == 1 || channels == 1 && !isLeft && !isRight;
+  bool get isMono =>
+      (sampleType & 0x07) == 1 || channels == 1 && !isLeft && !isRight;
 
   /// Whether this sample is tagged as right channel in SoundFont 2 (sampleType 2 or 0x8002)
   bool get isRight => (sampleType & 0x07) == 2;

@@ -21,7 +21,8 @@ class VoiceCalculator {
     Zone? presetZone,
   }) {
     // Root key
-    final rootKey = zone?.rootKey ??
+    final rootKey =
+        zone?.rootKey ??
         presetZone?.rootKey ??
         (sample.originalPitch > 0 ? sample.originalPitch : 60);
 
@@ -95,38 +96,25 @@ class VoiceCalculator {
 
   /// Calculates loop region frame boundaries ([startFrames], [endFrames])
   /// from sample frame loop boundaries.
-  static ({
-    bool isLooping,
-    int startFrames,
-    int? endFrames,
-  }) calculateLoopRegion({
-    required SampleInfo sample,
-    Zone? zone,
-  }) {
+  static ({bool isLooping, int startFrames, int? endFrames})
+  calculateLoopRegion({required SampleInfo sample, Zone? zone}) {
     final startFrames = zone?.loopStart ?? sample.loopStart;
     final endFrames = zone?.loopEnd ?? sample.loopEnd;
 
-    final loopMode = zone?.loopMode ??
+    final loopMode =
+        zone?.loopMode ??
         (endFrames > startFrames && sample.compression != SampleCompression.ogg
             ? LoopMode.continuous
             : LoopMode.none);
 
-    final shouldLoop = loopMode == LoopMode.continuous ||
-        loopMode == LoopMode.sustain;
+    final shouldLoop =
+        loopMode == LoopMode.continuous || loopMode == LoopMode.sustain;
 
     if (!shouldLoop || endFrames <= startFrames) {
-      return (
-        isLooping: false,
-        startFrames: 0,
-        endFrames: null,
-      );
+      return (isLooping: false, startFrames: 0, endFrames: null);
     }
 
-    return (
-      isLooping: true,
-      startFrames: startFrames,
-      endFrames: endFrames,
-    );
+    return (isLooping: true, startFrames: startFrames, endFrames: endFrames);
   }
 
   /// Resolves the volume envelope release duration.

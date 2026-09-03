@@ -106,29 +106,27 @@ abstract class SoundFontFile {
         bytes[3] == 0x04 &&
         source is! ZipSource) {
       final archive = ZipDecoder().decodeBytes(bytes);
-      final zipSource =
-          SoundFontSource.fromZipArchive(archive, basePath: source.basePath);
+      final zipSource = SoundFontSource.fromZipArchive(
+        archive,
+        basePath: source.basePath,
+      );
       return fromSource(zipSource, formatHint: formatHint, pathHint: pathHint);
     }
 
     // Check if source is GZIP compressed (0x1F, 0x8B)
     if (bytes.length > 2 && bytes[0] == 0x1F && bytes[1] == 0x8B) {
-      final decompressed =
-          Uint8List.fromList(GZipDecoder().decodeBytes(bytes));
-      final memSource =
-          MemorySource(decompressed, basePath: source.basePath);
-      return fromSource(memSource,
-          formatHint: formatHint, pathHint: pathHint);
+      final decompressed = Uint8List.fromList(GZipDecoder().decodeBytes(bytes));
+      final memSource = MemorySource(decompressed, basePath: source.basePath);
+      return fromSource(memSource, formatHint: formatHint, pathHint: pathHint);
     }
 
     // Check if source is BZIP2 compressed ('BZ')
     if (bytes.length > 2 && bytes[0] == 0x42 && bytes[1] == 0x5A) {
-      final decompressed =
-          Uint8List.fromList(BZip2Decoder().decodeBytes(bytes));
-      final memSource =
-          MemorySource(decompressed, basePath: source.basePath);
-      return fromSource(memSource,
-          formatHint: formatHint, pathHint: pathHint);
+      final decompressed = Uint8List.fromList(
+        BZip2Decoder().decodeBytes(bytes),
+      );
+      final memSource = MemorySource(decompressed, basePath: source.basePath);
+      return fromSource(memSource, formatHint: formatHint, pathHint: pathHint);
     }
 
     // Check if source is TAR archive
@@ -140,19 +138,24 @@ abstract class SoundFontFile {
         bytes[261] == 0x72 &&
         source is! ZipSource) {
       final archive = TarDecoder().decodeBytes(bytes);
-      final tarSource =
-          SoundFontSource.fromZipArchive(archive, basePath: source.basePath);
+      final tarSource = SoundFontSource.fromZipArchive(
+        archive,
+        basePath: source.basePath,
+      );
       return fromSource(tarSource, formatHint: formatHint, pathHint: pathHint);
     }
 
-    var format = formatHint ?? _detectFormat(bytes, pathHint ?? source.basePath);
+    var format =
+        formatHint ?? _detectFormat(bytes, pathHint ?? source.basePath);
 
     switch (format) {
       case SoundFontFormat.sf2:
         final parser = Sf2Parser(source);
         final sf2Data = await parser.parse();
         // Check if any sample was OGG encoded
-        final hasOgg = sf2Data.samples.any((s) => s.compression == SampleCompression.ogg);
+        final hasOgg = sf2Data.samples.any(
+          (s) => s.compression == SampleCompression.ogg,
+        );
         final actualFormat = hasOgg ? SoundFontFormat.sf3 : SoundFontFormat.sf2;
         return _Sf2SoundFontFile(sf2Data, source, actualFormat);
 
@@ -181,7 +184,12 @@ abstract class SoundFontFile {
       final form = String.fromCharCodes(bytes.sublist(8, 12));
       if (header == 'RIFF' && form == 'sfbk') {
         // Check for SF3 markers inside bytes (e.g. 'OggS' or Ogg sample flag bit)
-        final isSf3 = _containsSubBytes(bytes, [0x4F, 0x67, 0x67, 0x53]); // OggS
+        final isSf3 = _containsSubBytes(bytes, [
+          0x4F,
+          0x67,
+          0x67,
+          0x53,
+        ]); // OggS
         return isSf3 ? SoundFontFormat.sf3 : SoundFontFormat.sf2;
       }
     }
@@ -251,7 +259,11 @@ class _Sf2SoundFontFile extends SoundFontFile {
     if (sample.byteLength <= 0) {
       return Stream.value(Uint8List(0));
     }
-    return _source.getByteStream(sample.byteOffset, sample.byteLength, chunkSize);
+    return _source.getByteStream(
+      sample.byteOffset,
+      sample.byteLength,
+      chunkSize,
+    );
   }
 }
 

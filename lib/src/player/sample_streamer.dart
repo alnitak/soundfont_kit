@@ -238,7 +238,10 @@ class SampleStreamer {
     if (preloadedBytes != null && preloadedBytes.isNotEmpty) {
       _feedBytesSync(audio, preloadedBytes, chunkSize);
     } else {
-      _feedStreamAsync(audio, soundFont.getSampleByteStream(sample, chunkSize: chunkSize));
+      _feedStreamAsync(
+        audio,
+        soundFont.getSampleByteStream(sample, chunkSize: chunkSize),
+      );
     }
 
     return audio;
@@ -280,10 +283,7 @@ class SampleStreamer {
     }
   }
 
-  static void _feedStreamAsync(
-    AudioSource audio,
-    Stream<Uint8List> stream,
-  ) {
+  static void _feedStreamAsync(AudioSource audio, Stream<Uint8List> stream) {
     scheduleMicrotask(() async {
       try {
         await for (final chunk in stream) {

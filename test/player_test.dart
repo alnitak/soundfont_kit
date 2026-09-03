@@ -95,29 +95,30 @@ void main() {
   });
 
   group('SoundFontPlayer creation tests', () {
-    test('SoundFontFile.createPlayer returns a functional player instance', () async {
-      final sf = await SoundFontFile.fromFile(sf2Path);
-      final player = sf.createPlayer(
-        options: const SoundFontPlayerOptions(
-          useScheduledPlayback: true,
-        ),
-      );
+    test(
+      'SoundFontFile.createPlayer returns a functional player instance',
+      () async {
+        final sf = await SoundFontFile.fromFile(sf2Path);
+        final player = sf.createPlayer(
+          options: const SoundFontPlayerOptions(useScheduledPlayback: true),
+        );
 
-      expect(player.soundFont, equals(sf));
-      expect(player.options.joinStereoChannels, isTrue);
-      expect(player.options.cacheAudioSources, isTrue);
-      expect(player.options.useScheduledPlayback, isTrue);
+        expect(player.soundFont, equals(sf));
+        expect(player.options.joinStereoChannels, isTrue);
+        expect(player.options.cacheAudioSources, isTrue);
+        expect(player.options.useScheduledPlayback, isTrue);
 
-      final voice = SoundFontVoice(
-        key: 60,
-        velocity: 100,
-        handles: [],
-        releaseDuration: const Duration(milliseconds: 200),
-      );
-      expect(voice.isReleased, isFalse);
-      voice.stopScheduled(Duration.zero);
-      expect(voice.isReleased, isTrue);
-    });
+        final voice = SoundFontVoice(
+          key: 60,
+          velocity: 100,
+          handles: [],
+          releaseDuration: const Duration(milliseconds: 200),
+        );
+        expect(voice.isReleased, isFalse);
+        voice.stopScheduled(Duration.zero);
+        expect(voice.isReleased, isTrue);
+      },
+    );
 
     test('SoundFontGlobalFilters exposes all useful global filter types', () {
       const filters = SoundFontGlobalFilters();
@@ -130,21 +131,24 @@ void main() {
       expect(filters.isActive(SoundFontFilterType.freeverb), isFalse);
     });
 
-    test('SoundFontPlayer preloadAll preloads all samples with progress', () async {
-      final sf = await SoundFontFile.fromFile(sf2Path);
-      final player = sf.createPlayer();
+    test(
+      'SoundFontPlayer preloadAll preloads all samples with progress',
+      () async {
+        final sf = await SoundFontFile.fromFile(sf2Path);
+        final player = sf.createPlayer();
 
-      final progressValues = <double>[];
-      await player.preloadAll(
-        onProgress: (progress, loaded, total) {
-          progressValues.add(progress);
-        },
-        createAudioSources: false,
-      );
+        final progressValues = <double>[];
+        await player.preloadAll(
+          onProgress: (progress, loaded, total) {
+            progressValues.add(progress);
+          },
+          createAudioSources: false,
+        );
 
-      expect(progressValues, isNotEmpty);
-      expect(progressValues.last, equals(1.0));
-      await player.dispose();
-    });
+        expect(progressValues, isNotEmpty);
+        expect(progressValues.last, equals(1.0));
+        await player.dispose();
+      },
+    );
   });
 }
