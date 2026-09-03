@@ -14,11 +14,8 @@ topics:
   - games
   - audio
   - SoundFont
-  - SF2
-  - SF3
-  - SFZ
+  - SF2 - SF3 - SFZ
   - midi
-  - sound-font
 
 screenshots:
   - description: "soundfont_kit logo"
