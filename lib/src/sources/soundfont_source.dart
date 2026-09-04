@@ -7,7 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 import '../utils/file_utils.dart'
-    if (dart.library.html) '../utils/file_utils_web.dart';
+    if (dart.library.js_interop) '../utils/file_utils_web.dart';
 
 /// Abstract data source for SoundFont files.
 abstract class SoundFontSource {
