@@ -1,4 +1,4 @@
-# SoundFont Kit (`soundfont_kit`)
+# SoundFont Kit
 
 A high-performance, pure Dart reader and playback engine for SoundFont files (**SF2**, **SF3**, and **SFZ**), powered by the [flutter_soloud](https://pub.dev/packages/flutter_soloud) low-latency audio engine.
 
