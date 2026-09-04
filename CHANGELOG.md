@@ -1,3 +1,8 @@
-## 1.0.0
+### 1.0.1
 
-* First release.
+- Rename agent skills to hyphenated names for Zed compatibility
+- WASM compatibility
+
+### 1.0.0
+
+- First release.
