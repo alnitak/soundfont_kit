@@ -1,5 +1,5 @@
 ---
-name: soundfont_kit-sustain
+name: soundfont-kit-sustain
 version: 1
 description: Controlling sustain and release modes in soundfont_kit — the sustainMultiplier for authentic SoundFont volume envelopes vs sustainTime fallback for non-envelope samples, piano damper pedal simulation, staccato release, and eliminating DC audio clicks. Use when the user asks about sustain pedals, note release envelopes, staccato playback, or fixing audio pops when releasing keys.
 ---

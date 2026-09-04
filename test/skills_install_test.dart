@@ -8,13 +8,13 @@ void main() {
   late Uri skillsRoot;
 
   const expectedSkills = [
-    'soundfont_kit-filters',
-    'soundfont_kit-idioms',
-    'soundfont_kit-loading',
-    'soundfont_kit-playback',
-    'soundfont_kit-preloading',
-    'soundfont_kit-scheduling',
-    'soundfont_kit-sustain',
+    'soundfont-kit-filters',
+    'soundfont-kit-idioms',
+    'soundfont-kit-loading',
+    'soundfont-kit-playback',
+    'soundfont-kit-preloading',
+    'soundfont-kit-scheduling',
+    'soundfont-kit-sustain',
   ];
 
   setUp(() {
@@ -117,7 +117,7 @@ void main() {
 
       // Modify installed skill to have version: 0
       final file = File.fromUri(
-        tempDir.uri.resolve('.agents/skills/soundfont_kit-idioms/SKILL.md'),
+        tempDir.uri.resolve('.agents/skills/soundfont-kit-idioms/SKILL.md'),
       );
       final content = file.readAsStringSync().replaceFirst(
         'version: 1',

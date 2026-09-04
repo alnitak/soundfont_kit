@@ -1,5 +1,5 @@
 ---
-name: soundfont_kit-playback
+name: soundfont-kit-playback
 version: 1
 description: Polyphonic playback, interactive keyboard note-on/note-off, chords, velocity sensitivity, and voice lifecycle management with soundfont_kit and flutter_soloud. Use when the user asks how to play notes, implement a piano keyboard, handle MIDI input, play chords, or stop sounding voices.
 ---

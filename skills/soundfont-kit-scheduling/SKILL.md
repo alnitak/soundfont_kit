@@ -1,5 +1,5 @@
 ---
-name: soundfont_kit-scheduling
+name: soundfont-kit-scheduling
 version: 1
 description: Sample-accurate engine clock scheduling in soundfont_kit — playPresetScheduled, playInstrumentScheduled, playSampleScheduled, stopScheduled, and fadeScheduled. Use when the user asks how to build a MIDI player, metronome, step sequencer, or rhythm game with jitter-free audio timing using SoLoud engine time.
 ---

@@ -1,5 +1,5 @@
 ---
-name: soundfont_kit-idioms
+name: soundfont-kit-idioms
 version: 1
 description: Core mental model and architecture of soundfont_kit — the SoundFontFile vs SoundFontPlayer separation, SoLoud.instance lifecycle, voice limits (setMaxActiveVoiceCount), minimal working example, and common traps. Use when the user asks how soundfont_kit works, how to get started, how to set up the audio engine, or to debug voice stealing and initialization issues.
 ---

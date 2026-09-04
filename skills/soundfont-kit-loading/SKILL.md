@@ -1,5 +1,5 @@
 ---
-name: soundfont_kit-loading
+name: soundfont-kit-loading
 version: 1
 description: Loading SoundFont files (SF2, SF3, SFZ, compressed archives) from assets, files, bytes, and URLs using soundfont_kit, and inspecting metadata (presets, instruments, zones, samples). Use when the user asks how to load a SoundFont, parse SF2/SF3/SFZ formats, load zipped soundbanks, query presets, or inspect audio samples.
 ---

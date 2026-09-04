@@ -1,5 +1,5 @@
 ---
-name: soundfont_kit-preloading
+name: soundfont-kit-preloading
 version: 1
 description: Zero-latency sample preloading and memory optimization in soundfont_kit — preloadAll, preloadPreset, preloadInstrument, progress callbacks, and RAM vs streaming trade-offs. Use when the user asks how to eliminate audio latency, fix stutter on key presses, show a loading progress bar, or optimize RAM usage for large soundfonts.
 ---

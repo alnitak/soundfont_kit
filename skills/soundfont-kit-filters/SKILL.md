@@ -1,5 +1,5 @@
 ---
-name: soundfont_kit-filters
+name: soundfont-kit-filters
 version: 1
 description: Configuring and modulating global DSP audio filters in soundfont_kit — Freeverb reverb, Echo delay, Biquad resonant filter, Flanger, Bass Boost, Lo-Fi, and Wave Shaper. Use when the user asks how to add audio effects, add reverb or echo, create an effects rack, or modulate filter parameters for soundfont playback.
 ---
