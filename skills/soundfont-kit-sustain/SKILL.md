@@ -1,39 +1,42 @@
 ---
 name: soundfont-kit-sustain
 version: 1
-description: Controlling sustain and release modes in soundfont_kit — the sustainMultiplier for authentic SoundFont volume envelopes vs sustainTime fallback for non-envelope samples, piano damper pedal simulation, staccato release, and eliminating DC audio clicks. Use when the user asks about sustain pedals, note release envelopes, staccato playback, or fixing audio pops when releasing keys.
+description: Controlling sustain and release modes in soundfont_kit — the unified sustain parameter for both authentic SoundFont volume envelopes and fallback samples, piano damper pedal simulation, staccato release, and eliminating DC audio clicks. Use when the user asks about sustain pedals, note release envelopes, staccato playback, or fixing audio pops when releasing keys.
 ---
 
 # soundfont_kit sustain & release
 
 SoundFonts vary significantly in how release characteristics are defined. Some soundbanks include authentic multi-stage volume envelopes (`volEnvRelease`), while others rely on one-shot raw audio samples without release metadata.
 
-`soundfont_kit` provides two complementary controls on `SoundFontPlayer` to address both scenarios cleanly.
+`soundfont_kit` provides a single **unified `sustain`** parameter on `SoundFontPlayer` and `SoundFontPlayerOptions` that seamlessly adapts to both scenarios.
 
 ---
 
-## 1. The Two Complementary Modes
+## 1. The Unified Sustain Parameter (`player.sustain`)
 
 ```dart
 final player = sf.createPlayer(
   options: const SoundFontPlayerOptions(
-    sustainMultiplier: 1.0, // Multiplier for instruments WITH native release
-    sustainTime: 0.20,      // Fallback fade (200ms) for instruments WITHOUT native release
+    sustain: 1.0,      // Master sustain factor (works across ALL SoundFonts)
+    sustainTime: 0.20, // Optional fallback duration in seconds for non-envelope samples
   ),
 );
 ```
 
-### Mode A: Multiplier Mode (`player.sustainMultiplier`)
-- **Applies to**: Instruments and generator zones that define an authentic SoundFont volume release envelope (`volEnvRelease > 0`).
-- **Behavior**: Scales the SoundFont author's release duration:
-  - `1.0`: Exact SoundFont envelope (authentic acoustic decay).
-  - `2.0` - `4.0`: Extended sustain (simulates holding a piano damper/sustain pedal).
-  - `0.0`: Immediate staccato cutoff upon key release.
+### How `sustain` Works:
+- **For instruments WITH native release (`volEnvRelease > 0`)**:
+  Scales the authentic SoundFont release envelope:
+  $$\text{effectiveRelease} = \text{volEnvRelease} \times \text{sustain}$$
+- **For instruments WITHOUT native release**:
+  Scales the fallback decay duration (`sustainTime` or 150ms default):
+  $$\text{effectiveRelease} = (\text{sustainTime} \ ?? \ 0.15\text{s}) \times \text{sustain}$$
 
-### Mode B: Time Mode (`player.sustainTime`)
-- **Applies to**: Instruments, zones, or raw samples that do **NOT** define a native release envelope (`volEnvRelease == null || 0`).
-- **Behavior**: Sets an explicit volume fade-out duration in seconds (e.g. `0.15` to `0.5` seconds).
-- **Purpose**: Prevents abrupt DC offset cutoffs, eliminating harsh audio clicks or pops when keys are released.
+### Key Values:
+- **`1.0` (Default)**: Authentic release behavior (exact SoundFont envelope if available, clean ~150–200ms anti-click fade otherwise).
+- **`0.0`**: Instant staccato key cutoff upon note release.
+- **`2.0` – `4.0`**: Extended sustain (simulates a piano damper/sustain pedal ringing out).
+
+*(Note: `player.sustainMultiplier` is retained as a fully compatible alias for `player.sustain`.)*
 
 ---
 
@@ -50,8 +53,8 @@ class PianoController {
 
   void onSustainPedalChanged(bool isDown) {
     _sustainPedalDown = isDown;
-    // Scale authentic release time up to 3.5x when pedal is depressed:
-    player.sustainMultiplier = isDown ? 3.5 : 1.0;
+    // Scale release time up to 3.5x when pedal is depressed:
+    player.sustain = isDown ? 3.5 : 1.0;
   }
 
   void onNoteOn(int key, int velocity) {
@@ -59,7 +62,7 @@ class PianoController {
   }
 
   void onNoteOff(int key) {
-    // If sustain pedal is down, note rings out longer with the higher multiplier:
+    // If sustain pedal is down, note rings out longer with the higher sustain value:
     player.noteOff(key);
   }
 }
@@ -73,12 +76,10 @@ To toggle staccato playback at runtime:
 
 ```dart
 // Staccato: sound cuts off immediately when the key is released
-player.sustainMultiplier = 0.0;
-player.sustainTime = 0.01; // Tiny 10ms micro-fade to avoid popping
+player.sustain = 0.0;
 
 // Normal legato: authentic instrument release
-player.sustainMultiplier = 1.0;
-player.sustainTime = 0.20;
+player.sustain = 1.0;
 ```
 
 ---

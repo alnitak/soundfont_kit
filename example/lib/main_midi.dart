@@ -95,37 +95,7 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
   bool _forceSinglePreset = false;
   bool _showAllChannels = false;
 
-  double _sustainTime = 0.2;
-  double _sustainMultiplier = 1.0;
-
-  bool get _hasNativeSus {
-    final target = _forceSinglePreset ? _forcedPreset : null;
-    if (target != null) {
-      if (target.zones.any((z) => (z.volEnvRelease != null && z.volEnvRelease! > 0))) {
-        return true;
-      }
-      if (_soundFont != null) {
-        for (final pz in target.zones) {
-          if (pz.instrumentID != null && pz.instrumentID! < _soundFont!.instruments.length) {
-            final inst = _soundFont!.instruments[pz.instrumentID!];
-            if (inst.zones.any((z) => (z.volEnvRelease != null && z.volEnvRelease! > 0))) {
-              return true;
-            }
-          }
-        }
-      }
-      return false;
-    }
-    if (_soundFont != null) {
-      return _soundFont!.instruments.any(
-        (inst) => inst.zones.any((z) => z.volEnvRelease != null && z.volEnvRelease! > 0),
-      );
-    }
-    return false;
-  }
-
-  bool get _isSusTimeEnabled => !_forceSinglePreset || !_hasNativeSus;
-  bool get _isSusMultiplierEnabled => !_forceSinglePreset || _hasNativeSus;
+  double _sustain = 1.0;
 
   // Real-time active keys for piano visualization
   final Set<int> _activeKeys = {};
@@ -227,8 +197,7 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
           cacheAudioSources: true,
         ),
       );
-      player.sustainTime = _sustainTime;
-      player.sustainMultiplier = _sustainMultiplier;
+      player.sustain = _sustain;
       _loadedSoundFontPlayers[name] = player;
       return player;
     } catch (e) {
@@ -256,8 +225,7 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
           cacheAudioSources: true,
         ),
       );
-      player.sustainTime = _sustainTime;
-      player.sustainMultiplier = _sustainMultiplier;
+      player.sustain = _sustain;
       _loadedSoundFontPlayers[name] = player;
       return player;
     } catch (e) {
@@ -277,8 +245,7 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
         cacheAudioSources: true,
       ),
     );
-    player.sustainTime = _sustainTime;
-    player.sustainMultiplier = _sustainMultiplier;
+    player.sustain = _sustain;
 
     _soundFont = sf;
     _sfPlayer = player;
@@ -1334,48 +1301,25 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                 },
               ),
               const SizedBox(width: 8),
-              // Sustain Time Knob
+              // Sustain Knob (unified for all SoundFonts)
               Padding(
                 padding: const EdgeInsets.only(right: 6.0),
                 child: RotaryKnob(
                   label: 'Sus',
-                  value: _sustainTime,
-                  min: 0.0,
-                  max: 5.0,
-                  defaultValue: 0.2,
-                  unit: 's',
-                  size: 30.0,
-                  enabled: _isSusTimeEnabled,
-                  onChanged: (newSus) {
-                    setState(() {
-                      _sustainTime = newSus;
-                    });
-                    _sfPlayer?.sustainTime = newSus;
-                    for (final p in _loadedSoundFontPlayers.values) {
-                      p.sustainTime = newSus;
-                    }
-                  },
-                ),
-              ),
-              // Sustain Multiplier Knob
-              Padding(
-                padding: const EdgeInsets.only(right: 6.0),
-                child: RotaryKnob(
-                  label: 'Sus x',
-                  value: _sustainMultiplier,
+                  value: _sustain,
                   min: 0.0,
                   max: 4.0,
                   defaultValue: 1.0,
                   unit: 'x',
                   size: 30.0,
-                  enabled: _isSusMultiplierEnabled,
-                  onChanged: (newMult) {
+                  enabled: true,
+                  onChanged: (newSus) {
                     setState(() {
-                      _sustainMultiplier = newMult;
+                      _sustain = newSus;
                     });
-                    _sfPlayer?.sustainMultiplier = newMult;
+                    _sfPlayer?.sustain = newSus;
                     for (final p in _loadedSoundFontPlayers.values) {
-                      p.sustainMultiplier = newMult;
+                      p.sustain = newSus;
                     }
                   },
                 ),

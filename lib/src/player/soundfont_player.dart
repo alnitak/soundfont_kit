@@ -50,23 +50,36 @@ class SoundFontPlayer {
     required this.soundFont,
     this.options = const SoundFontPlayerOptions(),
   }) : _sustainTime = options.sustainTime,
-       _sustainMultiplier = options.sustainMultiplier;
+       _sustain = options.sustain;
 
   double? _sustainTime;
-  double _sustainMultiplier = 1.0;
+  double _sustain = 1.0;
 
-  /// Global sustain duration in seconds (e.g. 0.05 to 5.0).
+  /// Global master sustain factor (e.g. 0.0 to 10.0, default 1.0).
+  ///
+  /// Works across all SoundFonts:
+  /// - Scales authentic release envelopes for instruments with native release.
+  /// - Scales fallback decay ([sustainTime] or default duration) for instruments without.
+  /// - `0.0`: Staccato cutoff upon note release.
+  /// - `1.0`: Natural authentic release.
+  /// - `> 1.0`: Extended sustain (damper pedal simulation).
+  double get sustain => _sustain;
+  set sustain(double value) {
+    _sustain = value.clamp(0.0, 20.0);
+  }
+
+  /// Global fallback sustain duration in seconds (e.g. 0.05 to 5.0).
   /// Used when notes or zones have no native release envelope.
+  /// This base duration is multiplied by [sustain].
   double? get sustainTime => _sustainTime;
   set sustainTime(double? value) {
     _sustainTime = value?.clamp(0.01, 10.0);
   }
 
-  /// Global sustain multiplier (e.g. 0.0 to 10.0, default 1.0).
-  /// Scales the native release envelope when notes or zones define one.
-  double get sustainMultiplier => _sustainMultiplier;
+  /// Deprecated alias for [sustain].
+  double get sustainMultiplier => _sustain;
   set sustainMultiplier(double value) {
-    _sustainMultiplier = value.clamp(0.0, 20.0);
+    sustain = value;
   }
 
   Future<AudioSource?> _getOrLoadSampleAudioSource(
@@ -260,7 +273,7 @@ class SoundFontPlayer {
       presetZone: presetZone,
       defaultDuration: options.defaultReleaseDuration,
       sustainTime: _sustainTime,
-      sustainMultiplier: _sustainMultiplier,
+      sustain: _sustain,
     );
 
     final audio = await _getOrLoadSampleAudioSource(sample);
@@ -1055,7 +1068,7 @@ class SoundFontPlayer {
       presetZone: presetZone,
       defaultDuration: options.defaultReleaseDuration,
       sustainTime: _sustainTime,
-      sustainMultiplier: _sustainMultiplier,
+      sustain: _sustain,
     );
 
     final audio = await _getOrLoadStereoAudioSource(leftSample, rightSample);

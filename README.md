@@ -22,10 +22,10 @@ A high-performance, pure Dart reader and playback engine for SoundFont files (**
   - **Sample-Accurate Scheduling** using `playScheduled`, `fadeScheduled`, and `stopScheduled` on the native engine clock.
   - **Real-Time Synthesis**: Pitch calculation, root key tracking, key-to-pitch scaling, MIDI velocity sensitivity, attenuation, panning, and loop points.
   - **Stereo Channel Joining**: Automatically interleaves paired Left and Right 16-bit PCM channels into true 2-channel stereo streams with centered mixer balance.
-  - **Dynamic Sustain & Release Control**:
-    - **Native Sustain Multiplier (`sustainMultiplier`)**: Scales the instrument's authentic SoundFont envelope (`0.0x` to `10.0x`, with `1.0x` = exact SoundFont value).
-    - **Fallback Sustain Time (`sustainTime`)**: Configures manual release fade-out duration (e.g. `0.05s` to `5.0s`) for instruments or samples lacking a native release envelope.
-    - **Instant Release (`0.0x`)**: Cut off sound immediately upon key release.
+  - **Dynamic Unified Sustain & Release Control**:
+    - **Unified Sustain (`sustain`)**: Single master control (`0.0` to `10.0`, default `1.0`) that automatically scales authentic envelopes on SoundFonts that have them, and scales clean fallback release decay on ones that don't.
+    - **Fallback Sustain Time (`sustainTime`)**: Configures base fallback release duration (e.g. `0.2s`) for instruments or samples lacking a native release envelope.
+    - **Staccato Mode (`sustain: 0.0`)**: Cuts off sound immediately upon key release across all SoundFonts.
   - **Polyphonic Voice Lifecycle**: Manage note-on/note-off, chords, and polyphonic voice pools.
 - **Sample Preloading**:
   - Preload all samples into memory upfront (`preloadAll`) for instant zero-latency playback, or stream them on-demand.
@@ -140,7 +140,7 @@ final player = sf.createPlayer(
     joinStereoChannels: true,       // Join paired L/R mono samples to stereo
     cacheAudioSources: true,        // Preserve audio buffers in RAM
     useScheduledPlayback: true,     // Use sample-accurate engine clock
-    sustainMultiplier: 1.0,         // 1.0x = authentic SoundFont envelope
+    sustain: 1.0,                   // 1.0x = authentic release for all SoundFonts
     sustainTime: 0.20,              // 200ms fallback for items without release
   ),
 );
@@ -160,20 +160,22 @@ await voice.release();
 
 ---
 
-### 4. Sustain and Release Modes
+### 4. Unified Sustain Control
 
-The player provides two complementary modes for controlling sustain/release:
+A single master `sustain` parameter adapts automatically across all SoundFonts:
 
 ```dart
-// 1. Multiplier Mode (for instruments WITH native release envelopes)
-// Scale the instrument's authentic SoundFont release time up or down:
-player.sustainMultiplier = 1.0;  // 100% native SoundFont release
-player.sustainMultiplier = 2.5;  // Extended sustain (like a sustain pedal)
-player.sustainMultiplier = 0.0;  // Staccato (instant cutoff on key release)
+// 1.0 = Authentic release (natural SoundFont envelope or clean 200ms fallback):
+player.sustain = 1.0;
 
-// 2. Time Mode (for instruments/samples WITHOUT native release)
-// Sets explicit fade-out duration in seconds:
-player.sustainTime = 0.5;        // 500ms fade-out upon note release
+// > 1.0 = Extended sustain (simulates holding a piano damper/sustain pedal):
+player.sustain = 2.5;
+
+// 0.0 = Staccato (instant cutoff on key release):
+player.sustain = 0.0;
+
+// Optional: customize the base fallback release duration for non-envelope samples:
+player.sustainTime = 0.5; // 500ms base decay (multiplied by player.sustain)
 ```
 
 ---

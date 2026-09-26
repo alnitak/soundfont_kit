@@ -186,8 +186,7 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
   int _startOctave = 3; // Starts at C3 (MIDI 48)
   final Set<int> _activeKeys = {};
   double _globalVolume = 1.0;
-  double _sustainMultiplier = 1.0;
-  double _sustainTime = 0.20;
+  double _sustain = 1.0;
   final SoundFontGlobalFilters _filters = const SoundFontGlobalFilters();
   SoundFontFilterType _selectedFilterType = SoundFontFilterType.freeverb;
 
@@ -196,8 +195,7 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
     super.initState();
     _height = widget.initialHeight;
     if (widget.player != null) {
-      widget.player!.sustainTime = _sustainTime;
-      widget.player!.sustainMultiplier = _sustainMultiplier;
+      widget.player!.sustain = _sustain;
     }
     if (SoLoud.instance.isInitialized) {
       try {
@@ -210,8 +208,7 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
   void didUpdateWidget(DockedPianoPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.player != oldWidget.player && widget.player != null) {
-      widget.player!.sustainTime = _sustainTime;
-      widget.player!.sustainMultiplier = _sustainMultiplier;
+      widget.player!.sustain = _sustain;
     }
     if (widget.selectedTarget != oldWidget.selectedTarget) {
       _activeKeys.clear();
@@ -376,9 +373,6 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
       _selectedFilterType = activeFilters.first;
     }
 
-    final hasNativeSus =
-        target?.hasNativeSustain(widget.player?.soundFont) ?? false;
-
     if (_isCollapsed) {
       return Container(
         decoration: BoxDecoration(
@@ -489,44 +483,23 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
                         ),
                       ),
 
-                      // Sustain Time Knob (active when target has NO native sustain)
+                      // Sustain Knob (unified across all SoundFonts)
                       Padding(
                         padding: const EdgeInsets.only(right: 6.0),
                         child: RotaryKnob(
                           label: 'Sus',
-                          value: _sustainTime,
-                          min: 0.0,
-                          max: 5.0,
-                          defaultValue: 0.2,
-                          unit: 's',
-                          size: 30.0,
-                          enabled: !hasNativeSus,
-                          onChanged: (newSus) {
-                            setState(() {
-                              _sustainTime = newSus;
-                            });
-                            widget.player?.sustainTime = newSus;
-                          },
-                        ),
-                      ),
-
-                      // Sustain Multiplier Knob (active when target HAS native sustain)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 6.0),
-                        child: RotaryKnob(
-                          label: 'Sus x',
-                          value: _sustainMultiplier,
+                          value: _sustain,
                           min: 0.0,
                           max: 4.0,
                           defaultValue: 1.0,
                           unit: 'x',
                           size: 30.0,
-                          enabled: hasNativeSus,
-                          onChanged: (newMult) {
+                          enabled: true,
+                          onChanged: (newSus) {
                             setState(() {
-                              _sustainMultiplier = newMult;
+                              _sustain = newSus;
                             });
-                            widget.player?.sustainMultiplier = newMult;
+                            widget.player?.sustain = newSus;
                           },
                         ),
                       ),

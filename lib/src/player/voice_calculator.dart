@@ -124,28 +124,38 @@ class VoiceCalculator {
   }
 
   /// Resolves the volume envelope release duration.
-  /// If the zone or preset zone has native release ([volEnvRelease] > 0),
-  /// [sustainMultiplier] scales that duration.
-  /// Otherwise, [sustainTime] (or [defaultDuration]) is applied.
+  ///
+  /// Applies [sustain] proportionally across all SoundFont types:
+  /// - Instruments with native release envelopes (`volEnvRelease > 0`):
+  ///   scales the authentic envelope: `volEnvRelease * sustain`.
+  /// - Instruments without native release envelopes:
+  ///   scales the fallback release duration: `(sustainTime ?? defaultDuration) * sustain`.
+  ///
+  /// If [sustain] (or legacy [sustainMultiplier]) is `<= 0.0`, returns [Duration.zero]
+  /// for immediate staccato key cutoff.
   static Duration calculateReleaseDuration({
     Zone? zone,
     Zone? presetZone,
     Duration defaultDuration = const Duration(milliseconds: 150),
     double? sustainTime,
-    double sustainMultiplier = 1.0,
+    double sustain = 1.0,
+    double? sustainMultiplier,
   }) {
+    final effectiveSustain = sustainMultiplier ?? sustain;
+    if (effectiveSustain <= 0.0) return Duration.zero;
+
     final releaseSec = zone?.volEnvRelease ?? presetZone?.volEnvRelease;
+    final double baseSec;
     if (releaseSec != null && releaseSec > 0) {
-      if (sustainMultiplier <= 0.0) return Duration.zero;
-      final effectiveSec = releaseSec * sustainMultiplier;
-      final micros = (effectiveSec * 1000000).round();
-      return Duration(microseconds: math.max(1000, micros));
+      baseSec = releaseSec;
+    } else if (sustainTime != null && sustainTime > 0) {
+      baseSec = sustainTime;
+    } else {
+      baseSec = defaultDuration.inMicroseconds / 1000000.0;
     }
-    if (sustainTime != null) {
-      if (sustainTime <= 0.0) return Duration.zero;
-      final micros = (sustainTime * 1000000).round();
-      return Duration(microseconds: math.max(1000, micros));
-    }
-    return defaultDuration;
+
+    final effectiveSec = baseSec * effectiveSustain;
+    final micros = (effectiveSec * 1000000).round();
+    return Duration(microseconds: math.max(1000, micros));
   }
 }
