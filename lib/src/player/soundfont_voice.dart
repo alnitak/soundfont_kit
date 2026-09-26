@@ -36,13 +36,20 @@ class SoundFontVoice {
 
   /// Triggers note-off volume fade and stop on the audio engine timeline.
   Future<void> release({Duration? customRelease, Duration? atTime}) async {
+    if (customRelease != null && customRelease <= Duration.zero) {
+      await stop();
+      return;
+    }
     if (_isReleased) return;
     _isReleased = true;
 
     final duration = customRelease ?? releaseDuration;
-    final fadeDuration = duration > Duration.zero
-        ? duration
-        : const Duration(milliseconds: 15);
+    if (duration <= Duration.zero) {
+      await stop();
+      return;
+    }
+
+    final fadeDuration = duration;
 
     for (final handle in handles) {
       if (!SoLoud.instance.getIsValidVoiceHandle(handle)) continue;

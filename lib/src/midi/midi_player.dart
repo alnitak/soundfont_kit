@@ -100,6 +100,7 @@ class MidiPlayer {
   bool _isPaused = false;
   Duration _position = Duration.zero;
   int _nextEventIndex = 0;
+  int _playEpoch = 0;
 
   Timer? _scheduleTimer;
   DateTime? _playbackWallStart;
@@ -238,6 +239,7 @@ class MidiPlayer {
 
     _isPlaying = true;
     _isPaused = false;
+    _playEpoch++;
     _playbackWallStart = DateTime.now();
     _playbackPosStart = _position;
 
@@ -263,8 +265,9 @@ class MidiPlayer {
     _scheduleTimer = null;
     _isPlaying = false;
     _isPaused = true;
+    _playEpoch++;
 
-    // Release any sounding voices
+    // Immediately stop and release all sounding voices
     await _releaseAllChannelVoices();
 
     _eventController.add(
@@ -281,6 +284,7 @@ class MidiPlayer {
     _scheduleTimer = null;
     _isPlaying = false;
     _isPaused = false;
+    _playEpoch++;
     _position = Duration.zero;
     _nextEventIndex = 0;
 
@@ -305,6 +309,7 @@ class MidiPlayer {
 
     // Immediately update positioning and event index synchronously to prevent
     // lookahead timer ticks from scheduling stale events during async voice release.
+    _playEpoch++;
     _position = clamped;
     _playbackPosStart = clamped;
     _playbackWallStart = DateTime.now();
@@ -449,12 +454,14 @@ class MidiPlayer {
           ),
         );
       } else {
+        ch.markNoteOn(event.note);
         final shouldPlay = !ch.isMuted && (!anySolo || ch.isSolo);
         if (shouldPlay) {
           final targetPlayer = ch.customPlayer ?? player;
           final preset = _resolvePresetForChannel(ch);
           if (preset != null) {
             final vol = (ch.effectiveVolume * (event.velocity / 127.0)).clamp(0.0, 1.0);
+            final currentEpoch = _playEpoch;
             targetPlayer
                 .playPresetScheduled(
                   preset,
@@ -465,7 +472,11 @@ class MidiPlayer {
                   customPan: ch.pan,
                 )
                 .then((voice) {
-                  ch.addVoice(event.note, voice);
+                  if (!_isPlaying || _playEpoch != currentEpoch) {
+                    voice.release(customRelease: Duration.zero);
+                  } else {
+                    ch.addVoice(event.note, voice);
+                  }
                 });
           }
         }
@@ -613,6 +624,11 @@ class MidiPlayer {
   }
 
   Future<void> _releaseAllChannelVoices() async {
+    if (SoLoud.instance.isInitialized) {
+      try {
+        SoLoud.instance.stopAll();
+      } catch (_) {}
+    }
     for (final ch in channels) {
       await ch.releaseAllVoices(releaseDuration: Duration.zero);
     }

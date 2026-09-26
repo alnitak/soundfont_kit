@@ -37,6 +37,17 @@ void main() {
         expect(timeline.events[nextIndex].timestamp, greaterThanOrEqualTo(targetTimestamp));
       }
     });
+
+    test('Calculates clean timeline duration by ignoring trailing orphan NoteOffs and empty padding', () async {
+      final fcFile = File('/Volumes/NVME/workspace/tmp/midiArchive/Metal_Rock_rock.freemidis.net_MIDIRip/midi/e/europe/Final_Countdown.mid');
+      if (fcFile.existsSync()) {
+        final midi = await MidiReader.fromFile(fcFile);
+        final timeline = MidiTimeline.fromMidiFile(midi);
+        // Notes finish at ~3m20s-3m24s rather than corrupted 14m40s
+        expect(timeline.duration, equals(const Duration(minutes: 3, seconds: 24)));
+        expect(timeline.events.last.timestamp, lessThanOrEqualTo(timeline.duration));
+      }
+    });
   });
 
   group('MidiPlayer Load & Preload Tests', () {

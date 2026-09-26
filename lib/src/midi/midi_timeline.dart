@@ -266,13 +266,85 @@ class MidiTimeline {
       return _eventPriority(a.event).compareTo(_eventPriority(b.event));
     });
 
-    final totalDuration =
-        allTimedEvents.isNotEmpty ? allTimedEvents.last.timestamp : Duration.zero;
+    // Track active sounding notes across channels to identify musical end and prune orphan NoteOffs.
+    final activeNotes = <int, Set<int>>{};
+    for (int ch = 0; ch < 16; ch++) {
+      activeNotes[ch] = <int>{};
+    }
+
+    Duration lastActiveNoteEnd = Duration.zero;
+    bool hasNotes = false;
+    final cleanEvents = <TimedMidiEvent>[];
+
+    for (final te in allTimedEvents) {
+      final ev = te.event;
+      if (ev is NoteOnEvent) {
+        if (ev.velocity > 0) {
+          hasNotes = true;
+          activeNotes[ev.channel]!.add(ev.note);
+          if (te.timestamp > lastActiveNoteEnd) {
+            lastActiveNoteEnd = te.timestamp;
+          }
+          cleanEvents.add(te);
+        } else {
+          // Note off via NoteOn with vel 0
+          if (activeNotes[ev.channel]!.remove(ev.note)) {
+            if (te.timestamp > lastActiveNoteEnd) {
+              lastActiveNoteEnd = te.timestamp;
+            }
+            cleanEvents.add(te);
+          }
+          // Note: orphan NoteOff (note not currently sounding) is dropped
+        }
+      } else if (ev is NoteOffEvent) {
+        if (activeNotes[ev.channel]!.remove(ev.note)) {
+          if (te.timestamp > lastActiveNoteEnd) {
+            lastActiveNoteEnd = te.timestamp;
+          }
+          cleanEvents.add(te);
+        }
+        // Note: orphan NoteOff is dropped
+      } else {
+        cleanEvents.add(te);
+      }
+    }
+
+    Duration totalDuration;
+    if (!hasNotes) {
+      totalDuration =
+          cleanEvents.isNotEmpty ? cleanEvents.last.timestamp : Duration.zero;
+    } else {
+      // Allow a reasonable grace window (up to 4 seconds) after the last active note off
+      // for CC releases (e.g. sustain pedal), final lyrics, or EndOfTrack markers.
+      const maxGrace = Duration(seconds: 4);
+      totalDuration = lastActiveNoteEnd;
+
+      for (final te in cleanEvents) {
+        if (te.timestamp <= lastActiveNoteEnd) continue;
+        if (te.timestamp > lastActiveNoteEnd + maxGrace) break;
+
+        final ev = te.event;
+        if (ev is ControlChangeEvent ||
+            ev is PitchBendEvent ||
+            ev is EndOfTrackEvent ||
+            ev is LyricEvent ||
+            ev is MarkerEvent) {
+          if (te.timestamp > totalDuration) {
+            totalDuration = te.timestamp;
+          }
+        }
+      }
+    }
+
+    // Retain only events up to totalDuration, pruning runaway trailing silence/padding
+    final finalEvents = hasNotes
+        ? cleanEvents.where((e) => e.timestamp <= totalDuration).toList()
+        : cleanEvents;
 
     return MidiTimeline(
       file: file,
       tempoMap: tempoMap,
-      events: allTimedEvents,
+      events: finalEvents,
       duration: totalDuration,
     );
   }

@@ -49,6 +49,9 @@ class MidiChannelState {
   /// Voices whose NoteOff was received while sustain pedal was held down.
   final List<SoundFontVoice> sustainedVoices = [];
 
+  /// Set of MIDI keys currently held down on this channel.
+  final Set<int> heldNotes = {};
+
   MidiChannelState({
     required this.channel,
     int? bank,
@@ -67,13 +70,27 @@ class MidiChannelState {
   /// Computes the effective gain taking into account mute status, volume, and expression.
   double get effectiveVolume => isMuted ? 0.0 : (volume * expression);
 
+  /// Marks a note as actively pressed on this channel.
+  void markNoteOn(int key) {
+    heldNotes.add(key);
+  }
+
   /// Registers a newly triggered voice for [key].
   void addVoice(int key, SoundFontVoice voice) {
+    if (!heldNotes.contains(key)) {
+      if (isSustainPedalOn) {
+        sustainedVoices.add(voice);
+      } else {
+        voice.release(customRelease: Duration.zero);
+      }
+      return;
+    }
     activeVoices.putIfAbsent(key, () => []).add(voice);
   }
 
   /// Handles Note-Off for [key]. If sustain pedal is pressed, the voice is marked for delayed release.
   Future<void> handleNoteOff(int key, {Duration? releaseDuration}) async {
+    heldNotes.remove(key);
     final voices = activeVoices.remove(key);
     if (voices == null || voices.isEmpty) return;
 
@@ -100,6 +117,7 @@ class MidiChannelState {
 
   /// Releases all active and sustained voices on this channel.
   Future<void> releaseAllVoices({Duration? releaseDuration}) async {
+    heldNotes.clear();
     final all = <SoundFontVoice>[];
     for (final vList in activeVoices.values) {
       all.addAll(vList);

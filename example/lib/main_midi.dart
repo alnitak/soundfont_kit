@@ -13,6 +13,7 @@ import 'package:path/path.dart' as p;
 import 'package:soundfont_kit/soundfont_kit.dart';
 
 import 'piano/piano_keyboard.dart';
+import 'piano/rotary_knob.dart';
 
 void main() async {
   Logger.root.level = kDebugMode ? Level.INFO : Level.INFO;
@@ -93,6 +94,38 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
   Preset? _forcedPreset;
   bool _forceSinglePreset = false;
   bool _showAllChannels = false;
+
+  double _sustainTime = 0.2;
+  double _sustainMultiplier = 1.0;
+
+  bool get _hasNativeSus {
+    final target = _forceSinglePreset ? _forcedPreset : null;
+    if (target != null) {
+      if (target.zones.any((z) => (z.volEnvRelease != null && z.volEnvRelease! > 0))) {
+        return true;
+      }
+      if (_soundFont != null) {
+        for (final pz in target.zones) {
+          if (pz.instrumentID != null && pz.instrumentID! < _soundFont!.instruments.length) {
+            final inst = _soundFont!.instruments[pz.instrumentID!];
+            if (inst.zones.any((z) => (z.volEnvRelease != null && z.volEnvRelease! > 0))) {
+              return true;
+            }
+          }
+        }
+      }
+      return false;
+    }
+    if (_soundFont != null) {
+      return _soundFont!.instruments.any(
+        (inst) => inst.zones.any((z) => z.volEnvRelease != null && z.volEnvRelease! > 0),
+      );
+    }
+    return false;
+  }
+
+  bool get _isSusTimeEnabled => !_forceSinglePreset || !_hasNativeSus;
+  bool get _isSusMultiplierEnabled => !_forceSinglePreset || _hasNativeSus;
 
   // Real-time active keys for piano visualization
   final Set<int> _activeKeys = {};
@@ -194,6 +227,8 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
           cacheAudioSources: true,
         ),
       );
+      player.sustainTime = _sustainTime;
+      player.sustainMultiplier = _sustainMultiplier;
       _loadedSoundFontPlayers[name] = player;
       return player;
     } catch (e) {
@@ -221,6 +256,8 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
           cacheAudioSources: true,
         ),
       );
+      player.sustainTime = _sustainTime;
+      player.sustainMultiplier = _sustainMultiplier;
       _loadedSoundFontPlayers[name] = player;
       return player;
     } catch (e) {
@@ -240,6 +277,8 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
         cacheAudioSources: true,
       ),
     );
+    player.sustainTime = _sustainTime;
+    player.sustainMultiplier = _sustainMultiplier;
 
     _soundFont = sf;
     _sfPlayer = player;
@@ -1244,6 +1283,11 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                 iconSize: 28,
                 tooltip: 'Stop',
                 onPressed: () {
+                  setState(() {
+                    _isPlaying = false;
+                    _activeKeys.clear();
+                    _channelActivity.clear();
+                  });
                   _midiPlayer?.stop();
                 },
               ),
@@ -1261,6 +1305,11 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                   tooltip: _isPlaying ? 'Pause' : 'Play',
                   onPressed: () {
                     if (_isPlaying) {
+                      setState(() {
+                        _isPlaying = false;
+                        _activeKeys.clear();
+                        _channelActivity.clear();
+                      });
                       _midiPlayer?.pause();
                     } else {
                       _midiPlayer?.play();
@@ -1283,6 +1332,53 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                     _midiPlayer?.looping = _isLooping;
                   });
                 },
+              ),
+              const SizedBox(width: 8),
+              // Sustain Time Knob
+              Padding(
+                padding: const EdgeInsets.only(right: 6.0),
+                child: RotaryKnob(
+                  label: 'Sus',
+                  value: _sustainTime,
+                  min: 0.0,
+                  max: 5.0,
+                  defaultValue: 0.2,
+                  unit: 's',
+                  size: 30.0,
+                  enabled: _isSusTimeEnabled,
+                  onChanged: (newSus) {
+                    setState(() {
+                      _sustainTime = newSus;
+                    });
+                    _sfPlayer?.sustainTime = newSus;
+                    for (final p in _loadedSoundFontPlayers.values) {
+                      p.sustainTime = newSus;
+                    }
+                  },
+                ),
+              ),
+              // Sustain Multiplier Knob
+              Padding(
+                padding: const EdgeInsets.only(right: 6.0),
+                child: RotaryKnob(
+                  label: 'Sus x',
+                  value: _sustainMultiplier,
+                  min: 0.0,
+                  max: 4.0,
+                  defaultValue: 1.0,
+                  unit: 'x',
+                  size: 30.0,
+                  enabled: _isSusMultiplierEnabled,
+                  onChanged: (newMult) {
+                    setState(() {
+                      _sustainMultiplier = newMult;
+                    });
+                    _sfPlayer?.sustainMultiplier = newMult;
+                    for (final p in _loadedSoundFontPlayers.values) {
+                      p.sustainMultiplier = newMult;
+                    }
+                  },
+                ),
               ),
               const Spacer(),
               // Playback Speed Selector

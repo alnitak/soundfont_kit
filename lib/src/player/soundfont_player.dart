@@ -34,6 +34,9 @@ class SoundFontPlayer {
   /// In-memory cache for preserved [AudioSource] instances.
   final Map<String, AudioSource> _audioSourceCache = {};
 
+  /// Active in-flight futures for loading audio sources to deduplicate concurrent requests.
+  final Map<String, Future<AudioSource?>> _loadingAudioSources = {};
+
   /// Set of currently held/active MIDI keys to avoid orphaned voices when noteOff fires during async creation.
   final Set<int> _heldKeys = {};
 
@@ -64,6 +67,131 @@ class SoundFontPlayer {
   double get sustainMultiplier => _sustainMultiplier;
   set sustainMultiplier(double value) {
     _sustainMultiplier = value.clamp(0.0, 20.0);
+  }
+
+  Future<AudioSource?> _getOrLoadSampleAudioSource(
+    SampleInfo sample, {
+    bool createAudioSource = true,
+  }) async {
+    final cacheKey = _sampleCacheKey(sample.id);
+
+    if (options.cacheAudioSources && _audioSourceCache.containsKey(cacheKey)) {
+      return _audioSourceCache[cacheKey];
+    }
+
+    if (_loadingAudioSources.containsKey(cacheKey)) {
+      return _loadingAudioSources[cacheKey]!;
+    }
+
+    final future = () async {
+      Uint8List? preloaded = _sampleBytesCache[sample.id];
+      if (preloaded == null) {
+        final bytes = await soundFont.getSampleBytes(sample);
+        if (bytes.isNotEmpty) {
+          _sampleBytesCache[sample.id] = bytes;
+          preloaded = bytes;
+        }
+      }
+
+      AudioSource? audio;
+      if (createAudioSource && preloaded != null && preloaded.isNotEmpty) {
+        audio = await SampleStreamer.loadAudioSourceFromBytes(
+          bytes: preloaded,
+          compression: sample.compression,
+          sampleRate: sample.sampleRate,
+          channels: sample.channels,
+          sourceKey: cacheKey,
+        );
+      }
+
+      if (audio == null && !createAudioSource) {
+        return null;
+      }
+
+      audio ??= SampleStreamer.streamSample(
+        soundFont: soundFont,
+        sample: sample,
+        preloadedBytes: preloaded,
+        chunkSize: options.streamChunkSize,
+        bufferingType: BufferingType.preserved,
+        autoDispose: false,
+      );
+
+      if (options.cacheAudioSources) {
+        _audioSourceCache[cacheKey] = audio;
+      }
+      return audio;
+    }();
+
+    _loadingAudioSources[cacheKey] = future;
+    try {
+      return await future;
+    } finally {
+      _loadingAudioSources.remove(cacheKey);
+    }
+  }
+
+  Future<AudioSource?> _getOrLoadStereoAudioSource(
+    SampleInfo leftSample,
+    SampleInfo rightSample, {
+    bool createAudioSource = true,
+  }) async {
+    final cacheKey = _stereoCacheKey(leftSample.id, rightSample.id);
+
+    if (options.cacheAudioSources && _audioSourceCache.containsKey(cacheKey)) {
+      return _audioSourceCache[cacheKey];
+    }
+
+    if (_loadingAudioSources.containsKey(cacheKey)) {
+      return _loadingAudioSources[cacheKey]!;
+    }
+
+    final future = () async {
+      Uint8List? leftBytes = _sampleBytesCache[leftSample.id];
+      if (leftBytes == null) {
+        final bytes = await soundFont.getSampleBytes(leftSample);
+        if (bytes.isNotEmpty) {
+          _sampleBytesCache[leftSample.id] = bytes;
+          leftBytes = bytes;
+        }
+      }
+
+      Uint8List? rightBytes = _sampleBytesCache[rightSample.id];
+      if (rightBytes == null) {
+        final bytes = await soundFont.getSampleBytes(rightSample);
+        if (bytes.isNotEmpty) {
+          _sampleBytesCache[rightSample.id] = bytes;
+          rightBytes = bytes;
+        }
+      }
+
+      AudioSource? audio;
+      if (createAudioSource &&
+          leftBytes != null &&
+          leftBytes.isNotEmpty &&
+          rightBytes != null &&
+          rightBytes.isNotEmpty) {
+        audio = await SampleStreamer.joinTwoAudioSources(
+          leftBytes: leftBytes,
+          rightBytes: rightBytes,
+          leftSample: leftSample,
+          rightSample: rightSample,
+          sourceKey: cacheKey,
+        );
+      }
+
+      if (options.cacheAudioSources && audio != null) {
+        _audioSourceCache[cacheKey] = audio;
+      }
+      return audio;
+    }();
+
+    _loadingAudioSources[cacheKey] = future;
+    try {
+      return await future;
+    } finally {
+      _loadingAudioSources.remove(cacheKey);
+    }
   }
 
   /// Plays a single [SampleInfo] with optional pitch, volume, pan, loop,
@@ -135,43 +263,9 @@ class SoundFontPlayer {
       sustainMultiplier: _sustainMultiplier,
     );
 
-    AudioSource? audio;
-    final cacheKey = _sampleCacheKey(sample.id);
-
-    if (options.cacheAudioSources && _audioSourceCache.containsKey(cacheKey)) {
-      audio = _audioSourceCache[cacheKey]!;
-    } else {
-      Uint8List? preloaded = _sampleBytesCache[sample.id];
-      if (preloaded == null) {
-        final bytes = await soundFont.getSampleBytes(sample);
-        if (bytes.isNotEmpty) {
-          _sampleBytesCache[sample.id] = bytes;
-          preloaded = bytes;
-        }
-      }
-
-      if (preloaded != null && preloaded.isNotEmpty) {
-        audio = await SampleStreamer.loadAudioSourceFromBytes(
-          bytes: preloaded,
-          compression: sample.compression,
-          sampleRate: sample.sampleRate,
-          channels: sample.channels,
-          sourceKey: cacheKey,
-        );
-      }
-
-      audio ??= SampleStreamer.streamSample(
-        soundFont: soundFont,
-        sample: sample,
-        preloadedBytes: preloaded,
-        chunkSize: options.streamChunkSize,
-        bufferingType: BufferingType.preserved,
-        autoDispose: false,
-      );
-
-      if (options.cacheAudioSources) {
-        _audioSourceCache[cacheKey] = audio;
-      }
+    final audio = await _getOrLoadSampleAudioSource(sample);
+    if (audio == null) {
+      return SoundFontVoice(key: effectiveKey, velocity: velocity, handles: []);
     }
 
     final validLoop =
@@ -256,6 +350,7 @@ class SoundFontPlayer {
     Duration? duration,
     Zone? presetZone,
     bool trackVoice = true,
+    Set<int>? handledSampleIds,
   }) async {
     if (trackVoice) {
       _heldKeys.add(key);
@@ -287,7 +382,7 @@ class SoundFontPlayer {
     Duration maxRelease = options.defaultReleaseDuration;
 
     // Check for stereo sample pairs among matching zones
-    final handledSampleIds = <int>{};
+    final effectiveHandledSampleIds = handledSampleIds ?? <int>{};
 
     for (int i = 0; i < matchingZones.length; i++) {
       final zone = matchingZones[i];
@@ -297,15 +392,15 @@ class SoundFontPlayer {
               ? soundFont.samples[zone.sampleID!]
               : null);
 
-      if (sample == null || handledSampleIds.contains(sample.id)) continue;
+      if (sample == null || effectiveHandledSampleIds.contains(sample.id)) continue;
 
       // Check if stereo joining applies
       if (options.joinStereoChannels &&
           StereoJoiner.isStereoCandidate(sample)) {
         final pairedSample = StereoJoiner.findLinkedSample(soundFont, sample);
         if (pairedSample != null) {
-          handledSampleIds.add(sample.id);
-          handledSampleIds.add(pairedSample.id);
+          effectiveHandledSampleIds.add(sample.id);
+          effectiveHandledSampleIds.add(pairedSample.id);
 
           final leftSample = sample.isLeft ? sample : pairedSample;
           final rightSample = sample.isRight ? sample : pairedSample;
@@ -332,7 +427,7 @@ class SoundFontPlayer {
         }
       }
 
-      handledSampleIds.add(sample.id);
+      effectiveHandledSampleIds.add(sample.id);
       final voice = await playSample(
         sample,
         key: key,
@@ -397,6 +492,7 @@ class SoundFontPlayer {
     final allHandles = <SoundHandle>[];
     final allSources = <AudioSource>[];
     Duration maxRelease = options.defaultReleaseDuration;
+    final handledSampleIds = <int>{};
 
     for (final pz in matchingPresetZones) {
       final inst =
@@ -416,6 +512,7 @@ class SoundFontPlayer {
           duration: duration,
           presetZone: pz,
           trackVoice: false,
+          handledSampleIds: handledSampleIds,
         );
         allHandles.addAll(voice.handles);
         allSources.addAll(voice.sources);
@@ -428,7 +525,7 @@ class SoundFontPlayer {
             (pz.sampleID != null && pz.sampleID! < soundFont.samples.length
                 ? soundFont.samples[pz.sampleID!]
                 : null);
-        if (sample != null) {
+        if (sample != null && !handledSampleIds.contains(sample.id)) {
           if (options.joinStereoChannels &&
               StereoJoiner.isStereoCandidate(sample)) {
             final pairedSample = StereoJoiner.findLinkedSample(
@@ -436,6 +533,8 @@ class SoundFontPlayer {
               sample,
             );
             if (pairedSample != null) {
+              handledSampleIds.add(sample.id);
+              handledSampleIds.add(pairedSample.id);
               final leftSample = sample.isLeft ? sample : pairedSample;
               final rightSample = sample.isRight ? sample : pairedSample;
 
@@ -460,6 +559,7 @@ class SoundFontPlayer {
             }
           }
 
+          handledSampleIds.add(sample.id);
           final voice = await playSample(
             sample,
             key: key,
@@ -667,30 +767,10 @@ class SoundFontPlayer {
     SampleInfo sample, {
     bool createAudioSource = true,
   }) async {
-    Uint8List? bytes = _sampleBytesCache[sample.id];
-    if (bytes == null) {
-      bytes = await soundFont.getSampleBytes(sample);
-      if (bytes.isNotEmpty) {
-        _sampleBytesCache[sample.id] = bytes;
-      }
-    }
-
-    final cacheKey = _sampleCacheKey(sample.id);
-    if (createAudioSource &&
-        options.cacheAudioSources &&
-        !_audioSourceCache.containsKey(cacheKey) &&
-        bytes.isNotEmpty) {
-      final audio = await SampleStreamer.loadAudioSourceFromBytes(
-        bytes: bytes,
-        compression: sample.compression,
-        sampleRate: sample.sampleRate,
-        channels: sample.channels,
-        sourceKey: cacheKey,
-      );
-      if (audio != null) {
-        _audioSourceCache[cacheKey] = audio;
-      }
-    }
+    await _getOrLoadSampleAudioSource(
+      sample,
+      createAudioSource: createAudioSource,
+    );
   }
 
   /// Preloads audio bytes and prepares the stereo [AudioSource] for a left-right sample pair.
@@ -699,40 +779,11 @@ class SoundFontPlayer {
     SampleInfo rightSample, {
     bool createAudioSource = true,
   }) async {
-    final cacheKey = _stereoCacheKey(leftSample.id, rightSample.id);
-
-    if (createAudioSource &&
-        options.cacheAudioSources &&
-        !_audioSourceCache.containsKey(cacheKey)) {
-      Uint8List? leftBytes = _sampleBytesCache[leftSample.id];
-      if (leftBytes == null) {
-        leftBytes = await soundFont.getSampleBytes(leftSample);
-        if (leftBytes.isNotEmpty) {
-          _sampleBytesCache[leftSample.id] = leftBytes;
-        }
-      }
-
-      Uint8List? rightBytes = _sampleBytesCache[rightSample.id];
-      if (rightBytes == null) {
-        rightBytes = await soundFont.getSampleBytes(rightSample);
-        if (rightBytes.isNotEmpty) {
-          _sampleBytesCache[rightSample.id] = rightBytes;
-        }
-      }
-
-      if (leftBytes.isNotEmpty && rightBytes.isNotEmpty) {
-        final audio = await SampleStreamer.joinTwoAudioSources(
-          leftBytes: leftBytes,
-          rightBytes: rightBytes,
-          leftSample: leftSample,
-          rightSample: rightSample,
-          sourceKey: cacheKey,
-        );
-        if (audio != null) {
-          _audioSourceCache[cacheKey] = audio;
-        }
-      }
-    }
+    await _getOrLoadStereoAudioSource(
+      leftSample,
+      rightSample,
+      createAudioSource: createAudioSource,
+    );
   }
 
   /// Preloads all samples needed for [instrument] with optional progress callback.
@@ -1007,43 +1058,7 @@ class SoundFontPlayer {
       sustainMultiplier: _sustainMultiplier,
     );
 
-    final cacheKey = _stereoCacheKey(leftSample.id, rightSample.id);
-    AudioSource? audio;
-
-    if (options.cacheAudioSources && _audioSourceCache.containsKey(cacheKey)) {
-      audio = _audioSourceCache[cacheKey]!;
-    } else {
-      Uint8List? leftBytes = _sampleBytesCache[leftSample.id];
-      if (leftBytes == null) {
-        leftBytes = await soundFont.getSampleBytes(leftSample);
-        if (leftBytes.isNotEmpty) {
-          _sampleBytesCache[leftSample.id] = leftBytes;
-        }
-      }
-
-      Uint8List? rightBytes = _sampleBytesCache[rightSample.id];
-      if (rightBytes == null) {
-        rightBytes = await soundFont.getSampleBytes(rightSample);
-        if (rightBytes.isNotEmpty) {
-          _sampleBytesCache[rightSample.id] = rightBytes;
-        }
-      }
-
-      if (leftBytes.isNotEmpty && rightBytes.isNotEmpty) {
-        audio = await SampleStreamer.joinTwoAudioSources(
-          leftBytes: leftBytes,
-          rightBytes: rightBytes,
-          leftSample: leftSample,
-          rightSample: rightSample,
-          sourceKey: cacheKey,
-        );
-      }
-
-      if (audio != null && options.cacheAudioSources) {
-        _audioSourceCache[cacheKey] = audio;
-      }
-    }
-
+    final audio = await _getOrLoadStereoAudioSource(leftSample, rightSample);
     if (audio == null) {
       return SoundFontVoice(key: key, velocity: velocity, handles: []);
     }
@@ -1152,6 +1167,7 @@ class SoundFontPlayer {
   /// Releases all player resources and stops all playing handles.
   Future<void> dispose() async {
     await allNotesOff();
+    _loadingAudioSources.clear();
     for (final audio in _audioSourceCache.values) {
       try {
         await SoLoud.instance.disposeSource(audio);
