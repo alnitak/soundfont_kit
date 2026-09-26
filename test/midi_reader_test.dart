@@ -77,6 +77,56 @@ void main() {
 
       expect(events.last, isA<EndOfTrackEvent>());
     });
+
+    test('Parses RIFF RMID encapsulated MIDI file', () {
+      final smfBuilder = BytesBuilder();
+      // MThd Header
+      smfBuilder.add([0x4D, 0x54, 0x68, 0x64]); // 'MThd'
+      smfBuilder.add([0x00, 0x00, 0x00, 0x06]); // length 6
+      smfBuilder.add([0x00, 0x00]); // format 0
+      smfBuilder.add([0x00, 0x01]); // 1 track
+      smfBuilder.add([0x01, 0xE0]); // 480 PPQ
+
+      // MTrk Track
+      final trackData = BytesBuilder();
+      trackData.add([0x00, 0xFF, 0x2F, 0x00]); // End of Track
+      final trackBytes = trackData.toBytes();
+      smfBuilder.add([0x4D, 0x54, 0x72, 0x6B]); // 'MTrk'
+      final len = trackBytes.length;
+      smfBuilder.add([
+        (len >> 24) & 0xFF,
+        (len >> 16) & 0xFF,
+        (len >> 8) & 0xFF,
+        len & 0xFF,
+      ]);
+      smfBuilder.add(trackBytes);
+      final smfBytes = smfBuilder.toBytes();
+
+      // Wrap in RIFF RMID container
+      final riffBuilder = BytesBuilder();
+      riffBuilder.add([0x52, 0x49, 0x46, 0x46]); // 'RIFF'
+      final riffLen = 4 + 8 + smfBytes.length;
+      riffBuilder.add([
+        riffLen & 0xFF,
+        (riffLen >> 8) & 0xFF,
+        (riffLen >> 16) & 0xFF,
+        (riffLen >> 24) & 0xFF,
+      ]);
+      riffBuilder.add([0x52, 0x4D, 0x49, 0x44]); // 'RMID'
+      riffBuilder.add([0x64, 0x61, 0x74, 0x61]); // 'data'
+      final dataLen = smfBytes.length;
+      riffBuilder.add([
+        dataLen & 0xFF,
+        (dataLen >> 8) & 0xFF,
+        (dataLen >> 16) & 0xFF,
+        (dataLen >> 24) & 0xFF,
+      ]);
+      riffBuilder.add(smfBytes);
+
+      final rmidMidi = MidiReader.fromBytes(riffBuilder.toBytes());
+      expect(rmidMidi.format, equals(0));
+      expect(rmidMidi.tracks.length, equals(1));
+    });
   });
 
   group('MidiReader Real Asset Tests', () {

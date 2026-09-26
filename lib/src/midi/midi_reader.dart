@@ -7,8 +7,14 @@ import 'midi_models.dart';
 
 /// High-performance binary parser for Standard MIDI Files (SMF format 0, 1, 2).
 class MidiReader {
-  /// Parses a [MidiFile] from raw binary [bytes].
+  /// Parses a [MidiFile] from raw binary [bytes], automatically unwrapping RIFF/RMID
+  /// containers if present.
   static MidiFile fromBytes(Uint8List bytes) {
+    // Check if encapsulated in a RIFF / RMID container
+    if (bytes.length >= 12 && _readFourCC(bytes, 0) == 'RIFF') {
+      bytes = _unwrapRiffMidi(bytes);
+    }
+
     final byteData = ByteData.sublistView(bytes);
     int offset = 0;
 
@@ -284,6 +290,45 @@ class MidiReader {
   // ---------------------------------------------------------------------------
   // Internal Helpers
   // ---------------------------------------------------------------------------
+
+  /// Extracts the standard MIDI stream from a RIFF (RMID) container.
+  static Uint8List _unwrapRiffMidi(Uint8List bytes) {
+    final byteData = ByteData.sublistView(bytes);
+    final formType = _readFourCC(bytes, 8);
+
+    if (formType == 'RMID') {
+      int offset = 12;
+      while (offset + 8 <= bytes.length) {
+        final chunkId = _readFourCC(bytes, offset);
+        final chunkSize = byteData.getUint32(offset + 4, Endian.little);
+        offset += 8;
+
+        if (chunkId == 'data') {
+          final dataEnd = (offset + chunkSize <= bytes.length)
+              ? offset + chunkSize
+              : bytes.length;
+          final sub = bytes.sublist(offset, dataEnd);
+          if (sub.length >= 4 && _readFourCC(sub, 0) == 'MThd') {
+            return sub;
+          }
+        }
+        // RIFF subchunks are padded to 2-byte word boundaries
+        offset += chunkSize + (chunkSize % 2);
+      }
+    }
+
+    // Fallback: search for the 'MThd' magic marker inside the RIFF file
+    for (int i = 0; i <= bytes.length - 4; i++) {
+      if (bytes[i] == 0x4D &&     // 'M'
+          bytes[i + 1] == 0x54 && // 'T'
+          bytes[i + 2] == 0x68 && // 'h'
+          bytes[i + 3] == 0x64) { // 'd'
+        return bytes.sublist(i);
+      }
+    }
+
+    return bytes;
+  }
 
   static String _readFourCC(Uint8List bytes, int offset) {
     if (offset + 4 > bytes.length) return '';

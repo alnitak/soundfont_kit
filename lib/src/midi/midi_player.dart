@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter_soloud/flutter_soloud.dart';
 import '../models/preset.dart';
 import '../player/soundfont_player.dart';
 import 'midi_channel_state.dart';
@@ -207,8 +208,13 @@ class MidiPlayer {
 
   /// Starts or resumes playback.
   Future<void> play() async {
-    if (_timeline == null) return;
-    if (_isPlaying) return;
+    if (_timeline == null || _isPlaying) return;
+
+    if (SoLoud.instance.isInitialized) {
+      try {
+        SoLoud.instance.setMaxActiveVoiceCount(512);
+      } catch (_) {}
+    }
 
     _isPlaying = true;
     _isPaused = false;

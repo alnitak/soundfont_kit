@@ -37,7 +37,7 @@ void main() async {
     devicePeriodFrames: 128,
     renderAheadFrames: 0,
   );
-  SoLoud.instance.setMaxActiveVoiceCount(32);
+  SoLoud.instance.setMaxActiveVoiceCount(256);
   SoLoud.instance.setAudioDeviceIdleTimeout(null);
 
   runApp(const SoundFontReaderDemoApp());

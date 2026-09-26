@@ -36,7 +36,7 @@ void main() async {
     devicePeriodFrames: 128,
     renderAheadFrames: 0,
   );
-  SoLoud.instance.setMaxActiveVoiceCount(128);
+  SoLoud.instance.setMaxActiveVoiceCount(512);
   SoLoud.instance.setAudioDeviceIdleTimeout(null);
 
   runApp(const MidiPlayerDemoApp());
