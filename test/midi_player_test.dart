@@ -79,6 +79,32 @@ void main() {
       await player.dispose();
     });
 
+    test('Smoothly updates speedMultiplier without timeline jumps', () async {
+      final sf = await SoundFontFile.fromFile(sf2Path);
+      final player = sf.createPlayer();
+      final midiPlayer = MidiPlayer(player: player);
+
+      final midi = await MidiReader.fromFile(File(midiPath));
+      await midiPlayer.load(midi, autoPreload: false);
+
+      await midiPlayer.play();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      final posBefore = midiPlayer.position;
+      expect(posBefore, greaterThan(Duration.zero));
+
+      // Increase speed to 2.0x
+      midiPlayer.speedMultiplier = 2.0;
+      final posAfter = midiPlayer.position;
+
+      // Position should be virtually unchanged immediately after setting speedMultiplier
+      expect((posAfter.inMilliseconds - posBefore.inMilliseconds).abs(), lessThan(50));
+
+      await midiPlayer.stop();
+      await midiPlayer.dispose();
+      await player.dispose();
+    });
+
     test('Allows custom SoundFont player and preset routing per channel', () async {
       final defaultSf = await SoundFontFile.fromFile(sf2Path);
       final defaultPlayer = defaultSf.createPlayer();

@@ -64,8 +64,28 @@ class MidiPlayer {
   /// Global preset override. When set, all MIDI channels play through this preset.
   Preset? forcedPresetOverride;
 
+  double _speedMultiplier = 1.0;
+
   /// Playback speed multiplier (e.g. 0.5 for half-speed, 2.0 for double-speed).
-  double speedMultiplier = 1.0;
+  double get speedMultiplier => _speedMultiplier;
+  set speedMultiplier(double value) {
+    final clamped = value.clamp(0.1, 10.0);
+    if ((clamped - _speedMultiplier).abs() < 0.0001) return;
+
+    if (_isPlaying && _playbackWallStart != null) {
+      // Re-anchor the wall clock baseline to the exact current virtual position
+      // before applying the new speed multiplier, preventing sudden timeline jumps.
+      final elapsedWall = DateTime.now().difference(_playbackWallStart!);
+      final virtualElapsed = Duration(
+        microseconds: (elapsedWall.inMicroseconds * _speedMultiplier).round(),
+      );
+      _position = _playbackPosStart + virtualElapsed;
+      _playbackPosStart = _position;
+      _playbackWallStart = DateTime.now();
+    }
+
+    _speedMultiplier = clamped;
+  }
 
   /// Whether playback automatically loops from the beginning upon reaching the end.
   bool looping = false;
@@ -533,6 +553,7 @@ class MidiPlayer {
     Preset? preset,
   }) {
     if (channel < 0 || channel >= channels.length) return;
+    channels[channel].releaseAllVoices(releaseDuration: Duration.zero);
     channels[channel].customPlayer = customPlayer;
     channels[channel].presetOverride = preset;
   }
@@ -540,6 +561,7 @@ class MidiPlayer {
   /// Clears any custom SoundFont or preset overrides for a specific MIDI channel (0-15).
   void clearChannelOverride(int channel) {
     if (channel < 0 || channel >= channels.length) return;
+    channels[channel].releaseAllVoices(releaseDuration: Duration.zero);
     channels[channel].customPlayer = null;
     channels[channel].presetOverride = null;
   }

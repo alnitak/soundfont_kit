@@ -475,7 +475,12 @@ class Sf2Parser {
     SampleInfo? sampleRef = sampleID != null ? sampleMap[sampleID] : null;
 
     int? rootKey = gens[58] ?? sampleRef?.originalPitch ?? globalZone?.rootKey;
-    int? fineTune = gens[52] ?? globalZone?.pitchCorrection;
+    final int coarseTune = gens.containsKey(51) ? _toSigned16(gens[51]!) * 100 : 0;
+    final int fineTune = gens.containsKey(52) ? _toSigned16(gens[52]!) : 0;
+    final int? globalCorrection = globalZone?.pitchCorrection;
+    final int? totalCorrection = (coarseTune != 0 || fineTune != 0)
+        ? (coarseTune + fineTune + (globalCorrection ?? 0))
+        : globalCorrection;
 
     double? attenuation = globalZone?.attenuation;
     if (gens.containsKey(48)) {
@@ -506,7 +511,7 @@ class Sf2Parser {
       velRangeMin: velMin,
       velRangeMax: velMax,
       rootKey: rootKey,
-      pitchCorrection: fineTune,
+      pitchCorrection: totalCorrection,
       attenuation: attenuation,
       pan: pan,
       sampleID: sampleID,

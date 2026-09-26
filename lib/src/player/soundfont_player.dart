@@ -37,6 +37,12 @@ class SoundFontPlayer {
   /// Set of currently held/active MIDI keys to avoid orphaned voices when noteOff fires during async creation.
   final Set<int> _heldKeys = {};
 
+  static int _instanceCounter = 0;
+  final int _playerId = ++_instanceCounter;
+
+  String _sampleCacheKey(int sampleId) => 'sf_${_playerId}_s_$sampleId';
+  String _stereoCacheKey(int leftId, int rightId) => 'sf_${_playerId}_st_${leftId}_$rightId';
+
   SoundFontPlayer({
     required this.soundFont,
     this.options = const SoundFontPlayerOptions(),
@@ -80,6 +86,9 @@ class SoundFontPlayer {
   }) async {
     final effectiveKey =
         key ?? (sample.originalPitch > 0 ? sample.originalPitch : 60);
+    if (!SoLoud.instance.isInitialized) {
+      return SoundFontVoice(key: effectiveKey, velocity: velocity, handles: []);
+    }
     if (trackVoice) {
       _heldKeys.add(effectiveKey);
     }
@@ -127,7 +136,7 @@ class SoundFontPlayer {
     );
 
     AudioSource? audio;
-    final cacheKey = 'sample_${sample.id}';
+    final cacheKey = _sampleCacheKey(sample.id);
 
     if (options.cacheAudioSources && _audioSourceCache.containsKey(cacheKey)) {
       audio = _audioSourceCache[cacheKey]!;
@@ -666,7 +675,7 @@ class SoundFontPlayer {
       }
     }
 
-    final cacheKey = 'sample_${sample.id}';
+    final cacheKey = _sampleCacheKey(sample.id);
     if (createAudioSource &&
         options.cacheAudioSources &&
         !_audioSourceCache.containsKey(cacheKey) &&
@@ -690,8 +699,7 @@ class SoundFontPlayer {
     SampleInfo rightSample, {
     bool createAudioSource = true,
   }) async {
-    final stereoKey = '${leftSample.id}_${rightSample.id}';
-    final cacheKey = 'stereo_$stereoKey';
+    final cacheKey = _stereoCacheKey(leftSample.id, rightSample.id);
 
     if (createAudioSource &&
         options.cacheAudioSources &&
@@ -980,6 +988,10 @@ class SoundFontPlayer {
           masterVolume: options.masterVolume,
         );
 
+    if (!SoLoud.instance.isInitialized) {
+      return SoundFontVoice(key: key, velocity: velocity, handles: []);
+    }
+
     final p = customPan ?? VoiceCalculator.calculatePan(presetZone: presetZone);
 
     final loopInfo = VoiceCalculator.calculateLoopRegion(
@@ -995,8 +1007,7 @@ class SoundFontPlayer {
       sustainMultiplier: _sustainMultiplier,
     );
 
-    final stereoKey = '${leftSample.id}_${rightSample.id}';
-    final cacheKey = 'stereo_$stereoKey';
+    final cacheKey = _stereoCacheKey(leftSample.id, rightSample.id);
     AudioSource? audio;
 
     if (options.cacheAudioSources && _audioSourceCache.containsKey(cacheKey)) {
@@ -1107,7 +1118,7 @@ class SoundFontPlayer {
   /// Returns all active sound handles playing the given [sample].
   List<SoundHandle> getActiveHandlesForSample(SampleInfo sample) {
     final result = <SoundHandle>[];
-    final cachedSource = _audioSourceCache['sample_${sample.id}'];
+    final cachedSource = _audioSourceCache[_sampleCacheKey(sample.id)];
 
     for (final voiceList in _activeVoices.values) {
       for (final voice in voiceList) {
