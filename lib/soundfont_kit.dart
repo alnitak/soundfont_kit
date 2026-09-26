@@ -15,3 +15,10 @@ export 'src/player/soundfont_voice.dart';
 export 'src/player/voice_calculator.dart';
 export 'src/player/soundfont_player.dart';
 export 'src/player/filters/soundfont_filter.dart';
+
+export 'src/midi/midi_models.dart';
+export 'src/midi/midi_reader.dart';
+export 'src/midi/midi_timeline.dart';
+export 'src/midi/midi_channel_state.dart';
+export 'src/midi/midi_player.dart';
+export 'src/midi/general_midi.dart';

@@ -247,6 +247,40 @@ for (final p in params) {
 
 ---
 
+### 8. MIDI File Reading & Playback
+
+`soundfont_kit` includes a built-in Standard MIDI File (**SMF format 0 and 1**) parser and multi-channel sequencer engine:
+
+```dart
+// 1. Load any SoundFont file (SF2, SF3, or SFZ)
+final sf = await SoundFontFile.fromFile('assets/soundfonts/MySoundFont.sf2');
+final sfPlayer = sf.createPlayer();
+
+// 2. Parse a Standard MIDI File (.mid / .midi)
+final midi = await MidiReader.fromFile(File('assets/music/song.mid'));
+
+// 3. Create and load the MidiPlayer
+final midiPlayer = MidiPlayer(player: sfPlayer);
+await midiPlayer.load(midi, autoPreload: true);
+
+// 4. Playback controls
+await midiPlayer.play();
+await midiPlayer.pause();
+await midiPlayer.seek(const Duration(seconds: 45));
+await midiPlayer.stop();
+
+// Options:
+midiPlayer.speedMultiplier = 1.25; // 1.25x speed
+midiPlayer.looping = true;         // Auto-loop
+midiPlayer.setChannelMute(0, true); // Mute Channel 1
+midiPlayer.setChannelSolo(9, true); // Solo Drum Channel 10
+
+// Force all channels to play through a specific SoundFont preset (e.g. Piano Solo):
+midiPlayer.forcedPresetOverride = sf.presets.first;
+```
+
+---
+
 ## Example App Capabilities
 
 The included [`example/`](example) directory contains a complete Flutter desktop, mobile, and web demonstration app featuring:
