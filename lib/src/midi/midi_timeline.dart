@@ -174,6 +174,39 @@ class TimedMidiEvent {
       'TimedMidiEvent(t: ${timestamp.inMilliseconds}ms, tick: $absoluteTick, event: $event)';
 }
 
+/// Represents a sounding note spanning from [start] to [start] + [duration] on a MIDI [channel].
+class MidiTimelineNote {
+  /// The 0-based MIDI channel (0-15).
+  final int channel;
+
+  /// The MIDI note number (0-127).
+  final int note;
+
+  /// Note-on velocity (1-127).
+  final int velocity;
+
+  /// Real-world start timestamp.
+  final Duration start;
+
+  /// Duration the note sounds before NoteOff.
+  final Duration duration;
+
+  /// Real-world end timestamp.
+  Duration get end => start + duration;
+
+  const MidiTimelineNote({
+    required this.channel,
+    required this.note,
+    required this.velocity,
+    required this.start,
+    required this.duration,
+  });
+
+  @override
+  String toString() =>
+      'MidiTimelineNote(ch: $channel, note: $note, vel: $velocity, start: ${start.inMilliseconds}ms, dur: ${duration.inMilliseconds}ms)';
+}
+
 /// Snapshot of the synthesizer state across all 16 MIDI channels at a specific point in time.
 class MidiChannelSnapshot {
   final int channel;
@@ -222,15 +255,23 @@ class MidiTimeline {
   /// Total duration of the MIDI sequence.
   final Duration duration;
 
+  /// Precomputed notes partitioned by 0-based MIDI channel (0-15).
+  final Map<int, List<MidiTimelineNote>> channelNotes;
+
   const MidiTimeline({
     required this.file,
     required this.tempoMap,
     required this.events,
     required this.duration,
+    this.channelNotes = const {},
   });
 
   /// The set of 0-based MIDI channels (0-15) used in the underlying MIDI file.
   Set<int> get usedChannels => file.usedChannels;
+
+  /// Returns all paired notes (with start and duration) for the given [channel] (0-15).
+  List<MidiTimelineNote> getNotesForChannel(int channel) =>
+      channelNotes[channel] ?? const [];
 
   /// Constructs a flattened [MidiTimeline] from [file].
   factory MidiTimeline.fromMidiFile(MidiFile file) {
@@ -268,8 +309,12 @@ class MidiTimeline {
 
     // Track active sounding notes across channels to identify musical end and prune orphan NoteOffs.
     final activeNotes = <int, Set<int>>{};
+    final activeNoteStarts = <int, Map<int, (Duration start, int velocity)>>{};
+    final channelNotes = <int, List<MidiTimelineNote>>{};
     for (int ch = 0; ch < 16; ch++) {
       activeNotes[ch] = <int>{};
+      activeNoteStarts[ch] = <int, (Duration, int)>{};
+      channelNotes[ch] = <MidiTimelineNote>[];
     }
 
     Duration lastActiveNoteEnd = Duration.zero;
@@ -282,6 +327,7 @@ class MidiTimeline {
         if (ev.velocity > 0) {
           hasNotes = true;
           activeNotes[ev.channel]!.add(ev.note);
+          activeNoteStarts[ev.channel]![ev.note] = (te.timestamp, ev.velocity);
           if (te.timestamp > lastActiveNoteEnd) {
             lastActiveNoteEnd = te.timestamp;
           }
@@ -289,6 +335,18 @@ class MidiTimeline {
         } else {
           // Note off via NoteOn with vel 0
           if (activeNotes[ev.channel]!.remove(ev.note)) {
+            final startInfo = activeNoteStarts[ev.channel]!.remove(ev.note);
+            if (startInfo != null) {
+              var dur = te.timestamp - startInfo.$1;
+              if (dur <= Duration.zero) dur = const Duration(milliseconds: 20);
+              channelNotes[ev.channel]!.add(MidiTimelineNote(
+                channel: ev.channel,
+                note: ev.note,
+                velocity: startInfo.$2,
+                start: startInfo.$1,
+                duration: dur,
+              ));
+            }
             if (te.timestamp > lastActiveNoteEnd) {
               lastActiveNoteEnd = te.timestamp;
             }
@@ -298,6 +356,18 @@ class MidiTimeline {
         }
       } else if (ev is NoteOffEvent) {
         if (activeNotes[ev.channel]!.remove(ev.note)) {
+          final startInfo = activeNoteStarts[ev.channel]!.remove(ev.note);
+          if (startInfo != null) {
+            var dur = te.timestamp - startInfo.$1;
+            if (dur <= Duration.zero) dur = const Duration(milliseconds: 20);
+            channelNotes[ev.channel]!.add(MidiTimelineNote(
+              channel: ev.channel,
+              note: ev.note,
+              velocity: startInfo.$2,
+              start: startInfo.$1,
+              duration: dur,
+            ));
+          }
           if (te.timestamp > lastActiveNoteEnd) {
             lastActiveNoteEnd = te.timestamp;
           }
@@ -336,6 +406,22 @@ class MidiTimeline {
       }
     }
 
+    // Close any notes that were left sounding at the end of the timeline
+    for (int ch = 0; ch < 16; ch++) {
+      for (final entry in activeNoteStarts[ch]!.entries) {
+        var dur = totalDuration - entry.value.$1;
+        if (dur <= Duration.zero) dur = const Duration(milliseconds: 20);
+        channelNotes[ch]!.add(MidiTimelineNote(
+          channel: ch,
+          note: entry.key,
+          velocity: entry.value.$2,
+          start: entry.value.$1,
+          duration: dur,
+        ));
+      }
+      channelNotes[ch]!.sort((a, b) => a.start.compareTo(b.start));
+    }
+
     // Retain only events up to totalDuration, pruning runaway trailing silence/padding
     final finalEvents = hasNotes
         ? cleanEvents.where((e) => e.timestamp <= totalDuration).toList()
@@ -346,6 +432,7 @@ class MidiTimeline {
       tempoMap: tempoMap,
       events: finalEvents,
       duration: totalDuration,
+      channelNotes: channelNotes,
     );
   }
 

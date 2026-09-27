@@ -94,7 +94,7 @@ class MidiPlayer {
   int lookaheadMs = 350;
 
   /// Scheduling timer interval in milliseconds.
-  int scheduleIntervalMs = 40;
+  int scheduleIntervalMs = 15;
 
   bool _isPlaying = false;
   bool _isPaused = false;
@@ -124,6 +124,10 @@ class MidiPlayer {
 
   /// The set of 0-based MIDI channels (0-15) actively used by the loaded MIDI file.
   Set<int> get usedChannels => _timeline?.usedChannels ?? {};
+
+  /// Returns all paired notes (with start and duration) for the given [channel] (0-15).
+  List<MidiTimelineNote> getChannelNotes(int channel) =>
+      _timeline?.getNotesForChannel(channel) ?? const [];
 
   /// Current playback position.
   Duration get position => _position;
@@ -462,10 +466,13 @@ class MidiPlayer {
           if (preset != null) {
             final vol = (ch.effectiveVolume * (event.velocity / 127.0)).clamp(0.0, 1.0);
             final currentEpoch = _playEpoch;
+            final scheduledAt = SoLoud.instance.isInitialized
+                ? SoLoud.instance.getEngineTime() + delay
+                : delay;
             targetPlayer
                 .playPresetScheduled(
                   preset,
-                  atTime: delay,
+                  atTime: scheduledAt,
                   key: event.note,
                   velocity: event.velocity,
                   customVolume: vol,

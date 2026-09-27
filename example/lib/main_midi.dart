@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:developer' as dev;
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:cross_file/cross_file.dart';
 import 'package:desktop_drop/desktop_drop.dart';
@@ -97,6 +98,17 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
 
   double _sustain = 1.0;
 
+  // DAW Timeline Layout constants
+  static const double _kTimelineZoom = 45.0; // Pixels per second
+  static const double _kTrackHeight = 72.0;
+  static const double _kHeaderWidth = 250.0;
+  static const double _kRulerHeight = 28.0;
+
+  late final ScrollController _headersVerticalController;
+  late final ScrollController _lanesVerticalController;
+  late final ScrollController _timelineHorizontalController;
+  bool _isSyncingScroll = false;
+
   // Real-time active keys for piano visualization
   final Set<int> _activeKeys = {};
   final Map<int, DateTime> _channelActivity = {};
@@ -120,6 +132,17 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
   @override
   void initState() {
     super.initState();
+    _headersVerticalController = ScrollController();
+    _lanesVerticalController = ScrollController();
+    _timelineHorizontalController = ScrollController();
+
+    _headersVerticalController.addListener(() {
+      _syncVerticalScroll(_headersVerticalController, _lanesVerticalController);
+    });
+    _lanesVerticalController.addListener(() {
+      _syncVerticalScroll(_lanesVerticalController, _headersVerticalController);
+    });
+
     _initDefaultAssets();
 
     // UI pulse timer for channel activity LEDs
@@ -139,12 +162,44 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
     });
   }
 
+  void _syncVerticalScroll(ScrollController source, ScrollController target) {
+    if (_isSyncingScroll) return;
+    if (!target.hasClients || !source.hasClients) return;
+    _isSyncingScroll = true;
+    target.jumpTo(source.offset.clamp(0.0, target.position.maxScrollExtent));
+    _isSyncingScroll = false;
+  }
+
+  void _autoScrollTimelineIfNeeded() {
+    if (!_isPlaying || !_timelineHorizontalController.hasClients) return;
+    final currentX = (_position.inMicroseconds / 1000000.0) * _kTimelineZoom;
+    final scrollOffset = _timelineHorizontalController.offset;
+    final viewportWidth =
+        _timelineHorizontalController.position.viewportDimension;
+
+    if (currentX > scrollOffset + viewportWidth * 0.85 ||
+        currentX < scrollOffset) {
+      final targetOffset = math.max(0.0, currentX - viewportWidth * 0.2);
+      _timelineHorizontalController.animateTo(
+        targetOffset.clamp(
+          0.0,
+          _timelineHorizontalController.position.maxScrollExtent,
+        ),
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
   @override
   void dispose() {
     _uiRefreshTimer?.cancel();
     _posSub?.cancel();
     _eventSub?.cancel();
     _midiPlayer?.dispose();
+    _headersVerticalController.dispose();
+    _lanesVerticalController.dispose();
+    _timelineHorizontalController.dispose();
     for (final p in _loadedSoundFontPlayers.values) {
       p.dispose();
     }
@@ -312,6 +367,7 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
         setState(() {
           _position = pos;
         });
+        _autoScrollTimelineIfNeeded();
       }
     });
 
@@ -804,6 +860,18 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
     );
   }
 
+  void _seekToSeconds(double seconds) {
+    if (_midiPlayer == null || _duration <= Duration.zero) return;
+    final maxSec = _duration.inMicroseconds / 1000000.0;
+    final clamped = seconds.clamp(0.0, maxSec);
+    final targetMicros = (clamped * 1000000.0).round();
+    setState(() {
+      _activeKeys.clear();
+      _channelActivity.clear();
+    });
+    _midiPlayer?.seek(Duration(microseconds: targetMicros));
+  }
+
   Widget _buildChannelMixerPanel() {
     if (_midiPlayer == null) {
       return const Center(child: Text('No MIDI loaded.'));
@@ -814,93 +882,158 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
         ? List.generate(16, (i) => i)
         : (usedList.isNotEmpty ? usedList : [0]);
 
-    final crossAxisCount = activeChannels.length == 1
-        ? 1
-        : (activeChannels.length <= 2
-              ? 2
-              : (activeChannels.length <= 4
-                    ? 2
-                    : (activeChannels.length <= 8 ? 3 : 4)));
-
-    final childAspectRatio = activeChannels.length == 1
-        ? 4.0
-        : (activeChannels.length <= 2
-              ? 2.6
-              : (activeChannels.length <= 4 ? 2.3 : 2.2));
+    final totalDurationSeconds = math.max(
+      1.0,
+      _duration.inMicroseconds / 1000000.0,
+    );
+    final timelineWidth = math.max(
+      800.0,
+      totalDurationSeconds * _kTimelineZoom,
+    );
 
     return Container(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      decoration: const BoxDecoration(color: Color(0xFF13151B)),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8, left: 4),
-            child: Row(
+          // Left: Fixed-width Track Headers Column
+          SizedBox(
+            width: _kHeaderWidth,
+            child: Column(
               children: [
-                Text(
-                  _showAllChannels
-                      ? 'SYNTHESIZER MIXER (ALL 16 CHANNELS)'
-                      : 'SYNTHESIZER MIXER (${activeChannels.length} USED CHANNEL${activeChannels.length == 1 ? "" : "S"})',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    letterSpacing: 1.2,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white54,
+                SizedBox(
+                  height: _kRulerHeight,
+                  child: _buildTracksHeaderCorner(
+                    activeChannels.length,
+                    usedList.length,
                   ),
                 ),
-                const Spacer(),
-                InkWell(
-                  borderRadius: BorderRadius.circular(4),
-                  onTap: () {
-                    setState(() {
-                      _showAllChannels = !_showAllChannels;
-                    });
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _showAllChannels
-                          ? const Color(0xFF6C63FF).withAlpha(50)
-                          : Colors.white10,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(
-                        color: _showAllChannels
-                            ? const Color(0xFF6C63FF)
-                            : Colors.white24,
-                      ),
-                    ),
-                    child: Text(
-                      _showAllChannels
-                          ? 'Show Only Used (${usedList.length})'
-                          : 'Show All 16 Channels',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: _showAllChannels
-                            ? const Color(0xFF00E5FF)
-                            : Colors.white70,
-                      ),
-                    ),
+                const Divider(height: 1, thickness: 1, color: Colors.white12),
+                Expanded(
+                  child: ListView.builder(
+                    controller: _headersVerticalController,
+                    itemCount: activeChannels.length,
+                    itemExtent: _kTrackHeight,
+                    padding: EdgeInsets.zero,
+                    physics: const ClampingScrollPhysics(),
+                    itemBuilder: (context, index) {
+                      return _buildTrackHeader(activeChannels[index]);
+                    },
                   ),
                 ),
               ],
             ),
           ),
+          const VerticalDivider(width: 1, thickness: 1, color: Colors.white12),
+          // Right: Horizontally Scrollable Timeline (Ruler + Track Lanes + Playhead)
           Expanded(
-            child: GridView.builder(
-              itemCount: activeChannels.length,
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: crossAxisCount,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                childAspectRatio: childAspectRatio,
+            child: SingleChildScrollView(
+              controller: _timelineHorizontalController,
+              scrollDirection: Axis.horizontal,
+              physics: const ClampingScrollPhysics(),
+              child: SizedBox(
+                width: timelineWidth,
+                child: Stack(
+                  children: [
+                    Column(
+                      children: [
+                        // Top: Time Ruler
+                        SizedBox(
+                          height: _kRulerHeight,
+                          child: _buildTimeRuler(
+                            totalDurationSeconds,
+                            timelineWidth,
+                          ),
+                        ),
+                        const Divider(
+                          height: 1,
+                          thickness: 1,
+                          color: Colors.white12,
+                        ),
+                        // Track Lanes
+                        Expanded(
+                          child: ListView.builder(
+                            controller: _lanesVerticalController,
+                            itemCount: activeChannels.length,
+                            itemExtent: _kTrackHeight,
+                            padding: EdgeInsets.zero,
+                            physics: const ClampingScrollPhysics(),
+                            itemBuilder: (context, index) {
+                              return _buildTrackLane(
+                                activeChannels[index],
+                                timelineWidth,
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Playhead overlay extending from top of Time Ruler down through all track lanes
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: _buildPlayheadOverlay(timelineWidth),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              itemBuilder: (context, index) {
-                return _buildChannelCard(activeChannels[index]);
-              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTracksHeaderCorner(int activeCount, int usedCount) {
+    return Container(
+      color: const Color(0xFF181B24),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      alignment: Alignment.centerLeft,
+      child: Row(
+        children: [
+          const Icon(Icons.tune_outlined, size: 14, color: Colors.white54),
+          const SizedBox(width: 6),
+          Text(
+            'TRACKS ($activeCount)',
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.0,
+              color: Colors.white70,
+            ),
+          ),
+          const Spacer(),
+          InkWell(
+            borderRadius: BorderRadius.circular(4),
+            onTap: () {
+              setState(() {
+                _showAllChannels = !_showAllChannels;
+              });
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: _showAllChannels
+                    ? const Color(0xFF6C63FF).withValues(alpha: 0.25)
+                    : Colors.white10,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(
+                  color: _showAllChannels
+                      ? const Color(0xFF6C63FF)
+                      : Colors.white24,
+                  width: 0.8,
+                ),
+              ),
+              child: Text(
+                _showAllChannels ? 'Used ($usedCount)' : 'All 16',
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w600,
+                  color: _showAllChannels
+                      ? const Color(0xFF00E5FF)
+                      : Colors.white70,
+                ),
+              ),
             ),
           ),
         ],
@@ -945,40 +1078,45 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
     }
   }
 
-  Widget _buildChannelCard(int chIndex) {
+  Widget _buildTrackHeader(int chIndex) {
     final chState = _midiPlayer!.channels[chIndex];
     final isDrums = chIndex == 9;
     final isActive = _channelActivity.containsKey(chIndex);
     final hasOverride = chState.presetOverride != null;
 
     final instrumentName = _midiPlayer!.getSuggestedInstrumentName(chIndex);
-    final familyName = _midiPlayer!.getSuggestedFamilyName(chIndex);
 
     return Container(
-      padding: const EdgeInsets.all(8),
+      height: _kTrackHeight,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: chState.isMuted
-            ? Colors.black26
-            : (isActive ? const Color(0xFF282F45) : const Color(0xFF1A1D27)),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: isActive
-              ? const Color(0xFF00E5FF)
-              : (hasOverride
-                    ? const Color(0xFF6C63FF)
-                    : (chState.isSolo ? Colors.amberAccent : Colors.white12)),
-          width: isActive ? 1.5 : 1,
+            ? const Color(0xFF14161E)
+            : (isActive ? const Color(0xFF222838) : const Color(0xFF1A1D27)),
+        border: Border(
+          bottom: const BorderSide(color: Colors.white10, width: 1),
+          left: BorderSide(
+            color: isActive
+                ? const Color(0xFF00E5FF)
+                : (hasOverride
+                      ? const Color(0xFF6C63FF)
+                      : (chState.isSolo
+                            ? Colors.amberAccent
+                            : Colors.transparent)),
+            width: 3,
+          ),
         ),
       ),
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Top Row: LED, CH Name, CUSTOM chip, Mute, Solo
           Row(
             children: [
-              // LED Indicator
               Container(
-                width: 8,
-                height: 8,
+                width: 7,
+                height: 7,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: isActive
@@ -988,19 +1126,19 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                       ? [
                           const BoxShadow(
                             color: Color(0xFF00E5FF),
-                            blurRadius: 6,
-                            spreadRadius: 2,
+                            blurRadius: 4,
+                            spreadRadius: 1,
                           ),
                         ]
                       : null,
                 ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 5),
               Text(
                 'CH ${chIndex + 1}${isDrums ? " 🥁" : ""}',
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
-                  fontSize: 11,
+                  fontSize: 10,
                   color: isDrums ? Colors.orangeAccent : Colors.white,
                 ),
               ),
@@ -1008,17 +1146,17 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                 const SizedBox(width: 4),
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
+                    horizontal: 3,
                     vertical: 1,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF6C63FF).withAlpha(80),
-                    borderRadius: BorderRadius.circular(3),
+                    color: const Color(0xFF6C63FF).withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
                   ),
                   child: const Text(
-                    'CUSTOM',
+                    'MOD',
                     style: TextStyle(
-                      fontSize: 8,
+                      fontSize: 7,
                       fontWeight: FontWeight.bold,
                       color: Color(0xFF00E5FF),
                     ),
@@ -1036,7 +1174,7 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 5,
-                    vertical: 2,
+                    vertical: 1,
                   ),
                   decoration: BoxDecoration(
                     color: chState.isMuted ? Colors.red : Colors.white10,
@@ -1045,7 +1183,7 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                   child: Text(
                     'M',
                     style: TextStyle(
-                      fontSize: 10,
+                      fontSize: 9,
                       fontWeight: FontWeight.bold,
                       color: chState.isMuted ? Colors.white : Colors.white60,
                     ),
@@ -1063,7 +1201,7 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 5,
-                    vertical: 2,
+                    vertical: 1,
                   ),
                   decoration: BoxDecoration(
                     color: chState.isSolo ? Colors.amber : Colors.white10,
@@ -1072,7 +1210,7 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                   child: Text(
                     'S',
                     style: TextStyle(
-                      fontSize: 10,
+                      fontSize: 9,
                       fontWeight: FontWeight.bold,
                       color: chState.isSolo ? Colors.black : Colors.white60,
                     ),
@@ -1081,102 +1219,229 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          // Interactive Instrument / SoundFont display
+          const SizedBox(height: 3),
+          // Middle Row: Instrument Button
           InkWell(
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(4),
             onTap: () => _openChannelInstrumentPicker(chIndex),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               decoration: BoxDecoration(
                 color: hasOverride
-                    ? const Color(0xFF6C63FF).withAlpha(35)
-                    : Colors.white.withAlpha(8),
-                borderRadius: BorderRadius.circular(4),
+                    ? const Color(0xFF6C63FF).withValues(alpha: 0.15)
+                    : Colors.white.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.circular(3),
                 border: Border.all(
                   color: hasOverride
-                      ? const Color(0xFF00E5FF).withAlpha(100)
-                      : Colors.white12,
+                      ? const Color(0xFF00E5FF).withValues(alpha: 0.4)
+                      : Colors.white10,
+                  width: 0.8,
                 ),
               ),
               child: Row(
                 children: [
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          instrumentName,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: hasOverride
-                                ? const Color(0xFF00E5FF)
-                                : Colors.white,
-                          ),
-                        ),
-                        Text(
-                          hasOverride
-                              ? '${chState.customPlayer?.soundFont.name ?? "Custom SF"} (Override)'
-                              : familyName,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 9,
-                            color: hasOverride
-                                ? Colors.amberAccent
-                                : Colors.white54,
-                          ),
-                        ),
-                      ],
+                    child: Text(
+                      instrumentName,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w600,
+                        color: hasOverride
+                            ? const Color(0xFF00E5FF)
+                            : Colors.white.withValues(alpha: 0.9),
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 2),
-                  Tooltip(
-                    message:
-                        'Assign SoundFont / Instrument for CH ${chIndex + 1}',
-                    child: Icon(
-                      Icons.tune,
-                      size: 13,
-                      color: hasOverride
-                          ? const Color(0xFF00E5FF)
-                          : Colors.white54,
-                    ),
+                  Icon(
+                    Icons.tune,
+                    size: 11,
+                    color: hasOverride
+                        ? const Color(0xFF00E5FF)
+                        : Colors.white38,
                   ),
                 ],
               ),
             ),
           ),
-          const Spacer(),
-          // Volume Slider
-          Row(
-            children: [
-              const Icon(Icons.volume_down, size: 12, color: Colors.white38),
-              Expanded(
-                child: SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 2,
-                    thumbShape: const RoundSliderThumbShape(
-                      enabledThumbRadius: 6,
+          // Bottom Row: Compact Volume Slider
+          SizedBox(
+            height: 18,
+            child: Row(
+              children: [
+                const Icon(Icons.volume_down, size: 10, color: Colors.white38),
+                Expanded(
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 2,
+                      thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 4,
+                      ),
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 6,
+                      ),
                     ),
-                    overlayShape: const RoundSliderOverlayShape(
-                      overlayRadius: 8,
+                    child: Slider(
+                      value: chState.volume,
+                      onChanged: (val) {
+                        setState(() {
+                          _midiPlayer!.setChannelVolume(chIndex, val);
+                        });
+                      },
                     ),
-                  ),
-                  child: Slider(
-                    value: chState.volume,
-                    onChanged: (val) {
-                      setState(() {
-                        _midiPlayer!.setChannelVolume(chIndex, val);
-                      });
-                    },
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildTrackLane(int chIndex, double timelineWidth) {
+    final notes = _midiPlayer?.getChannelNotes(chIndex) ?? const [];
+    final instrumentName =
+        _midiPlayer?.getSuggestedInstrumentName(chIndex) ??
+        'Channel ${chIndex + 1}';
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (details) {
+        _seekToSeconds(details.localPosition.dx / _kTimelineZoom);
+      },
+      child: Container(
+        height: _kTrackHeight,
+        width: timelineWidth,
+        decoration: const BoxDecoration(
+          color: Color(0xFF13151B),
+          border: Border(bottom: BorderSide(color: Colors.white10, width: 1)),
+        ),
+        child: Stack(
+          children: [
+            // Subtle beat grid
+            Positioned.fill(
+              child: CustomPaint(
+                painter: _LaneGridPainter(zoom: _kTimelineZoom),
+              ),
+            ),
+            // MIDI Clip region (DAW green container)
+            if (notes.isNotEmpty) ...[
+              Builder(
+                builder: (context) {
+                  final firstNote = notes.first;
+                  final lastNote = notes.reduce(
+                    (a, b) => a.end > b.end ? a : b,
+                  );
+                  final clipStartSec =
+                      firstNote.start.inMicroseconds / 1000000.0;
+                  final clipEndSec = lastNote.end.inMicroseconds / 1000000.0;
+                  final clipLeft = clipStartSec * _kTimelineZoom;
+                  final clipWidth = math.max(
+                    20.0,
+                    (clipEndSec - clipStartSec) * _kTimelineZoom,
+                  );
+
+                  return Positioned(
+                    left: clipLeft - 1.0,
+                    width: clipWidth + 2.0,
+                    top: 5,
+                    bottom: 5,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF163E20), // Dark green DAW clip
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: const Color(0xFF2E8540),
+                          width: 1.0,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.3),
+                            blurRadius: 3,
+                            offset: const Offset(0, 1),
+                          ),
+                        ],
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Top clip title bar
+                          Container(
+                            height: 14,
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            color: const Color(0xFF236830),
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              '$instrumentName - CH ${chIndex + 1}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 8.5,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFFC8E6C9),
+                              ),
+                            ),
+                          ),
+                          // Notes area rendered with shared CustomPainter
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: CustomPaint(
+                                size: Size.infinite,
+                                painter: MidiNotesCustomPainter(
+                                  notes: notes,
+                                  clipStart: firstNote.start,
+                                  clipDuration: lastNote.end - firstNote.start,
+                                  noteColor: const Color(0xFFE8F5E9),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTimeRuler(double totalDurationSeconds, double timelineWidth) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (details) {
+        _seekToSeconds(details.localPosition.dx / _kTimelineZoom);
+      },
+      onHorizontalDragUpdate: (details) {
+        _seekToSeconds(details.localPosition.dx / _kTimelineZoom);
+      },
+      child: Container(
+        height: _kRulerHeight,
+        width: timelineWidth,
+        color: const Color(0xFF181B24),
+        child: CustomPaint(
+          size: Size(timelineWidth, _kRulerHeight),
+          painter: _TimeRulerPainter(
+            zoom: _kTimelineZoom,
+            totalDurationSeconds: totalDurationSeconds,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlayheadOverlay(double timelineWidth) {
+    final playheadX = (_position.inMicroseconds / 1000000.0) * _kTimelineZoom;
+
+    return CustomPaint(
+      size: Size(timelineWidth, double.infinity),
+      painter: _PlayheadPainter(x: playheadX),
     );
   }
 
@@ -1871,5 +2136,204 @@ class _ChannelInstrumentPickerDialogState
         ),
       ),
     );
+  }
+}
+
+/// A shared [CustomPainter] that renders MIDI notes as horizontal bars inside a track lane clip.
+class MidiNotesCustomPainter extends CustomPainter {
+  const MidiNotesCustomPainter({
+    required this.notes,
+    required this.clipStart,
+    required this.clipDuration,
+    this.noteColor = Colors.white,
+  });
+
+  final List<MidiTimelineNote> notes;
+  final Duration clipStart;
+  final Duration clipDuration;
+  final Color noteColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (notes.isEmpty || size.width <= 0 || size.height <= 0) return;
+
+    var minPitch = 127;
+    var maxPitch = 0;
+    for (final n in notes) {
+      if (n.note < minPitch) minPitch = n.note;
+      if (n.note > maxPitch) maxPitch = n.note;
+    }
+    if (minPitch > maxPitch) return;
+
+    // Minimum span of 12 semitones (one octave) to maintain visual proportions
+    final span = math.max(12, maxPitch - minPitch + 1);
+    final clipDurUs = math.max(1, clipDuration.inMicroseconds);
+    final clipStartUs = clipStart.inMicroseconds;
+
+    final paint = Paint()..style = PaintingStyle.fill;
+
+    for (final n in notes) {
+      final startOffsetUs = n.start.inMicroseconds - clipStartUs;
+      final durUs = n.duration.inMicroseconds;
+
+      final x = (startOffsetUs / clipDurUs) * size.width;
+      final w = math.max(2.0, (durUs / clipDurUs) * size.width) - 1;
+
+      // Pitch mapping: higher notes near top, lower notes near bottom
+      final normalizedPitch = (n.note - minPitch) / span;
+      final y = size.height - (normalizedPitch * (size.height - 4.0)) - 4.0;
+      final h = math.max(2.0, size.height / span).clamp(2.0, 5.0);
+
+      // Velocity modulates opacity
+      final alpha = (0.5 + 0.5 * (n.velocity / 127.0)).clamp(0.4, 1.0);
+      paint.color = noteColor.withValues(alpha: alpha);
+
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(x, y, w, h),
+          const Radius.circular(1.0),
+        ),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant MidiNotesCustomPainter oldDelegate) {
+    return oldDelegate.notes != notes ||
+        oldDelegate.clipStart != clipStart ||
+        oldDelegate.clipDuration != clipDuration ||
+        oldDelegate.noteColor != noteColor;
+  }
+}
+
+class _TimeRulerPainter extends CustomPainter {
+  const _TimeRulerPainter({
+    required this.zoom,
+    required this.totalDurationSeconds,
+  });
+
+  final double zoom;
+  final double totalDurationSeconds;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final tickPaint = Paint()
+      ..color = const Color.fromARGB(60, 249, 2, 2)
+      ..strokeWidth = 1.0;
+    final majorTickPaint = Paint()
+      ..color = Colors.white54
+      ..strokeWidth = 1.0;
+
+    // Major and minor intervals based on zoom
+    final majorIntervalSec = zoom >= 60 ? 5 : (zoom >= 30 ? 10 : 20);
+    final minorIntervalSec = zoom >= 60 ? 1 : (zoom >= 30 ? 2 : 5);
+
+    final totalSec = totalDurationSeconds.ceil();
+
+    const textStyle = TextStyle(
+      color: Colors.white60,
+      fontSize: 9,
+      fontFamily: 'monospace',
+    );
+
+    for (int s = 0; s <= totalSec; s += minorIntervalSec) {
+      final x = s * zoom;
+      if (x > size.width) break;
+
+      final isMajor = s % majorIntervalSec == 0;
+      if (isMajor) {
+        canvas.drawLine(
+          Offset(x, size.height - 10),
+          Offset(x, size.height),
+          majorTickPaint,
+        );
+
+        final mins = s ~/ 60;
+        final secs = s % 60;
+        final label = '$mins:${secs.toString().padLeft(2, "0")}';
+
+        final tp =
+            TextPainter(
+                text: const TextSpan(text: '', style: textStyle),
+                textDirection: TextDirection.ltr,
+              )
+              ..text = TextSpan(text: label, style: textStyle)
+              ..layout();
+        tp.paint(canvas, Offset(x + 3, 3));
+      } else {
+        canvas.drawLine(
+          Offset(x, size.height - 5),
+          Offset(x, size.height),
+          tickPaint,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _TimeRulerPainter oldDelegate) {
+    return oldDelegate.zoom != zoom ||
+        oldDelegate.totalDurationSeconds != totalDurationSeconds;
+  }
+}
+
+class _LaneGridPainter extends CustomPainter {
+  const _LaneGridPainter({required this.zoom});
+
+  final double zoom;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final gridPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.04)
+      ..strokeWidth = 1.0;
+
+    final intervalSec = zoom >= 40 ? 5 : 10;
+    final totalSec = (size.width / zoom).ceil();
+
+    for (int s = 0; s <= totalSec; s += intervalSec) {
+      final x = s * zoom;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _LaneGridPainter oldDelegate) {
+    return oldDelegate.zoom != zoom;
+  }
+}
+
+class _PlayheadPainter extends CustomPainter {
+  const _PlayheadPainter({required this.x});
+
+  final double x;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (x < -10 || x > size.width + 10) return;
+
+    final linePaint = Paint()
+      ..color = const Color(0xFF00E5FF)
+      ..strokeWidth = 1.5;
+
+    // Vertical line
+    canvas.drawLine(Offset(x, 0), Offset(x, size.height), linePaint);
+
+    // Playhead downward triangle at the top
+    final headPaint = Paint()
+      ..color = const Color(0xFF00E5FF)
+      ..style = PaintingStyle.fill;
+    final path = Path()
+      ..moveTo(x - 5, 0)
+      ..lineTo(x + 5, 0)
+      ..lineTo(x, 7)
+      ..close();
+    canvas.drawPath(path, headPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _PlayheadPainter oldDelegate) {
+    return oldDelegate.x != x;
   }
 }
