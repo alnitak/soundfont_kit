@@ -28,10 +28,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  archive: ^4.0.2
+  archive: ^4.3.0
   path: ^1.9.0
   http: ^1.2.0
-  flutter_soloud: ^5.0.0
+  flutter_soloud: ^5.1.2
 
 dev_dependencies:
   flutter_test:
