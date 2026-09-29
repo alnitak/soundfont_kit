@@ -22,3 +22,5 @@ export 'src/midi/midi_timeline.dart';
 export 'src/midi/midi_channel_state.dart';
 export 'src/midi/midi_player.dart';
 export 'src/midi/general_midi.dart';
+export 'src/midi/chord_detector.dart';
+export 'src/midi/midi_lyrics.dart';

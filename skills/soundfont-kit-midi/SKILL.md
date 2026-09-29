@@ -113,28 +113,45 @@ await midiPlayer.stop();
 // Toggle automatic looping from start upon reaching the end
 midiPlayer.looping = true;
 
+// A-B region looping (loops seamlessly between specified start and end timestamps)
+midiPlayer.setLoopRange(const Duration(seconds: 10), const Duration(seconds: 25));
+// To clear the A-B loop:
+midiPlayer.clearLoopRange();
+
 // Adjust playback speed (0.1x to 10.0x, seamless wall-clock re-anchoring)
 midiPlayer.speedMultiplier = 1.25; // 25% faster
+
+// Override tempo to a fixed BPM regardless of internal MIDI tempo changes:
+midiPlayer.overrideBpm = 120.0; // Set to null to restore original tempo map
+
+// Global pitch transposition (in semitones, e.g. +2 = whole step up).
+// Drum channel (Channel 10 / index 9) is automatically preserved without pitch shifting!
+midiPlayer.transpose = 2;
 ```
 
 ---
 
-## 6. Multi-Channel Mixing: Mute, Solo, Volume, Pan, and Instrument Reassignment
+## 6. Multi-Channel Mixing & Track Control
 
-`MidiPlayer` exposes 16 independent channel states (`channels[0..15]`):
+`MidiPlayer` exposes 16 independent channel states (`channels[0..15]`) and per-track isolation:
 
 ```dart
-// Mute channel 1 (index 0)
+// Per-channel mute and solo:
 midiPlayer.setChannelMute(0, true);
-
-// Solo channel 10 (drums, index 9)
 midiPlayer.setChannelSolo(9, true);
+
+// Per-track mute and solo (SMF Format 1 multi-track files):
+midiPlayer.setTrackMute(2, true);
+midiPlayer.setTrackSolo(3, true);
 
 // Adjust channel volume (0.0 to 1.0)
 midiPlayer.setChannelVolume(0, 0.75);
 
 // Adjust channel pan (-1.0 left to +1.0 right)
 midiPlayer.setChannelPan(0, -0.5);
+
+// Channel-specific transposition:
+midiPlayer.channels[0].transpose = -12; // 1 octave down for bass channel
 
 // Reassign a channel to play using a different SoundFont preset:
 midiPlayer.setChannelPreset(0, myCustomPreset);
@@ -145,7 +162,56 @@ midiPlayer.forcedPresetOverride = sf.presets.first;
 
 ---
 
-## 7. Subscribing to Playback Streams
+## 7. Expressive MIDI Controllers & Modulation
+
+`MidiPlayer` processes expressive MIDI messages and automates active voices in real time:
+
+- **Pitch Bend**: Smoothly modulates active voice playback speed on sounding voices with dynamic 14-bit pitch wheel curves.
+- **CC 1 Modulation Wheel**: Dynamically binds to `flutter_soloud`'s `amplitudeModulatorFilter` (LFO tremolo/vibrato depth) when active.
+- **CC 7 Volume, CC 10 Pan & CC 11 Expression**: Continuously scales gain and stereo placement of active and upcoming voices.
+- **CC 64 Sustain & CC 66 Sostenuto**: Sustains all sounding notes (CC 64) or selectively locks notes held at the pedal-down moment (CC 66).
+- **CC 67 Soft Pedal (Una Corda)**: Applies dynamic volume reduction for gentle, muted passages.
+- **CC 0 & CC 32 Bank Select**: Selects instrument sound banks (MSB & LSB).
+- **CC 120 All Sound Off & CC 121 Reset All Controllers**: Immediately silences ringing voices or restores default controller states.
+
+---
+
+## 8. Synchronized Lyrics & Chord Detection
+
+`MidiPlayer` and `MidiTimeline` provide out-of-the-box support for karaoke, sing-along, and music learning apps:
+
+### Synchronized Lyrics Stream
+```dart
+// Check if the loaded file contains lyrics or markers
+if (midiPlayer.timeline?.hasLyrics ?? false) {
+  print('Full lyrics:\n${midiPlayer.timeline?.fullLyricsText}');
+}
+
+// Subscribe to lyrics and markers as playback progresses
+final lyricSub = midiPlayer.lyricStream.listen((MidiLyricSpan span) {
+  print('[${span.type.name}] ${span.text} at ${span.timestamp.inMilliseconds}ms');
+});
+```
+
+### Real-Time Chord Detection
+Detect active harmonies automatically using `ChordDetector`:
+
+```dart
+// Listen to chord changes in real-time during playback
+final chordSub = midiPlayer.chordStream.listen((String? chordName) {
+  if (chordName != null) {
+    print('Current Chord: $chordName'); // e.g. "C", "Am7", "G/B"
+  }
+});
+
+// Or detect chords manually from any set of MIDI note numbers:
+final chord = ChordDetector.detectChord([60, 64, 67]); // "C"
+final inversion = ChordDetector.detectChord([64, 67, 72]); // "C/E"
+```
+
+---
+
+## 9. Subscribing to Playback Streams
 
 Keep UI elements, timeline playheads, and keyboard key lights synchronized:
 
@@ -169,7 +235,7 @@ Remember to cancel subscriptions and call `midiPlayer.dispose()` when finished.
 
 ---
 
-## 8. General MIDI (GM) Helpers
+## 10. General MIDI (GM) Helpers
 
 Use the `GeneralMidi` utility to resolve standard instrument names and categories:
 

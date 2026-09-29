@@ -1,3 +1,4 @@
+import 'midi_lyrics.dart';
 import 'midi_models.dart';
 
 /// Represents a single tempo change point in musical time.
@@ -255,6 +256,9 @@ class MidiTimeline {
   /// Total duration of the MIDI sequence.
   final Duration duration;
 
+  /// Chronologically ordered list of all timed lyrics and text markers.
+  final List<MidiLyricSpan> lyrics;
+
   /// Precomputed notes partitioned by 0-based MIDI channel (0-15).
   final Map<int, List<MidiTimelineNote>> channelNotes;
 
@@ -263,8 +267,18 @@ class MidiTimeline {
     required this.tempoMap,
     required this.events,
     required this.duration,
+    this.lyrics = const [],
     this.channelNotes = const {},
   });
+
+  /// Whether this timeline contains synchronized song lyrics.
+  bool get hasLyrics => lyrics.any((l) => l.type == MidiLyricType.lyric);
+
+  /// Complete text of all lyric syllables joined sequentially.
+  String get fullLyricsText => lyrics
+      .where((l) => l.type == MidiLyricType.lyric)
+      .map((l) => l.text)
+      .join();
 
   /// The set of 0-based MIDI channels (0-15) used in the underlying MIDI file.
   Set<int> get usedChannels => file.usedChannels;
@@ -277,6 +291,7 @@ class MidiTimeline {
   factory MidiTimeline.fromMidiFile(MidiFile file) {
     final tempoMap = TempoMap.fromMidiFile(file);
     final allTimedEvents = <TimedMidiEvent>[];
+    final allLyrics = <MidiLyricSpan>[];
 
     for (int tIdx = 0; tIdx < file.tracks.length; tIdx++) {
       final track = file.tracks[tIdx];
@@ -290,8 +305,56 @@ class MidiTimeline {
             timestamp: time,
           ),
         );
+
+        if (event is LyricEvent) {
+          allLyrics.add(
+            MidiLyricSpan(
+              timestamp: time,
+              text: event.text,
+              type: MidiLyricType.lyric,
+              trackIndex: tIdx,
+              absoluteTick: event.absoluteTick,
+            ),
+          );
+        } else if (event is TextEvent) {
+          allLyrics.add(
+            MidiLyricSpan(
+              timestamp: time,
+              text: event.text,
+              type: MidiLyricType.text,
+              trackIndex: tIdx,
+              absoluteTick: event.absoluteTick,
+            ),
+          );
+        } else if (event is MarkerEvent) {
+          allLyrics.add(
+            MidiLyricSpan(
+              timestamp: time,
+              text: event.text,
+              type: MidiLyricType.marker,
+              trackIndex: tIdx,
+              absoluteTick: event.absoluteTick,
+            ),
+          );
+        } else if (event is CuePointEvent) {
+          allLyrics.add(
+            MidiLyricSpan(
+              timestamp: time,
+              text: event.text,
+              type: MidiLyricType.cuePoint,
+              trackIndex: tIdx,
+              absoluteTick: event.absoluteTick,
+            ),
+          );
+        }
       }
     }
+
+    allLyrics.sort((a, b) {
+      final cmp = a.timestamp.compareTo(b.timestamp);
+      if (cmp != 0) return cmp;
+      return a.absoluteTick.compareTo(b.absoluteTick);
+    });
 
     // Sort chronologically by timestamp, maintaining event priority at simultaneous timestamps
     // Priority order: SetTempo / Meta -> ProgramChange / CC -> NoteOff -> NoteOn
@@ -432,6 +495,7 @@ class MidiTimeline {
       tempoMap: tempoMap,
       events: finalEvents,
       duration: totalDuration,
+      lyrics: allLyrics,
       channelNotes: channelNotes,
     );
   }

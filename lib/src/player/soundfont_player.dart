@@ -343,6 +343,9 @@ class SoundFontPlayer {
       sources: [audio],
       releaseDuration: releaseDuration,
       sampleId: sample.id,
+      baseSpeeds: [speed],
+      baseVolumes: [vol],
+      basePans: [p],
     );
 
     if (trackVoice) {
@@ -392,6 +395,9 @@ class SoundFontPlayer {
 
     final allHandles = <SoundHandle>[];
     final allSources = <AudioSource>[];
+    final allBaseSpeeds = <double>[];
+    final allBaseVolumes = <double>[];
+    final allBasePans = <double>[];
     Duration maxRelease = options.defaultReleaseDuration;
 
     // Check for stereo sample pairs among matching zones
@@ -433,6 +439,9 @@ class SoundFontPlayer {
 
           allHandles.addAll(stereoVoice.handles);
           allSources.addAll(stereoVoice.sources);
+          allBaseSpeeds.addAll(stereoVoice.baseSpeeds);
+          allBaseVolumes.addAll(stereoVoice.baseVolumes);
+          allBasePans.addAll(stereoVoice.basePans);
           if (stereoVoice.releaseDuration > maxRelease) {
             maxRelease = stereoVoice.releaseDuration;
           }
@@ -456,6 +465,9 @@ class SoundFontPlayer {
 
       allHandles.addAll(voice.handles);
       allSources.addAll(voice.sources);
+      allBaseSpeeds.addAll(voice.baseSpeeds);
+      allBaseVolumes.addAll(voice.baseVolumes);
+      allBasePans.addAll(voice.basePans);
       if (voice.releaseDuration > maxRelease) {
         maxRelease = voice.releaseDuration;
       }
@@ -467,6 +479,9 @@ class SoundFontPlayer {
       handles: allHandles,
       sources: allSources,
       releaseDuration: maxRelease,
+      baseSpeeds: allBaseSpeeds,
+      baseVolumes: allBaseVolumes,
+      basePans: allBasePans,
     );
 
     if (trackVoice) {
@@ -504,6 +519,9 @@ class SoundFontPlayer {
 
     final allHandles = <SoundHandle>[];
     final allSources = <AudioSource>[];
+    final allBaseSpeeds = <double>[];
+    final allBaseVolumes = <double>[];
+    final allBasePans = <double>[];
     Duration maxRelease = options.defaultReleaseDuration;
     final handledSampleIds = <int>{};
 
@@ -529,6 +547,9 @@ class SoundFontPlayer {
         );
         allHandles.addAll(voice.handles);
         allSources.addAll(voice.sources);
+        allBaseSpeeds.addAll(voice.baseSpeeds);
+        allBaseVolumes.addAll(voice.baseVolumes);
+        allBasePans.addAll(voice.basePans);
         if (voice.releaseDuration > maxRelease) {
           maxRelease = voice.releaseDuration;
         }
@@ -565,6 +586,9 @@ class SoundFontPlayer {
 
               allHandles.addAll(stereoVoice.handles);
               allSources.addAll(stereoVoice.sources);
+              allBaseSpeeds.addAll(stereoVoice.baseSpeeds);
+              allBaseVolumes.addAll(stereoVoice.baseVolumes);
+              allBasePans.addAll(stereoVoice.basePans);
               if (stereoVoice.releaseDuration > maxRelease) {
                 maxRelease = stereoVoice.releaseDuration;
               }
@@ -586,6 +610,9 @@ class SoundFontPlayer {
           );
           allHandles.addAll(voice.handles);
           allSources.addAll(voice.sources);
+          allBaseSpeeds.addAll(voice.baseSpeeds);
+          allBaseVolumes.addAll(voice.baseVolumes);
+          allBasePans.addAll(voice.basePans);
           if (voice.releaseDuration > maxRelease) {
             maxRelease = voice.releaseDuration;
           }
@@ -599,6 +626,9 @@ class SoundFontPlayer {
       handles: allHandles,
       sources: allSources,
       releaseDuration: maxRelease,
+      baseSpeeds: allBaseSpeeds,
+      baseVolumes: allBaseVolumes,
+      basePans: allBasePans,
     );
 
     if (trackVoice) {
@@ -1140,6 +1170,9 @@ class SoundFontPlayer {
       sources: [audio],
       releaseDuration: releaseDuration,
       sampleId: leftSample.id,
+      baseSpeeds: [speed],
+      baseVolumes: [vol],
+      basePans: [p],
     );
   }
 
