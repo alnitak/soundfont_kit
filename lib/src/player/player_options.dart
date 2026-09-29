@@ -52,7 +52,7 @@ class SoundFontPlayerOptions {
     this.cacheAudioSources = true,
     this.streamChunkSize = 16384,
     this.defaultBusId = 0,
-    this.defaultReleaseDuration = const Duration(milliseconds: 150),
+    this.defaultReleaseDuration = const Duration(milliseconds: 250),
     this.masterVolume = 1.0,
     this.useScheduledPlayback = false,
     this.preloadAllSamples = false,

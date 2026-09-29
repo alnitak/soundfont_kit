@@ -136,7 +136,7 @@ class VoiceCalculator {
   static Duration calculateReleaseDuration({
     Zone? zone,
     Zone? presetZone,
-    Duration defaultDuration = const Duration(milliseconds: 150),
+    Duration defaultDuration = const Duration(milliseconds: 250),
     double? sustainTime,
     double sustain = 1.0,
     double? sustainMultiplier,

@@ -120,18 +120,12 @@ class MidiChannelState {
     if (pitchBend != 0.0) {
       voice.applyPitchBend(pitchBendMultiplier);
     }
-    if (effectiveVolume != 1.0) {
-      voice.applyVolumeMultiplier(effectiveVolume);
-    }
-    if (pan != 0.0) {
-      voice.applyPan(pan);
-    }
 
     if (!heldNotes.contains(key)) {
       if (isSustainPedalOn) {
         sustainedVoices.add(voice);
       } else {
-        voice.release(customRelease: Duration.zero);
+        voice.release();
       }
       return;
     }

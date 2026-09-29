@@ -105,6 +105,20 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
   bool _showAllChannels = false;
 
   double _sustain = 1.0;
+  int _transpose = 0;
+  Duration? _loopStart;
+  Duration? _loopEnd;
+
+  String? _currentChord;
+  MidiLyricSpan? _currentLyric;
+
+  double _modWheelValue = 0.0;
+  double _pitchBendValue = 0.0;
+  bool _sostenutoPedalOn = false;
+  bool _softPedalOn = false;
+
+  StreamSubscription<String?>? _chordSub;
+  StreamSubscription<MidiLyricSpan>? _lyricSub;
 
   // DAW Timeline Layout constants
   static const double _kTimelineZoom = 45.0; // Pixels per second
@@ -204,6 +218,8 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
     _uiRefreshTimer?.cancel();
     _posSub?.cancel();
     _eventSub?.cancel();
+    _chordSub?.cancel();
+    _lyricSub?.cancel();
     _midiPlayer?.dispose();
     _headersVerticalController.dispose();
     _lanesVerticalController.dispose();
@@ -340,9 +356,17 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
 
     _posSub?.cancel();
     _eventSub?.cancel();
+    _chordSub?.cancel();
+    _lyricSub?.cancel();
     await _midiPlayer?.dispose();
 
     final mPlayer = MidiPlayer(player: _sfPlayer!);
+    mPlayer.transpose = _transpose;
+    mPlayer.speedMultiplier = _playbackSpeed;
+    mPlayer.looping = _isLooping;
+    if (_loopStart != null && _loopEnd != null) {
+      mPlayer.setLoopRange(_loopStart!, _loopEnd!);
+    }
     _midiPlayer = mPlayer;
 
     setState(() {
@@ -369,6 +393,8 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
     _position = Duration.zero;
     _isPlaying = false;
     _activeKeys.clear();
+    _currentChord = null;
+    _currentLyric = null;
 
     _posSub = mPlayer.positionStream.listen((pos) {
       if (mounted) {
@@ -379,6 +405,22 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
       }
     });
 
+    _chordSub = mPlayer.chordStream.listen((chord) {
+      if (mounted && _currentChord != chord) {
+        setState(() {
+          _currentChord = chord;
+        });
+      }
+    });
+
+    _lyricSub = mPlayer.lyricStream.listen((lyric) {
+      if (mounted) {
+        setState(() {
+          _currentLyric = lyric;
+        });
+      }
+    });
+
     _eventSub = mPlayer.eventStream.listen((event) {
       if (!mounted) return;
       if (event.type == MidiPlaybackEventType.noteOn) {
@@ -386,6 +428,16 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
         _channelActivity[event.channel] = DateTime.now();
       } else if (event.type == MidiPlaybackEventType.noteOff) {
         _activeKeys.remove(event.note);
+      } else if (event.type == MidiPlaybackEventType.controlChange) {
+        if (event.controller == 1) {
+          _modWheelValue = (event.value ?? 0) / 127.0;
+        } else if (event.controller == 66) {
+          _sostenutoPedalOn = (event.value ?? 0) >= 64;
+        } else if (event.controller == 67) {
+          _softPedalOn = (event.value ?? 0) >= 64;
+        }
+      } else if (event.type == MidiPlaybackEventType.pitchBend) {
+        _pitchBendValue = ((event.value ?? 8192) - 8192) / 8192.0;
       } else if (event.type == MidiPlaybackEventType.tempoChange) {
         if (event.bpm != null) {
           _currentBpm = event.bpm!;
@@ -393,12 +445,23 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
       } else if (event.type == MidiPlaybackEventType.seek) {
         _activeKeys.clear();
         _channelActivity.clear();
+        _currentChord = null;
+        _currentLyric = null;
+        _pitchBendValue = 0.0;
+        _modWheelValue = 0.0;
+        _sostenutoPedalOn = false;
+        _softPedalOn = false;
         setState(() {});
       } else if (event.type == MidiPlaybackEventType.stateChange) {
         _isPlaying = mPlayer.isPlaying;
         if (!_isPlaying) {
           _activeKeys.clear();
           _channelActivity.clear();
+          _currentChord = null;
+          _pitchBendValue = 0.0;
+          _modWheelValue = 0.0;
+          _sostenutoPedalOn = false;
+          _softPedalOn = false;
         }
       }
     });
@@ -408,6 +471,50 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  void _setLoopStart() {
+    setState(() {
+      _loopStart = _position;
+      if (_loopEnd != null) {
+        if (_loopStart! >= _loopEnd!) {
+          _loopEnd = null;
+          _midiPlayer?.clearLoopRange();
+        } else {
+          _midiPlayer?.setLoopRange(_loopStart!, _loopEnd!);
+        }
+      }
+    });
+  }
+
+  void _setLoopEnd() {
+    setState(() {
+      _loopEnd = _position;
+      if (_loopStart != null) {
+        if (_loopEnd! <= _loopStart!) {
+          _loopStart = null;
+          _midiPlayer?.clearLoopRange();
+        } else {
+          _midiPlayer?.setLoopRange(_loopStart!, _loopEnd!);
+        }
+      }
+    });
+  }
+
+  void _clearLoopRange() {
+    setState(() {
+      _loopStart = null;
+      _loopEnd = null;
+      _midiPlayer?.clearLoopRange();
+    });
+  }
+
+  void _setTranspose(int newTranspose) {
+    final clamped = newTranspose.clamp(-12, 12);
+    setState(() {
+      _transpose = clamped;
+      _midiPlayer?.transpose = clamped;
+    });
   }
 
   Future<void> _pickSoundFont() async {
@@ -629,6 +736,11 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                       // Middle: 16-Channel Mixer Panel
                       Expanded(child: _buildChannelMixerPanel()),
 
+                      // Synchronized Karaoke Lyrics & Rehearsal Markers Banner
+                      if ((_midiPlayer?.timeline?.hasLyrics ?? false) ||
+                          _currentLyric != null)
+                        _buildKaraokeBanner(),
+
                       // Transport Controls & Timeline Scrub
                       _buildTransportControls(),
 
@@ -724,7 +836,7 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                   color: const Color(0xFF6C63FF),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               // MIDI File Badge
               Expanded(
                 child: _buildInfoChip(
@@ -734,7 +846,7 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                   color: const Color(0xFF00E5FF),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               // Tempo & Duration Badge
               _buildInfoChip(
                 icon: Icons.speed,
@@ -743,6 +855,12 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                     '${_currentBpm.toStringAsFixed(0)} BPM | ${_formatDuration(_duration)}',
                 color: Colors.amberAccent,
               ),
+              const SizedBox(width: 10),
+              // Detected Chord Badge
+              _buildChordChip(),
+              const SizedBox(width: 10),
+              // Expressive MIDI Controllers
+              _buildControllersCluster(),
             ],
           ),
           const SizedBox(height: 10),
@@ -861,6 +979,204 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChordChip() {
+    final chord = _currentChord;
+    final hasChord = chord != null && chord.isNotEmpty;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFF141720),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: hasChord ? const Color(0xFF00E5FF) : Colors.white12,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.music_note,
+            size: 18,
+            color: hasChord ? const Color(0xFF00E5FF) : Colors.white38,
+          ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Detected Chord',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.white54,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                hasChord ? chord : '—',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: hasChord ? const Color(0xFF00E5FF) : Colors.white38,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildControllersCluster() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFF141720),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'MIDI Controllers',
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.white54,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildControllerLed(
+                label: 'MOD',
+                isActive: _modWheelValue > 0.05,
+                activeColor: const Color(0xFF00E5FF),
+                tooltip:
+                    'CC 1 Modulation Wheel (Amplitude Modulator Filter): ${(_modWheelValue * 100).toInt()}%',
+              ),
+              const SizedBox(width: 6),
+              _buildControllerLed(
+                label: 'BEND',
+                isActive: _pitchBendValue.abs() > 0.05,
+                activeColor: Colors.amberAccent,
+                tooltip:
+                    'Pitch Bend Wheel: ${_pitchBendValue >= 0 ? "+" : ""}${(_pitchBendValue * 100).toInt()}%',
+              ),
+              const SizedBox(width: 6),
+              _buildControllerLed(
+                label: 'SOST',
+                isActive: _sostenutoPedalOn,
+                activeColor: const Color(0xFFE040FB),
+                tooltip: 'CC 66 Sostenuto Pedal',
+              ),
+              const SizedBox(width: 6),
+              _buildControllerLed(
+                label: 'SOFT',
+                isActive: _softPedalOn,
+                activeColor: const Color(0xFF69F0AE),
+                tooltip: 'CC 67 Soft Pedal (Una Corda)',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildControllerLed({
+    required String label,
+    required bool isActive,
+    required Color activeColor,
+    required String tooltip,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color:
+              isActive ? activeColor.withAlpha(50) : Colors.white.withAlpha(10),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(
+            color: isActive ? activeColor : Colors.white24,
+            width: isActive ? 1.5 : 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+            color: isActive ? activeColor : Colors.white38,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildKaraokeBanner() {
+    final span = _currentLyric;
+    final text =
+        span?.text ??
+        (_midiPlayer?.timeline?.hasLyrics == true
+            ? '♪ (Awaiting lyrics) ♪'
+            : '');
+    final type = span?.type;
+    final isMarker =
+        type == MidiLyricType.marker || type == MidiLyricType.cuePoint;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      decoration: const BoxDecoration(
+        color: Color(0xFF141720),
+        border: Border(
+          top: BorderSide(color: Colors.white10),
+          bottom: BorderSide(color: Colors.white10),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            isMarker ? Icons.bookmark : Icons.mic_external_on,
+            size: 16,
+            color: isMarker ? Colors.amberAccent : const Color(0xFF00E5FF),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.4,
+                color: isMarker ? Colors.amberAccent : Colors.white,
+                shadows: [
+                  Shadow(
+                    color:
+                        isMarker
+                            ? Colors.amberAccent.withAlpha(120)
+                            : const Color(0xFF00E5FF).withAlpha(140),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
@@ -1121,6 +1437,37 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
       ),
       child: Column(
         children: [
+          // A-B Loop Range Status Banner (if active)
+          if (_loopStart != null || _loopEnd != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.repeat, size: 12, color: Color(0xFF00E5FF)),
+                  const SizedBox(width: 4),
+                  Text(
+                    'A-B Loop: ${_loopStart != null ? _formatDuration(_loopStart!) : "Start"} ➔ ${_loopEnd != null ? _formatDuration(_loopEnd!) : "End"}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF00E5FF),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  InkWell(
+                    onTap: _clearLoopRange,
+                    borderRadius: BorderRadius.circular(10),
+                    child: const Tooltip(
+                      message: 'Clear A-B loop range',
+                      child:
+                          Icon(Icons.cancel, size: 14, color: Colors.white70),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           // Scrub Slider + Timestamps
           Row(
             children: [
@@ -1183,6 +1530,12 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                     _isPlaying = false;
                     _activeKeys.clear();
                     _channelActivity.clear();
+                    _currentChord = null;
+                    _currentLyric = null;
+                    _pitchBendValue = 0.0;
+                    _modWheelValue = 0.0;
+                    _sostenutoPedalOn = false;
+                    _softPedalOn = false;
                   });
                   _midiPlayer?.stop();
                 },
@@ -1214,14 +1567,14 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              // Loop
+              // Loop Toggle
               IconButton(
                 icon: Icon(
                   Icons.repeat,
                   color: _isLooping ? const Color(0xFF00E5FF) : Colors.white38,
                 ),
                 iconSize: 24,
-                tooltip: 'Toggle Loop',
+                tooltip: 'Toggle Full Song Loop',
                 onPressed: () {
                   setState(() {
                     _isLooping = !_isLooping;
@@ -1229,6 +1582,9 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                   });
                 },
               ),
+              const SizedBox(width: 4),
+              // A-B Looping controls
+              _buildLoopControls(),
               const SizedBox(width: 8),
               // Sustain Knob (unified for all SoundFonts)
               Padding(
@@ -1257,7 +1613,7 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
               Expanded(
                 child: Center(
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 500),
+                    constraints: const BoxConstraints(maxWidth: 450),
                     child: SizedBox(
                       height: 64,
                       child: FftVisualizerWidget(isPlaying: _isPlaying),
@@ -1265,6 +1621,10 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                   ),
                 ),
               ),
+              const SizedBox(width: 8),
+              // Transpose Stepper Controls
+              _buildTransposeControls(),
+              const SizedBox(width: 12),
               // Playback Speed Selector
               const Icon(Icons.speed, size: 16, color: Colors.white60),
               const SizedBox(width: 6),
@@ -1273,7 +1633,7 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                 style: const TextStyle(fontSize: 12, color: Colors.white70),
               ),
               SizedBox(
-                width: 140,
+                width: 110,
                 child: Slider(
                   value: _playbackSpeed,
                   min: 0.5,
@@ -1292,6 +1652,137 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildLoopControls() {
+    final hasA = _loopStart != null;
+    final hasB = _loopEnd != null;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Button A
+        InkWell(
+          borderRadius: BorderRadius.circular(4),
+          onTap: _setLoopStart,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            decoration: BoxDecoration(
+              color:
+                  hasA ? const Color(0xFF00E5FF).withAlpha(40) : Colors.white10,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(
+                color: hasA ? const Color(0xFF00E5FF) : Colors.white24,
+              ),
+            ),
+            child: Text(
+              hasA ? 'A: ${_formatDuration(_loopStart!)}' : 'Set A',
+              style: TextStyle(
+                fontSize: 11,
+                fontFamily: 'monospace',
+                fontWeight: FontWeight.bold,
+                color: hasA ? const Color(0xFF00E5FF) : Colors.white60,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 4),
+        // Button B
+        InkWell(
+          borderRadius: BorderRadius.circular(4),
+          onTap: _setLoopEnd,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            decoration: BoxDecoration(
+              color:
+                  hasB ? const Color(0xFF00E5FF).withAlpha(40) : Colors.white10,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(
+                color: hasB ? const Color(0xFF00E5FF) : Colors.white24,
+              ),
+            ),
+            child: Text(
+              hasB ? 'B: ${_formatDuration(_loopEnd!)}' : 'Set B',
+              style: TextStyle(
+                fontSize: 11,
+                fontFamily: 'monospace',
+                fontWeight: FontWeight.bold,
+                color: hasB ? const Color(0xFF00E5FF) : Colors.white60,
+              ),
+            ),
+          ),
+        ),
+        if (hasA || hasB) ...[
+          const SizedBox(width: 2),
+          IconButton(
+            icon: const Icon(Icons.close, size: 14),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+            tooltip: 'Clear A-B Loop Range',
+            onPressed: _clearLoopRange,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildTransposeControls() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.swap_vert, size: 16, color: Colors.white60),
+        const SizedBox(width: 2),
+        IconButton(
+          icon: const Icon(Icons.remove, size: 16),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+          tooltip: 'Transpose -1 semitone',
+          onPressed: () => _setTranspose(_transpose - 1),
+        ),
+        Tooltip(
+          message: 'Click to reset transposition',
+          child: InkWell(
+            onTap: () => _setTranspose(0),
+            borderRadius: BorderRadius.circular(4),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color:
+                    _transpose != 0
+                        ? const Color(0xFF6C63FF).withAlpha(60)
+                        : Colors.white10,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(
+                  color:
+                      _transpose != 0
+                          ? const Color(0xFF00E5FF)
+                          : Colors.white24,
+                ),
+              ),
+              child: Text(
+                '${_transpose >= 0 ? "+$_transpose" : "$_transpose"} st',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontFamily: 'monospace',
+                  fontWeight: FontWeight.bold,
+                  color:
+                      _transpose != 0
+                          ? const Color(0xFF00E5FF)
+                          : Colors.white70,
+                ),
+              ),
+            ),
+          ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.add, size: 16),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+          tooltip: 'Transpose +1 semitone',
+          onPressed: () => _setTranspose(_transpose + 1),
+        ),
+      ],
     );
   }
 

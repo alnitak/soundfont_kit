@@ -150,5 +150,37 @@ void main() {
       await customPlayer.dispose();
       await midiPlayer.dispose();
     });
+
+    test('Verifies lookaheadMs is 0 and natural default release duration is 250ms', () async {
+      final defaultSf = await SoundFontFile.fromFile(sf2Path);
+      final defaultPlayer = defaultSf.createPlayer();
+      final midiPlayer = MidiPlayer(player: defaultPlayer);
+
+      expect(midiPlayer.lookaheadMs, equals(0));
+      expect(defaultPlayer.options.defaultReleaseDuration, equals(const Duration(milliseconds: 250)));
+
+      // VoiceCalculator release calculation with default options gives 250ms at sustain 1.0
+      const noEnvZone = Zone();
+      expect(
+        VoiceCalculator.calculateReleaseDuration(zone: noEnvZone, sustain: 1.0),
+        equals(const Duration(milliseconds: 250)),
+      );
+
+      // When note is actively held, adding voice registers it as active and not released
+      final ch = midiPlayer.channels[0];
+      ch.markNoteOn(60);
+      final voice = SoundFontVoice(key: 60, velocity: 100, handles: []);
+      ch.addVoice(60, voice);
+      expect(voice.isReleased, isFalse);
+      expect(ch.activeVoices[60], contains(voice));
+
+      // NoteOff releases the voice smoothly
+      await ch.handleNoteOff(60);
+      expect(voice.isReleased, isTrue);
+      expect(ch.activeVoices[60], isNull);
+
+      await defaultPlayer.dispose();
+      await midiPlayer.dispose();
+    });
   });
 }

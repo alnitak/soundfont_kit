@@ -115,7 +115,8 @@ class MidiPlayer {
   bool looping = false;
 
   /// Lookahead window duration in milliseconds for sample-accurate scheduling.
-  int lookaheadMs = 350;
+  /// Defaults to 0 for real-time sample accuracy and synchronized NoteOff/CC handling.
+  int lookaheadMs = 0;
 
   /// Scheduling timer interval in milliseconds.
   int scheduleIntervalMs = 15;
@@ -577,7 +578,8 @@ class MidiPlayer {
           final targetPlayer = ch.customPlayer ?? player;
           final preset = _resolvePresetForChannel(ch);
           if (preset != null) {
-            final vol = (ch.effectiveVolume * (event.velocity / 127.0)).clamp(0.0, 1.0);
+            final noteVol = (event.velocity / 127.0).clamp(0.0, 1.0);
+            final playVol = (noteVol * ch.effectiveVolume).clamp(0.0, 1.0);
             final currentEpoch = _playEpoch;
             final scheduledAt = SoLoud.instance.isInitialized
                 ? SoLoud.instance.getEngineTime() + delay
@@ -588,7 +590,8 @@ class MidiPlayer {
                   atTime: scheduledAt,
                   key: effectiveNote,
                   velocity: event.velocity,
-                  customVolume: vol,
+                  customVolume: playVol,
+                  baseVolume: noteVol,
                   customPan: ch.pan,
                 )
                 .then((voice) {
