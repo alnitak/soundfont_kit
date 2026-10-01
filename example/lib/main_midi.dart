@@ -1130,8 +1130,9 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(
-          color:
-              isActive ? activeColor.withAlpha(50) : Colors.white.withAlpha(10),
+          color: isActive
+              ? activeColor.withAlpha(50)
+              : Colors.white.withAlpha(10),
           borderRadius: BorderRadius.circular(4),
           border: Border.all(
             color: isActive ? activeColor : Colors.white24,
@@ -1190,10 +1191,9 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                 color: isMarker ? Colors.amberAccent : Colors.white,
                 shadows: [
                   Shadow(
-                    color:
-                        isMarker
-                            ? Colors.amberAccent.withAlpha(120)
-                            : const Color(0xFF00E5FF).withAlpha(140),
+                    color: isMarker
+                        ? Colors.amberAccent.withAlpha(120)
+                        : const Color(0xFF00E5FF).withAlpha(140),
                     blurRadius: 8,
                   ),
                 ],
@@ -1487,8 +1487,11 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                     borderRadius: BorderRadius.circular(10),
                     child: const Tooltip(
                       message: 'Clear A-B loop range',
-                      child:
-                          Icon(Icons.cancel, size: 14, color: Colors.white70),
+                      child: Icon(
+                        Icons.cancel,
+                        size: 14,
+                        color: Colors.white70,
+                      ),
                     ),
                   ),
                 ],
@@ -1702,8 +1705,9 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
             decoration: BoxDecoration(
-              color:
-                  hasA ? const Color(0xFF00E5FF).withAlpha(40) : Colors.white10,
+              color: hasA
+                  ? const Color(0xFF00E5FF).withAlpha(40)
+                  : Colors.white10,
               borderRadius: BorderRadius.circular(4),
               border: Border.all(
                 color: hasA ? const Color(0xFF00E5FF) : Colors.white24,
@@ -1728,8 +1732,9 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
             decoration: BoxDecoration(
-              color:
-                  hasB ? const Color(0xFF00E5FF).withAlpha(40) : Colors.white10,
+              color: hasB
+                  ? const Color(0xFF00E5FF).withAlpha(40)
+                  : Colors.white10,
               borderRadius: BorderRadius.circular(4),
               border: Border.all(
                 color: hasB ? const Color(0xFF00E5FF) : Colors.white24,
@@ -1781,16 +1786,14 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color:
-                    _transpose != 0
-                        ? const Color(0xFF6C63FF).withAlpha(60)
-                        : Colors.white10,
+                color: _transpose != 0
+                    ? const Color(0xFF6C63FF).withAlpha(60)
+                    : Colors.white10,
                 borderRadius: BorderRadius.circular(4),
                 border: Border.all(
-                  color:
-                      _transpose != 0
-                          ? const Color(0xFF00E5FF)
-                          : Colors.white24,
+                  color: _transpose != 0
+                      ? const Color(0xFF00E5FF)
+                      : Colors.white24,
                 ),
               ),
               child: Text(
@@ -1799,10 +1802,9 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                   fontSize: 12,
                   fontFamily: 'monospace',
                   fontWeight: FontWeight.bold,
-                  color:
-                      _transpose != 0
-                          ? const Color(0xFF00E5FF)
-                          : Colors.white70,
+                  color: _transpose != 0
+                      ? const Color(0xFF00E5FF)
+                      : Colors.white70,
                 ),
               ),
             ),

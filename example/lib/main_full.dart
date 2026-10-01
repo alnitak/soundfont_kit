@@ -809,10 +809,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
                         SizedBox(height: 6),
                         Text(
                           'Supports SF2, SF3, SFZ, and ZIP/TAR archives',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.white70,
-                          ),
+                          style: TextStyle(fontSize: 13, color: Colors.white70),
                         ),
                       ],
                     ),

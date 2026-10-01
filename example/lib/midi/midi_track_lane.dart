@@ -44,9 +44,7 @@ class MidiTrackLane extends StatelessWidget {
           children: [
             // Subtle beat grid
             Positioned.fill(
-              child: CustomPaint(
-                painter: LaneGridPainter(zoom: zoom),
-              ),
+              child: CustomPaint(painter: LaneGridPainter(zoom: zoom)),
             ),
             // MIDI Clip region (DAW green container)
             if (notes.isNotEmpty) ...[
