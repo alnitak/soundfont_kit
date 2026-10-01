@@ -9,7 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_soloud: ^5.1.2
+  flutter_soloud: ^5.1.5
   soundfont_kit:
     path: ../
   cupertino_icons: ^1.0.8

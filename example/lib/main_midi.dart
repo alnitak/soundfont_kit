@@ -130,6 +130,7 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
   late final ScrollController _lanesVerticalController;
   late final ScrollController _timelineHorizontalController;
   bool _isSyncingScroll = false;
+  bool _isAutoScrolling = false;
 
   // Real-time active keys for piano visualization
   final Set<int> _activeKeys = {};
@@ -192,24 +193,44 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
     _isSyncingScroll = false;
   }
 
-  void _autoScrollTimelineIfNeeded() {
-    if (!_isPlaying || !_timelineHorizontalController.hasClients) return;
+  void _autoScrollTimelineIfNeeded({bool jump = false}) {
+    if (!_timelineHorizontalController.hasClients) return;
+    final isPlaying = _midiPlayer?.isPlaying ?? false;
+    if (!isPlaying && !jump) return;
+    if (_isAutoScrolling && !jump) return;
+
     final currentX = (_position.inMicroseconds / 1000000.0) * _kTimelineZoom;
     final scrollOffset = _timelineHorizontalController.offset;
     final viewportWidth =
         _timelineHorizontalController.position.viewportDimension;
+    if (viewportWidth <= 0) return;
+
+    final maxScroll = _timelineHorizontalController.position.maxScrollExtent;
+    if (maxScroll <= 0) return;
 
     if (currentX > scrollOffset + viewportWidth * 0.85 ||
-        currentX < scrollOffset) {
+        currentX < scrollOffset ||
+        jump) {
       final targetOffset = math.max(0.0, currentX - viewportWidth * 0.2);
-      _timelineHorizontalController.animateTo(
-        targetOffset.clamp(
-          0.0,
-          _timelineHorizontalController.position.maxScrollExtent,
-        ),
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOut,
-      );
+      final clampedTarget = targetOffset.clamp(0.0, maxScroll);
+
+      if ((clampedTarget - scrollOffset).abs() > 2.0) {
+        if (jump) {
+          _timelineHorizontalController.jumpTo(clampedTarget);
+        } else {
+          _isAutoScrolling = true;
+          _timelineHorizontalController
+              .animateTo(
+                clampedTarget,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOutCubic,
+              )
+              .catchError((_) {})
+              .whenComplete(() {
+                _isAutoScrolling = false;
+              });
+        }
+      }
     }
   }
 
@@ -453,16 +474,18 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
         _softPedalOn = false;
         setState(() {});
       } else if (event.type == MidiPlaybackEventType.stateChange) {
-        _isPlaying = mPlayer.isPlaying;
-        if (!_isPlaying) {
-          _activeKeys.clear();
-          _channelActivity.clear();
-          _currentChord = null;
-          _pitchBendValue = 0.0;
-          _modWheelValue = 0.0;
-          _sostenutoPedalOn = false;
-          _softPedalOn = false;
-        }
+        setState(() {
+          _isPlaying = mPlayer.isPlaying;
+          if (!_isPlaying) {
+            _activeKeys.clear();
+            _channelActivity.clear();
+            _currentChord = null;
+            _pitchBendValue = 0.0;
+            _modWheelValue = 0.0;
+            _sostenutoPedalOn = false;
+            _softPedalOn = false;
+          }
+        });
       }
     });
 
@@ -1189,11 +1212,14 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
     final maxSec = _duration.inMicroseconds / 1000000.0;
     final clamped = seconds.clamp(0.0, maxSec);
     final targetMicros = (clamped * 1000000.0).round();
+    final newPos = Duration(microseconds: targetMicros);
     setState(() {
+      _position = newPos;
       _activeKeys.clear();
       _channelActivity.clear();
     });
-    _midiPlayer?.seek(Duration(microseconds: targetMicros));
+    _midiPlayer?.seek(newPos);
+    _autoScrollTimelineIfNeeded(jump: true);
   }
 
   Widget _buildChannelMixerPanel() {
@@ -1538,6 +1564,10 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                     _softPedalOn = false;
                   });
                   _midiPlayer?.stop();
+                  _isAutoScrolling = false;
+                  if (_timelineHorizontalController.hasClients) {
+                    _timelineHorizontalController.jumpTo(0.0);
+                  }
                 },
               ),
               const SizedBox(width: 8),
@@ -1561,6 +1591,9 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                       });
                       _midiPlayer?.pause();
                     } else {
+                      setState(() {
+                        _isPlaying = true;
+                      });
                       _midiPlayer?.play();
                     }
                   },
