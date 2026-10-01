@@ -92,6 +92,68 @@ void main() {
       expect(loopInfo.startFrames, equals(4410));
       expect(loopInfo.endFrames, equals(8820));
     });
+
+    test('Calculates release duration with unified sustain', () {
+      // Native release envelope zone
+      const nativeZone = Zone(volEnvRelease: 0.4);
+      expect(
+        VoiceCalculator.calculateReleaseDuration(zone: nativeZone, sustain: 1.0),
+        equals(const Duration(milliseconds: 400)),
+      );
+      expect(
+        VoiceCalculator.calculateReleaseDuration(zone: nativeZone, sustain: 2.5),
+        equals(const Duration(milliseconds: 1000)),
+      );
+      expect(
+        VoiceCalculator.calculateReleaseDuration(zone: nativeZone, sustain: 0.0),
+        equals(Duration.zero),
+      );
+      // Backward compatibility with sustainMultiplier parameter
+      expect(
+        VoiceCalculator.calculateReleaseDuration(
+          zone: nativeZone,
+          sustainMultiplier: 2.0,
+        ),
+        equals(const Duration(milliseconds: 800)),
+      );
+
+      // Non-envelope zone with explicit sustainTime
+      const noEnvZone = Zone();
+      expect(
+        VoiceCalculator.calculateReleaseDuration(
+          zone: noEnvZone,
+          sustainTime: 0.25,
+          sustain: 1.0,
+        ),
+        equals(const Duration(milliseconds: 250)),
+      );
+      expect(
+        VoiceCalculator.calculateReleaseDuration(
+          zone: noEnvZone,
+          sustainTime: 0.25,
+          sustain: 2.0,
+        ),
+        equals(const Duration(milliseconds: 500)),
+      );
+      expect(
+        VoiceCalculator.calculateReleaseDuration(
+          zone: noEnvZone,
+          sustainTime: 0.25,
+          sustain: 0.0,
+        ),
+        equals(Duration.zero),
+      );
+
+      // Non-envelope zone with default duration fallback
+      expect(
+        VoiceCalculator.calculateReleaseDuration(
+          zone: noEnvZone,
+          defaultDuration: const Duration(milliseconds: 150),
+          sustain: 2.0,
+        ),
+        equals(const Duration(milliseconds: 300)),
+      );
+    });
   });
 
   group('SoundFontPlayer creation tests', () {

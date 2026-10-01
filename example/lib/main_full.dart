@@ -2,6 +2,8 @@ import 'dart:developer' as dev;
 import 'dart:io';
 import 'dart:ui';
 
+import 'package:cross_file/cross_file.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
@@ -35,7 +37,7 @@ void main() async {
     devicePeriodFrames: 128,
     renderAheadFrames: 0,
   );
-  SoLoud.instance.setMaxActiveVoiceCount(32);
+  SoLoud.instance.setMaxActiveVoiceCount(256);
   SoLoud.instance.setAudioDeviceIdleTimeout(null);
 
   runApp(const SoundFontReaderDemoApp());
@@ -155,6 +157,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
   bool _isPreloading = false;
   double _preloadProgress = 0.0;
   bool _isPreloaded = false;
+  bool _isDragging = false;
   late final AppLifecycleListener _lifecycleListener;
 
   @override
@@ -519,6 +522,66 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
     }
   }
 
+  Future<void> _handleDroppedSoundFont(XFile file) async {
+    final name = file.name;
+    final path = file.path;
+    final ext = p.extension(name).toLowerCase();
+    const validExts = {
+      '.sf2',
+      '.sf3',
+      '.sfz',
+      '.zip',
+      '.gz',
+      '.bz2',
+      '.tar',
+      '.tgz',
+      '.tbz2',
+      '.xz',
+    };
+
+    if (!validExts.contains(ext) && !name.toLowerCase().endsWith('.sf2.zip')) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Unsupported SoundFont format: "$name". Please drop a .sf2, .sf3, .sfz, or archive file.',
+            ),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return;
+    }
+
+    try {
+      SoundFontSourceEntry entry;
+      if (path.isNotEmpty) {
+        entry = SoundFontSourceEntry.file(path, name: name);
+      } else {
+        final bytes = await file.readAsBytes();
+        entry = SoundFontSourceEntry.bytes(
+          bytes,
+          id: 'custom_$name',
+          label: name,
+        );
+      }
+
+      final existingIndex = _sources.indexWhere((s) => s.id == entry.id);
+      if (existingIndex >= 0) {
+        _selectedSource = _sources[existingIndex];
+      } else {
+        _sources.add(entry);
+        _selectedSource = entry;
+      }
+
+      await _loadSoundFontEntry(_selectedSource, askPreload: true);
+    } catch (e) {
+      setState(() {
+        _error = 'Error loading dropped file: $e';
+      });
+    }
+  }
+
   Future<void> _pickExternalSfzFolder() async {
     try {
       final dirPath = await FilePicker.getDirectoryPath(
@@ -690,7 +753,72 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
           const SizedBox(width: 8),
         ],
       ),
-      body: _buildBody(),
+      body: DropTarget(
+        onDragEntered: (detail) => setState(() => _isDragging = true),
+        onDragExited: (detail) => setState(() => _isDragging = false),
+        onDragDone: (detail) async {
+          setState(() => _isDragging = false);
+          if (detail.files.isNotEmpty) {
+            await _handleDroppedSoundFont(detail.files.first);
+          }
+        },
+        child: Stack(
+          children: [
+            _buildBody(),
+            if (_isDragging)
+              Container(
+                color: Colors.black.withValues(alpha: 0.75),
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 32,
+                      vertical: 24,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E212B),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: const Color(0xFF00E5FF),
+                        width: 2,
+                      ),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x6600E5FF),
+                          blurRadius: 20,
+                          spreadRadius: 4,
+                        ),
+                      ],
+                    ),
+                    child: const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.album_outlined,
+                          size: 56,
+                          color: Color(0xFF00E5FF),
+                        ),
+                        SizedBox(height: 14),
+                        Text(
+                          'Drop SoundFont File Here',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        SizedBox(height: 6),
+                        Text(
+                          'Supports SF2, SF3, SFZ, and ZIP/TAR archives',
+                          style: TextStyle(fontSize: 13, color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 

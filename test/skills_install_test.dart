@@ -11,6 +11,7 @@ void main() {
     'soundfont-kit-filters',
     'soundfont-kit-idioms',
     'soundfont-kit-loading',
+    'soundfont-kit-midi',
     'soundfont-kit-playback',
     'soundfont-kit-preloading',
     'soundfont-kit-scheduling',
@@ -37,8 +38,8 @@ void main() {
 
       expect(plan.action, SkillInstallAction.install);
       expect(plan.homes, ['.agents/skills']);
-      expect(plan.skillNames.length, 7);
-      expect(plan.installCount, 7);
+      expect(plan.skillNames.length, 8);
+      expect(plan.installCount, 8);
       expect(plan.updateCount, 0);
       for (final skill in expectedSkills) {
         expect(plan.skillNames, contains(skill));
@@ -56,7 +57,7 @@ void main() {
         expect(
           result,
           contains(
-            'Installed 7 soundfont_kit agent skills into .agents/skills.',
+            'Installed 8 soundfont_kit agent skills into .agents/skills.',
           ),
         );
 
@@ -176,7 +177,7 @@ void main() {
       expect(installResult.exitCode, 0);
       expect(
         installResult.stdout.toString(),
-        contains('Installed 7 soundfont_kit agent skills'),
+        contains('Installed 8 soundfont_kit agent skills'),
       );
 
       // Check on installed tempDir -> exit code 0
@@ -190,7 +191,7 @@ void main() {
       expect(
         resultAfter.stdout.toString(),
         contains(
-          'The soundfont_kit agent skills are up to date (7 installed).',
+          'The soundfont_kit agent skills are up to date (8 installed).',
         ),
       );
     });

@@ -35,7 +35,7 @@ Future<void> main() async {
     options: const SoundFontPlayerOptions(
       joinStereoChannels: true,   // Combine paired L/R mono samples to true stereo
       cacheAudioSources: true,    // Preserve decoded RAM sources for instant retrigger
-      sustainMultiplier: 1.0,     // 1.0x authentic SoundFont envelope
+      sustain: 1.0,               // 1.0x master sustain factor
     ),
   );
 

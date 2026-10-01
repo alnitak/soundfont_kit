@@ -21,7 +21,7 @@ final player = sf.createPlayer(
     cacheAudioSources: true,        // Preserve audio buffers in RAM for zero lag
     defaultReleaseDuration: Duration(milliseconds: 150), // Fallback release
     masterVolume: 1.0,              // Master volume scale
-    sustainMultiplier: 1.0,         // Authentic SoundFont release envelope
+    sustain: 1.0,                   // Master sustain factor across all SoundFonts
   ),
 );
 ```
