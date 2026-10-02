@@ -47,10 +47,7 @@ class MidiFile {
   /// The list of tracks contained in this MIDI file.
   final List<MidiTrack> tracks;
 
-  const MidiFile({
-    required this.header,
-    required this.tracks,
-  });
+  const MidiFile({required this.header, required this.tracks});
 
   /// The format type (0, 1, or 2).
   int get format => header.format;
@@ -105,11 +102,7 @@ class MidiTrack {
   /// Optional track name parsed from a [TrackNameEvent].
   final String? name;
 
-  const MidiTrack({
-    required this.trackNumber,
-    required this.events,
-    this.name,
-  });
+  const MidiTrack({required this.trackNumber, required this.events, this.name});
 
   /// The set of 0-based MIDI channels (0-15) actively used by note events in this track.
   Set<int> get usedChannels {
@@ -135,10 +128,7 @@ abstract class MidiEvent {
   /// Cumulative absolute tick position from the start of the track.
   final int absoluteTick;
 
-  const MidiEvent({
-    required this.deltaTime,
-    required this.absoluteTick,
-  });
+  const MidiEvent({required this.deltaTime, required this.absoluteTick});
 }
 
 // ---------------------------------------------------------------------------
@@ -323,10 +313,7 @@ class PitchBendEvent extends MidiChannelEvent {
 
 /// Base class for all non-channel MIDI Meta Events (`0xFF`).
 abstract class MetaEvent extends MidiEvent {
-  const MetaEvent({
-    required super.deltaTime,
-    required super.absoluteTick,
-  });
+  const MetaEvent({required super.deltaTime, required super.absoluteTick});
 }
 
 /// Sets the tempo in microseconds per quarter note.
@@ -498,8 +485,7 @@ class ChannelPrefixEvent extends MetaEvent {
   });
 
   @override
-  String toString() =>
-      'ChannelPrefixEvent(ch: $channel, tick: $absoluteTick)';
+  String toString() => 'ChannelPrefixEvent(ch: $channel, tick: $absoluteTick)';
 }
 
 /// End of track meta event (`0xFF 0x2F 0x00`).
@@ -560,6 +546,5 @@ class SysExEvent extends MidiEvent {
   });
 
   @override
-  String toString() =>
-      'SysExEvent(bytes: ${data.length}, tick: $absoluteTick)';
+  String toString() => 'SysExEvent(bytes: ${data.length}, tick: $absoluteTick)';
 }

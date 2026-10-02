@@ -9,3 +9,9 @@ Future<Uint8List> readFileBytes(String path, int? offset, int? length) async {
 Future<bool> checkFileExists(String path) async {
   return false;
 }
+
+Uint8List readFileSync(String path) {
+  throw UnsupportedError(
+    'File I/O is not supported on web platform. Use fromBytes, fromAsset, or fromUrl.',
+  );
+}

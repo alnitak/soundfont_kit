@@ -100,7 +100,9 @@ class MidiChannelState {
   /// Current relative pitch bend playback speed multiplier ($2^{\frac{\text{semitones} \times \text{bend}}{12}}$).
   double get pitchBendMultiplier {
     if (pitchBend == 0.0) return 1.0;
-    return math.pow(2.0, (pitchBend * pitchBendRangeSemitones) / 12.0).toDouble();
+    return math
+        .pow(2.0, (pitchBend * pitchBendRangeSemitones) / 12.0)
+        .toDouble();
   }
 
   /// Computes the effective gain taking into account mute status, volume, expression, and soft pedal.
@@ -178,7 +180,9 @@ class MidiChannelState {
       }
     } else {
       // Release all captured voices that are no longer physically held
-      final toRelease = sostenutoVoices.where((v) => !heldNotes.contains(v.key)).toList();
+      final toRelease = sostenutoVoices
+          .where((v) => !heldNotes.contains(v.key))
+          .toList();
       sostenutoVoices.clear();
       for (final voice in toRelease) {
         if (isSustainPedalOn) {

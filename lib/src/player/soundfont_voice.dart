@@ -44,9 +44,9 @@ class SoundFontVoice {
     List<double>? baseSpeeds,
     List<double>? baseVolumes,
     List<double>? basePans,
-  })  : baseSpeeds = baseSpeeds ?? List.filled(handles.length, 1.0),
-        baseVolumes = baseVolumes ?? List.filled(handles.length, 1.0),
-        basePans = basePans ?? List.filled(handles.length, 0.0);
+  }) : baseSpeeds = baseSpeeds ?? List.filled(handles.length, 1.0),
+       baseVolumes = baseVolumes ?? List.filled(handles.length, 1.0),
+       basePans = basePans ?? List.filled(handles.length, 0.0);
 
   /// Triggers note-off volume fade and stop on the audio engine timeline.
   Future<void> release({Duration? customRelease, Duration? atTime}) async {
@@ -152,10 +152,7 @@ class SoundFontVoice {
       if (!SoLoud.instance.getIsValidVoiceHandle(handle)) continue;
       final base = i < baseVolumes.length ? baseVolumes[i] : 1.0;
       try {
-        SoLoud.instance.setVolume(
-          handle,
-          (base * multiplier).clamp(0.0, 1.0),
-        );
+        SoLoud.instance.setVolume(handle, (base * multiplier).clamp(0.0, 1.0));
       } catch (_) {}
     }
   }

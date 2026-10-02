@@ -58,8 +58,8 @@ class ChordDetector {
     final candidates = [bassNote, ...pitchClasses.where((p) => p != bassNote)];
 
     for (final root in candidates) {
-      final intervals =
-          pitchClasses.map((p) => (p - root + 12) % 12).toList()..sort();
+      final intervals = pitchClasses.map((p) => (p - root + 12) % 12).toList()
+        ..sort();
       final key = intervals.join(',');
 
       final suffix = chordSignatures[key];
@@ -78,14 +78,12 @@ class ChordDetector {
       final intervals = pitchClasses.map((p) => (p - root + 12) % 12).toSet();
       if (intervals.contains(4) && intervals.contains(7)) {
         final rootName = _noteNames[root];
-        final bass =
-            bassNote != root ? '/${_noteNames[bassNote]}' : '';
+        final bass = bassNote != root ? '/${_noteNames[bassNote]}' : '';
         return '$rootName$bass';
       }
       if (intervals.contains(3) && intervals.contains(7)) {
         final rootName = _noteNames[root];
-        final bass =
-            bassNote != root ? '/${_noteNames[bassNote]}' : '';
+        final bass = bassNote != root ? '/${_noteNames[bassNote]}' : '';
         return '${rootName}m$bass';
       }
     }

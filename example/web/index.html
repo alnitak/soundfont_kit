@@ -44,7 +44,10 @@
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
   <script src="flutter_bootstrap.js" async></script>
-  <script src="assets/packages/flutter_soloud/web/init_module.dart.js" defer></script>
+  <!-- init_soloud.js & init_recorder_module.dart.js pick the right WASM build
+       (single- or multi-threaded) at runtime and load JS glue dynamically. -->
+  <script src="assets/packages/flutter_soloud/web/init_soloud.js" defer></script>
+  <script src="assets/packages/flutter_recorder/web/init_recorder_module.dart.js" defer></script>
 </body>
 
 </html>

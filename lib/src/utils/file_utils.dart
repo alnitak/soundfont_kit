@@ -24,3 +24,11 @@ Future<Uint8List> readFileBytes(String path, int? offset, int? length) async {
 Future<bool> checkFileExists(String path) async {
   return File(path).exists();
 }
+
+Uint8List readFileSync(String path) {
+  final file = File(path);
+  if (!file.existsSync()) {
+    throw FileSystemException('File not found: $path', path);
+  }
+  return file.readAsBytesSync();
+}

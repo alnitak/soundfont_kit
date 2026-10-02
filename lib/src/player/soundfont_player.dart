@@ -44,7 +44,8 @@ class SoundFontPlayer {
   final int _playerId = ++_instanceCounter;
 
   String _sampleCacheKey(int sampleId) => 'sf_${_playerId}_s_$sampleId';
-  String _stereoCacheKey(int leftId, int rightId) => 'sf_${_playerId}_st_${leftId}_$rightId';
+  String _stereoCacheKey(int leftId, int rightId) =>
+      'sf_${_playerId}_st_${leftId}_$rightId';
 
   SoundFontPlayer({
     required this.soundFont,
@@ -413,7 +414,9 @@ class SoundFontPlayer {
               ? soundFont.samples[zone.sampleID!]
               : null);
 
-      if (sample == null || effectiveHandledSampleIds.contains(sample.id)) continue;
+      if (sample == null || effectiveHandledSampleIds.contains(sample.id)) {
+        continue;
+      }
 
       // Check if stereo joining applies
       if (options.joinStereoChannels &&

@@ -259,11 +259,7 @@ class MidiPlayer {
     for (final preset in presetsToLoad) {
       await player.preloadPreset(preset);
       loaded++;
-      onProgress?.call(
-        (loaded / total).clamp(0.0, 1.0),
-        loaded,
-        total,
-      );
+      onProgress?.call((loaded / total).clamp(0.0, 1.0), loaded, total);
     }
   }
 
@@ -377,10 +373,7 @@ class MidiPlayer {
 
     _positionController.add(_position);
     _eventController.add(
-      MidiPlaybackEvent(
-        type: MidiPlaybackEventType.seek,
-        timestamp: clamped,
-      ),
+      MidiPlaybackEvent(type: MidiPlaybackEventType.seek, timestamp: clamped),
     );
   }
 
@@ -538,7 +531,11 @@ class MidiPlayer {
     }
   }
 
-  void _processTimedEvent(TimedMidiEvent timed, bool anySolo, double currentSpeed) {
+  void _processTimedEvent(
+    TimedMidiEvent timed,
+    bool anySolo,
+    double currentSpeed,
+  ) {
     // Check track mute/solo
     final tIdx = timed.trackIndex;
     if (_mutedTracks.contains(tIdx)) return;
@@ -739,8 +736,8 @@ class MidiPlayer {
       final type = event is MarkerEvent
           ? MidiLyricType.marker
           : (event is CuePointEvent
-              ? MidiLyricType.cuePoint
-              : MidiLyricType.text);
+                ? MidiLyricType.cuePoint
+                : MidiLyricType.text);
       _lyricController.add(
         MidiLyricSpan(
           timestamp: timed.timestamp,

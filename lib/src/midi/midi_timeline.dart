@@ -28,10 +28,7 @@ class TempoMap {
   final int ppq;
   final List<TempoChange> tempoChanges;
 
-  TempoMap({
-    required this.ppq,
-    required this.tempoChanges,
-  });
+  TempoMap({required this.ppq, required this.tempoChanges});
 
   /// Constructs a [TempoMap] from all tracks in a [MidiFile].
   factory TempoMap.fromMidiFile(MidiFile file) {
@@ -112,7 +109,9 @@ class TempoMap {
     final deltaTicks = tick - activeChange.tick;
     final usFromActive =
         ((deltaTicks * activeChange.microsecondsPerQuarterNote) / ppq).round();
-    return Duration(microseconds: activeChange.startMicroseconds + usFromActive);
+    return Duration(
+      microseconds: activeChange.startMicroseconds + usFromActive,
+    );
   }
 
   /// Converts a real-time [Duration] to the corresponding absolute tick.
@@ -402,13 +401,15 @@ class MidiTimeline {
             if (startInfo != null) {
               var dur = te.timestamp - startInfo.$1;
               if (dur <= Duration.zero) dur = const Duration(milliseconds: 20);
-              channelNotes[ev.channel]!.add(MidiTimelineNote(
-                channel: ev.channel,
-                note: ev.note,
-                velocity: startInfo.$2,
-                start: startInfo.$1,
-                duration: dur,
-              ));
+              channelNotes[ev.channel]!.add(
+                MidiTimelineNote(
+                  channel: ev.channel,
+                  note: ev.note,
+                  velocity: startInfo.$2,
+                  start: startInfo.$1,
+                  duration: dur,
+                ),
+              );
             }
             if (te.timestamp > lastActiveNoteEnd) {
               lastActiveNoteEnd = te.timestamp;
@@ -423,13 +424,15 @@ class MidiTimeline {
           if (startInfo != null) {
             var dur = te.timestamp - startInfo.$1;
             if (dur <= Duration.zero) dur = const Duration(milliseconds: 20);
-            channelNotes[ev.channel]!.add(MidiTimelineNote(
-              channel: ev.channel,
-              note: ev.note,
-              velocity: startInfo.$2,
-              start: startInfo.$1,
-              duration: dur,
-            ));
+            channelNotes[ev.channel]!.add(
+              MidiTimelineNote(
+                channel: ev.channel,
+                note: ev.note,
+                velocity: startInfo.$2,
+                start: startInfo.$1,
+                duration: dur,
+              ),
+            );
           }
           if (te.timestamp > lastActiveNoteEnd) {
             lastActiveNoteEnd = te.timestamp;
@@ -444,8 +447,9 @@ class MidiTimeline {
 
     Duration totalDuration;
     if (!hasNotes) {
-      totalDuration =
-          cleanEvents.isNotEmpty ? cleanEvents.last.timestamp : Duration.zero;
+      totalDuration = cleanEvents.isNotEmpty
+          ? cleanEvents.last.timestamp
+          : Duration.zero;
     } else {
       // Allow a reasonable grace window (up to 4 seconds) after the last active note off
       // for CC releases (e.g. sustain pedal), final lyrics, or EndOfTrack markers.
@@ -474,13 +478,15 @@ class MidiTimeline {
       for (final entry in activeNoteStarts[ch]!.entries) {
         var dur = totalDuration - entry.value.$1;
         if (dur <= Duration.zero) dur = const Duration(milliseconds: 20);
-        channelNotes[ch]!.add(MidiTimelineNote(
-          channel: ch,
-          note: entry.key,
-          velocity: entry.value.$2,
-          start: entry.value.$1,
-          duration: dur,
-        ));
+        channelNotes[ch]!.add(
+          MidiTimelineNote(
+            channel: ch,
+            note: entry.key,
+            velocity: entry.value.$2,
+            start: entry.value.$1,
+            duration: dur,
+          ),
+        );
       }
       channelNotes[ch]!.sort((a, b) => a.start.compareTo(b.start));
     }
@@ -508,7 +514,9 @@ class MidiTimeline {
     for (int ch = 0; ch < 16; ch++) {
       snapshots[ch] = MidiChannelSnapshot(
         channel: ch,
-        bank: ch == 9 ? 128 : 0, // Channel 10 (index 9) defaults to percussion bank
+        bank: ch == 9
+            ? 128
+            : 0, // Channel 10 (index 9) defaults to percussion bank
       );
     }
 
@@ -566,7 +574,9 @@ class MidiTimeline {
   static int _eventPriority(MidiEvent e) {
     if (e is SetTempoEvent) return 0;
     if (e is MetaEvent) return 1;
-    if (e is ControlChangeEvent && (e.controller == 0 || e.controller == 32)) return 2; // Bank Select
+    if (e is ControlChangeEvent && (e.controller == 0 || e.controller == 32)) {
+      return 2; // Bank Select
+    }
     if (e is ProgramChangeEvent) return 3;
     if (e is ControlChangeEvent) return 4;
     if (e is NoteOffEvent || (e is NoteOnEvent && e.isNoteOff)) return 5;

@@ -1,6 +1,8 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
+
+import '../utils/file_utils.dart'
+    if (dart.library.js_interop) '../utils/file_utils_web.dart';
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'midi_models.dart';
@@ -20,19 +22,25 @@ class MidiReader {
 
     // 1. Parse MThd Chunk
     if (bytes.length < 14) {
-      throw const FormatException('Invalid MIDI file: data too short for header.');
+      throw const FormatException(
+        'Invalid MIDI file: data too short for header.',
+      );
     }
 
     final headerMagic = _readFourCC(bytes, offset);
     offset += 4;
     if (headerMagic != 'MThd') {
-      throw FormatException('Invalid MIDI file: expected "MThd" header, got "$headerMagic".');
+      throw FormatException(
+        'Invalid MIDI file: expected "MThd" header, got "$headerMagic".',
+      );
     }
 
     final headerLength = byteData.getUint32(offset, Endian.big);
     offset += 4;
     if (headerLength < 6) {
-      throw FormatException('Invalid MIDI header length: $headerLength (expected >= 6).');
+      throw FormatException(
+        'Invalid MIDI header length: $headerLength (expected >= 6).',
+      );
     }
 
     final format = byteData.getUint16(offset, Endian.big);
@@ -269,15 +277,47 @@ class MidiReader {
     return MidiFile(header: header, tracks: tracks);
   }
 
-  /// Parses a [MidiFile] from an existing [File].
-  static Future<MidiFile> fromFile(File file) async {
-    final bytes = await file.readAsBytes();
+  /// Parses a [MidiFile] from a file path [String] or a file-like object (such as `File`).
+  ///
+  /// On native platforms (iOS, Android, macOS, Windows, Linux), you can pass a
+  /// `dart:io` `File` or a file path [String].
+  /// On Web and WebAssembly (WASM), file system access is not supported; use [fromAsset] or [fromBytes].
+  static Future<MidiFile> fromFile(dynamic file) async {
+    if (file is String) {
+      final bytes = await readFileBytes(file, null, null);
+      return fromBytes(bytes);
+    }
+    final dynamic fileObj = file;
+    final bytes = await fileObj.readAsBytes();
+    if (bytes is Uint8List) {
+      return fromBytes(bytes);
+    }
+    return fromBytes(Uint8List.fromList((bytes as List).cast<int>()));
+  }
+
+  /// Parses a [MidiFile] synchronously from a file path [String] or a file-like object (such as `File`).
+  static MidiFile fromFileSync(dynamic file) {
+    if (file is String) {
+      final bytes = readFileSync(file);
+      return fromBytes(bytes);
+    }
+    final dynamic fileObj = file;
+    final bytes = fileObj.readAsBytesSync();
+    if (bytes is Uint8List) {
+      return fromBytes(bytes);
+    }
+    return fromBytes(Uint8List.fromList((bytes as List).cast<int>()));
+  }
+
+  /// Parses a [MidiFile] from a file path [filePath].
+  static Future<MidiFile> fromPath(String filePath) async {
+    final bytes = await readFileBytes(filePath, null, null);
     return fromBytes(bytes);
   }
 
-  /// Parses a [MidiFile] synchronously from a [File].
-  static MidiFile fromFileSync(File file) {
-    final bytes = file.readAsBytesSync();
+  /// Parses a [MidiFile] synchronously from a file path [filePath].
+  static MidiFile fromPathSync(String filePath) {
+    final bytes = readFileSync(filePath);
     return fromBytes(bytes);
   }
 
@@ -319,10 +359,11 @@ class MidiReader {
 
     // Fallback: search for the 'MThd' magic marker inside the RIFF file
     for (int i = 0; i <= bytes.length - 4; i++) {
-      if (bytes[i] == 0x4D &&     // 'M'
+      if (bytes[i] == 0x4D && // 'M'
           bytes[i + 1] == 0x54 && // 'T'
           bytes[i + 2] == 0x68 && // 'h'
-          bytes[i + 3] == 0x64) { // 'd'
+          bytes[i + 3] == 0x64) {
+        // 'd'
         return bytes.sublist(i);
       }
     }
