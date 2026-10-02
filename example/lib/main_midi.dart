@@ -6,7 +6,7 @@ import 'dart:math' as math;
 import 'package:cross_file/cross_file.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_soloud/flutter_soloud.dart';
 import 'package:logging/logging.dart';
@@ -545,16 +545,36 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
       type: FileType.custom,
       allowedExtensions: ['sf2', 'sf3', 'sfz', 'zip'],
     );
-    if (file != null && file.path != null) {
+    if (file != null) {
       setState(() {
         _isLoading = true;
-        _loadStatus = 'Loading SoundFont...';
+        _loadStatus = 'Loading SoundFont: ${file.name}...';
+        _loadProgress = 0.0;
       });
-      await _loadSoundFontFromFile(File(file.path!));
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+      try {
+        if (!kIsWeb && file.path != null && file.path!.isNotEmpty) {
+          await _loadSoundFontFromFile(File(file.path!));
+        } else {
+          final bytes = await file.readAsBytes();
+          final sf = await SoundFontFile.fromBytes(bytes);
+          await _applySoundFont(sf, file.name);
+        }
+      } catch (e, st) {
+        dev.log('Error loading picked SoundFont: $e\n$st');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to load SoundFont: $e'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
       }
     }
   }
@@ -564,8 +584,39 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
       type: FileType.custom,
       allowedExtensions: ['mid', 'midi'],
     );
-    if (file != null && file.path != null) {
-      await _loadMidiFromFile(File(file.path!));
+    if (file != null) {
+      setState(() {
+        _isLoading = true;
+        _loadStatus = 'Loading MIDI: ${file.name}...';
+        _loadProgress = 0.0;
+      });
+      try {
+        if (!kIsWeb && file.path != null && file.path!.isNotEmpty) {
+          await _loadMidiFromFile(File(file.path!));
+        } else {
+          final bytes = await file.readAsBytes();
+          final midi = MidiReader.fromBytes(bytes);
+          _midiFile = midi;
+          _midiFileName = file.name;
+          await _attachMidiPlayer();
+        }
+      } catch (e, st) {
+        dev.log('Error loading picked MIDI: $e\n$st');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to load MIDI: $e'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
+      }
     }
   }
 
@@ -613,44 +664,58 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
       return;
     }
 
-    // Load dropped SoundFont first if present
-    final sfFile = droppedSf;
-    if (sfFile != null) {
-      setState(() {
-        _isLoading = true;
-        _loadStatus = 'Loading SoundFont: ${sfFile.name}...';
-      });
-      if (sfFile.path.isNotEmpty) {
-        await _loadSoundFontFromFile(File(sfFile.path));
-      } else {
-        final bytes = await sfFile.readAsBytes();
-        final sf = await SoundFontFile.fromBytes(bytes);
-        await _applySoundFont(sf, sfFile.name);
+    try {
+      // Load dropped SoundFont first if present
+      final sfFile = droppedSf;
+      if (sfFile != null) {
+        setState(() {
+          _isLoading = true;
+          _loadStatus = 'Loading SoundFont: ${sfFile.name}...';
+          _loadProgress = 0.0;
+        });
+        if (!kIsWeb && sfFile.path.isNotEmpty) {
+          await _loadSoundFontFromFile(File(sfFile.path));
+        } else {
+          final bytes = await sfFile.readAsBytes();
+          final sf = await SoundFontFile.fromBytes(bytes);
+          await _applySoundFont(sf, sfFile.name);
+        }
       }
-    }
 
-    // Load dropped MIDI file if present
-    final midiTarget = droppedMidi;
-    if (midiTarget != null) {
-      setState(() {
-        _isLoading = true;
-        _loadStatus = 'Loading MIDI: ${midiTarget.name}...';
-      });
-      if (midiTarget.path.isNotEmpty) {
-        await _loadMidiFromFile(File(midiTarget.path));
-      } else {
-        final bytes = await midiTarget.readAsBytes();
-        final midi = MidiReader.fromBytes(bytes);
-        _midiFile = midi;
-        _midiFileName = midiTarget.name;
-        await _attachMidiPlayer();
+      // Load dropped MIDI file if present
+      final midiTarget = droppedMidi;
+      if (midiTarget != null) {
+        setState(() {
+          _isLoading = true;
+          _loadStatus = 'Loading MIDI: ${midiTarget.name}...';
+          _loadProgress = 0.0;
+        });
+        if (!kIsWeb && midiTarget.path.isNotEmpty) {
+          await _loadMidiFromFile(File(midiTarget.path));
+        } else {
+          final bytes = await midiTarget.readAsBytes();
+          final midi = MidiReader.fromBytes(bytes);
+          _midiFile = midi;
+          _midiFileName = midiTarget.name;
+          await _attachMidiPlayer();
+        }
       }
-    }
-
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
+    } catch (e, st) {
+      dev.log('Error loading dropped files: $e\n$st');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load dropped file: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 

@@ -1,3 +1,7 @@
+### 1.1.1
+- fix web: now it compiles and runs on web
+- fix web: add support to drag&drop files also in web
+
 ### 1.1.0
 - Added Standard MIDI File (`MidiReader` and `MidiPlayer`) support with sample-accurate playback, multi-track parsing, and looping.
 - Added RIFF / RMID MIDI container format support.

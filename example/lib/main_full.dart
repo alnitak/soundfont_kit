@@ -5,7 +5,7 @@ import 'dart:ui';
 import 'package:cross_file/cross_file.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
@@ -495,7 +495,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
       final path = file.path;
 
       SoundFontSourceEntry entry;
-      if (path != null && path.isNotEmpty) {
+      if (!kIsWeb && path != null && path.isNotEmpty) {
         entry = SoundFontSourceEntry.file(path, name: name);
       } else {
         final bytes = await file.readAsBytes();
@@ -555,7 +555,7 @@ class _SoundFontInspectorScreenState extends State<SoundFontInspectorScreen>
 
     try {
       SoundFontSourceEntry entry;
-      if (path.isNotEmpty) {
+      if (!kIsWeb && path.isNotEmpty) {
         entry = SoundFontSourceEntry.file(path, name: name);
       } else {
         final bytes = await file.readAsBytes();
