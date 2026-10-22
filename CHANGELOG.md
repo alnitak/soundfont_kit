@@ -1,3 +1,6 @@
+### 1.1.X
+- Fixed negative loop boundary offset calculation in SF3 soundfonts (`isOgg`) causing `Invalid argument (loopingStartOffsetAt)` during seek and playback.
+
 ### 1.1.1
 - fix web: now it compiles and runs on web
 - fix web: add support to drag&drop files also in web

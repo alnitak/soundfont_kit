@@ -182,5 +182,32 @@ void main() {
       await defaultPlayer.dispose();
       await midiPlayer.dispose();
     });
+
+    test('Loads SF3 soundfont, verifies non-negative loop bounds, and seeks safely', () async {
+      final sf3Path = p.join(assetDir, 'Celesta_minimal.sf3');
+      final sf3 = await SoundFontFile.fromFile(sf3Path);
+      final player = sf3.createPlayer();
+      final midiPlayer = MidiPlayer(player: player);
+
+      for (final sample in sf3.samples) {
+        expect(sample.loopStart, greaterThanOrEqualTo(0));
+        expect(sample.loopEnd, greaterThanOrEqualTo(0));
+        final loopInfo = VoiceCalculator.calculateLoopRegion(sample: sample);
+        expect(loopInfo.startFrames, greaterThanOrEqualTo(0));
+      }
+
+      final midi = await MidiReader.fromFile(File(midiPath));
+      await midiPlayer.load(midi, autoPreload: false);
+
+      // Seek to various timestamps across the song
+      await midiPlayer.seek(const Duration(seconds: 15));
+      expect(midiPlayer.position, equals(const Duration(seconds: 15)));
+
+      await midiPlayer.seek(const Duration(seconds: 45));
+      expect(midiPlayer.position, equals(const Duration(seconds: 45)));
+
+      await player.dispose();
+      await midiPlayer.dispose();
+    });
   });
 }

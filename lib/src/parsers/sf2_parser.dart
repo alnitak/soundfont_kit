@@ -238,8 +238,12 @@ class Sf2Parser {
           sampleRate: sampleRate,
           originalPitch: originalPitch,
           pitchCorrection: pitchCorrection,
-          loopStart: startloop - start,
-          loopEnd: endloop - start,
+          loopStart: isOgg
+              ? startloop
+              : ((startloop > start) ? (startloop - start) : 0),
+          loopEnd: isOgg
+              ? endloop
+              : ((endloop > start) ? (endloop - start) : 0),
           sampleCount: end - start,
           byteOffset: byteOffset,
           byteLength: byteLength,

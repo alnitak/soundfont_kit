@@ -104,7 +104,8 @@ class VoiceCalculator {
     // Minimum frames for a valid audible loop. Dummy header loops
     // (startloop=start, endloop=start+1) used for unlooped SF2 samples are < 16 frames.
     const minLoopFrames = 16;
-    final hasValidLoopSpan = (endFrames - startFrames) >= minLoopFrames;
+    final hasValidLoopSpan =
+        startFrames >= 0 && (endFrames - startFrames) >= minLoopFrames;
 
     final loopMode =
         zone?.loopMode ??
@@ -116,7 +117,7 @@ class VoiceCalculator {
         (loopMode == LoopMode.continuous || loopMode == LoopMode.sustain) &&
         hasValidLoopSpan;
 
-    if (!shouldLoop || endFrames <= startFrames) {
+    if (!shouldLoop || startFrames < 0 || endFrames <= startFrames) {
       return (isLooping: false, startFrames: 0, endFrames: null);
     }
 

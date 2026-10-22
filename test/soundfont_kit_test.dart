@@ -47,6 +47,10 @@ void main() {
           expect(sample.compression, equals(SampleCompression.ogg));
           expect(sample.byteLength, greaterThan(0));
 
+          // Verify loop boundaries are non-negative PCM frame offsets
+          expect(sample.loopStart, greaterThanOrEqualTo(0));
+          expect(sample.loopEnd, greaterThanOrEqualTo(0));
+
           final sampleBytes = await sf.getSampleBytes(sample);
           expect(sampleBytes.length, equals(sample.byteLength));
 

@@ -20,10 +20,10 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/flutter_soloud/ios"
 
 SPEC CHECKSUMS:
-  file_picker_darwin: 65c8ed1d70cc2ea0b81ae1840db93f8d9c051d19
+  file_picker_darwin: 4c2b9a50ea44cb3b071381ea0cf48591bdd80251
   Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
-  flutter_soloud: 6d24bb642fe0b578f949aa01630ee85ecb9c64a3
+  flutter_soloud: 9f1184400eba4c826ee5ffaa0f2ad39903018ab2
 
 PODFILE CHECKSUM: 3ba3a73b1b12adcf321a227a745625fe0888cc82
 
-COCOAPODS: 1.16.2
+COCOAPODS: 1.17.0
