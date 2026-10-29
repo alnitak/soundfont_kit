@@ -1355,6 +1355,22 @@ class SoundFontPlayer {
     final initialVol = (hasAttack && atTime == null) ? 0.01 : vol;
     final targetBusId = busId ?? effectiveBusId;
 
+    // joinTwoSources resamples both channels to the engine sample rate, so
+    // scale loop frame offsets from leftSample.sampleRate to engineSampleRate.
+    final engineRate = SoLoud.instance.sampleRate;
+    final sampleRateScale =
+        (engineRate > 0 &&
+            leftSample.sampleRate > 0 &&
+            engineRate != leftSample.sampleRate)
+        ? (engineRate / leftSample.sampleRate)
+        : 1.0;
+    final scaledLoopStart = validLoop
+        ? (loopInfo.startFrames * sampleRateScale).round()
+        : null;
+    final scaledLoopEnd = (validLoop && loopInfo.endFrames != null)
+        ? (loopInfo.endFrames! * sampleRateScale).round()
+        : null;
+
     final handle = SoLoud.instance.playScheduled(
       audio,
       scheduledAt,
@@ -1363,8 +1379,8 @@ class SoundFontPlayer {
       pan: p,
       scale: speed,
       looping: validLoop,
-      loopingStartOffsetAt: validLoop ? loopInfo.startFrames : null,
-      loopingEndOffsetAt: validLoop ? loopInfo.endFrames : null,
+      loopingStartOffsetAt: scaledLoopStart,
+      loopingEndOffsetAt: scaledLoopEnd,
       busId: targetBusId,
     );
 

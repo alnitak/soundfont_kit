@@ -511,6 +511,28 @@ class Sf2Parser {
       }
     }
 
+    int? loopStart = globalZone?.loopStart;
+    if (gens.containsKey(2) || gens.containsKey(45)) {
+      final fine = gens.containsKey(2) ? _toSigned16(gens[2]!) : 0;
+      final coarse = gens.containsKey(45) ? _toSigned16(gens[45]!) * 32768 : 0;
+      final baseStart = sampleRef?.loopStart ?? globalZone?.loopStart ?? 0;
+      loopStart = (baseStart + fine + coarse).clamp(
+        0,
+        sampleRef?.sampleCount ?? 0x7FFFFFFF,
+      );
+    }
+
+    int? loopEnd = globalZone?.loopEnd;
+    if (gens.containsKey(3) || gens.containsKey(50)) {
+      final fine = gens.containsKey(3) ? _toSigned16(gens[3]!) : 0;
+      final coarse = gens.containsKey(50) ? _toSigned16(gens[50]!) * 32768 : 0;
+      final baseEnd = sampleRef?.loopEnd ?? globalZone?.loopEnd ?? 0;
+      loopEnd = (baseEnd + fine + coarse).clamp(
+        0,
+        sampleRef?.sampleCount ?? 0x7FFFFFFF,
+      );
+    }
+
     return Zone(
       keyRangeMin: keyMin,
       keyRangeMax: keyMax,
@@ -524,6 +546,8 @@ class Sf2Parser {
       sampleRef: sampleRef,
       instrumentID: instID,
       loopMode: loopMode,
+      loopStart: loopStart,
+      loopEnd: loopEnd,
       volEnvDelay: gens.containsKey(33)
           ? _timecentsToSeconds(gens[33])
           : globalZone?.volEnvDelay,

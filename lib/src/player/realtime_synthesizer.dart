@@ -442,10 +442,16 @@ int _generateSynthAudioChunk(
           }
 
           final i0 = v.phase.toInt().clamp(0, maxSampleIdx - 1);
+          final i1 =
+              (trig.isLooping &&
+                  trig.loopEnd > trig.loopStart &&
+                  i0 + 1 >= trig.loopEnd)
+              ? trig.loopStart.clamp(0, maxSampleIdx)
+              : (i0 + 1);
           final frac = v.phase - i0;
-          var sL = leftPcm[i0] + frac * (leftPcm[i0 + 1] - leftPcm[i0]);
-          var sR = rightPcm != null && i0 + 1 < rightPcm.length
-              ? (rightPcm[i0] + frac * (rightPcm[i0 + 1] - rightPcm[i0]))
+          var sL = leftPcm[i0] + frac * (leftPcm[i1] - leftPcm[i0]);
+          var sR = rightPcm != null && i0 < rightPcm.length && i1 < rightPcm.length
+              ? (rightPcm[i0] + frac * (rightPcm[i1] - rightPcm[i0]))
               : sL;
 
           if (useFilter) {
