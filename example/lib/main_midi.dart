@@ -1446,6 +1446,26 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
         );
         await _midiPlayer!.preloadChannelPreset(chIndex);
       }
+    }
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _openChannelFxRack(int chIndex) async {
+    if (_midiPlayer == null) return;
+    final instrumentName = _midiPlayer!.getSuggestedInstrumentName(chIndex);
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return ChannelFxRackDialog(
+          channel: chIndex,
+          midiPlayer: _midiPlayer!,
+          instrumentName: instrumentName,
+        );
+      },
+    );
+    if (mounted) {
       setState(() {});
     }
   }
@@ -1477,6 +1497,7 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
         });
       },
       onOpenInstrumentPicker: () => _openChannelInstrumentPicker(chIndex),
+      onOpenFxRack: () => _openChannelFxRack(chIndex),
     );
   }
 

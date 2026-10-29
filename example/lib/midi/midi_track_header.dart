@@ -83,6 +83,7 @@ class MidiTrackHeader extends StatelessWidget {
     required this.onSoloToggled,
     required this.onVolumeChanged,
     required this.onOpenInstrumentPicker,
+    required this.onOpenFxRack,
     this.trackHeight = 72.0,
   });
 
@@ -94,12 +95,29 @@ class MidiTrackHeader extends StatelessWidget {
   final VoidCallback onSoloToggled;
   final ValueChanged<double> onVolumeChanged;
   final VoidCallback onOpenInstrumentPicker;
+  final VoidCallback onOpenFxRack;
   final double trackHeight;
+
+  bool get _hasActiveFx {
+    final bus = chState.bus;
+    if (bus == null) return false;
+    for (final type in SoundFontFilterType.values) {
+      if (chState.filterRack.isActive(type)) return true;
+    }
+    for (var i = 0; i < 8; i++) {
+      if (SoundFontVst3Manager.instance.getBusEffect(bus, i) != null) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   @override
   Widget build(BuildContext context) {
     final isDrums = chIndex == 9;
-    final hasOverride = chState.presetOverride != null;
+    final hasVst3Synth = chState.vst3Instrument != null;
+    final hasOverride = chState.presetOverride != null || hasVst3Synth;
+    final hasFx = _hasActiveFx;
 
     return Container(
       height: trackHeight,
@@ -113,11 +131,13 @@ class MidiTrackHeader extends StatelessWidget {
           left: BorderSide(
             color: isActive
                 ? const Color(0xFF00E5FF)
-                : (hasOverride
-                      ? const Color(0xFF6C63FF)
-                      : (chState.isSolo
-                            ? Colors.amberAccent
-                            : Colors.transparent)),
+                : (hasVst3Synth
+                      ? const Color(0xFF69F0AE)
+                      : (hasOverride
+                            ? const Color(0xFF6C63FF)
+                            : (chState.isSolo
+                                  ? Colors.amberAccent
+                                  : Colors.transparent))),
             width: 3,
           ),
         ),
@@ -126,7 +146,7 @@ class MidiTrackHeader extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Top Row: LED, CH Name, CUSTOM chip, Mute, Solo
+          // Top Row: LED, CH Name, VST3/MOD chip, 1-click VST3 GUI, FX, Mute, Solo
           Row(
             children: [
               Container(
@@ -157,7 +177,63 @@ class MidiTrackHeader extends StatelessWidget {
                   color: isDrums ? Colors.orangeAccent : Colors.white,
                 ),
               ),
-              if (hasOverride) ...[
+              if (hasVst3Synth) ...[
+                const SizedBox(width: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 3,
+                    vertical: 1,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF69F0AE).withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(2),
+                    border: Border.all(
+                      color: const Color(0xFF69F0AE),
+                      width: 0.6,
+                    ),
+                  ),
+                  child: const Text(
+                    'VST3',
+                    style: TextStyle(
+                      fontSize: 7,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF69F0AE),
+                    ),
+                  ),
+                ),
+                if (chState.vst3Instrument!.hasEditor) ...[
+                  const SizedBox(width: 3),
+                  Tooltip(
+                    message: 'Open VST3 Synth Editor Window',
+                    child: InkWell(
+                      onTap: () {
+                        chState.vst3Instrument!.openEditorWindow(
+                          title:
+                              'Ch ${chIndex + 1} — ${chState.vst3InstrumentName ?? "VST3 Synth"}',
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF6C63FF),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                        child: const Text(
+                          'GUI',
+                          style: TextStyle(
+                            fontSize: 7,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ] else if (hasOverride) ...[
                 const SizedBox(width: 4),
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -179,6 +255,42 @@ class MidiTrackHeader extends StatelessWidget {
                 ),
               ],
               const Spacer(),
+              // FX / VST3 Insert Rack Button
+              Tooltip(
+                message: 'Channel ${chIndex + 1} FX & VST3 Effect Inserts',
+                child: InkWell(
+                  onTap: onOpenFxRack,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 1,
+                    ),
+                    decoration: BoxDecoration(
+                      color: hasFx
+                          ? const Color(0xFF00E5FF).withValues(alpha: 0.25)
+                          : Colors.white10,
+                      borderRadius: BorderRadius.circular(3),
+                      border: hasFx
+                          ? Border.all(
+                              color: const Color(0xFF00E5FF),
+                              width: 0.8,
+                            )
+                          : null,
+                    ),
+                    child: Text(
+                      'FX',
+                      style: TextStyle(
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.bold,
+                        color: hasFx
+                            ? const Color(0xFF00E5FF)
+                            : Colors.white60,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
               // Mute Button
               InkWell(
                 onTap: onMuteToggled,
@@ -234,19 +346,31 @@ class MidiTrackHeader extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               decoration: BoxDecoration(
-                color: hasOverride
-                    ? const Color(0xFF6C63FF).withValues(alpha: 0.15)
-                    : Colors.white.withValues(alpha: 0.04),
+                color: hasVst3Synth
+                    ? const Color(0xFF69F0AE).withValues(alpha: 0.12)
+                    : (hasOverride
+                          ? const Color(0xFF6C63FF).withValues(alpha: 0.15)
+                          : Colors.white.withValues(alpha: 0.04)),
                 borderRadius: BorderRadius.circular(3),
                 border: Border.all(
-                  color: hasOverride
-                      ? const Color(0xFF00E5FF).withValues(alpha: 0.4)
-                      : Colors.white10,
+                  color: hasVst3Synth
+                      ? const Color(0xFF69F0AE).withValues(alpha: 0.5)
+                      : (hasOverride
+                            ? const Color(0xFF00E5FF).withValues(alpha: 0.4)
+                            : Colors.white10),
                   width: 0.8,
                 ),
               ),
               child: Row(
                 children: [
+                  if (hasVst3Synth) ...[
+                    const Icon(
+                      Icons.extension,
+                      size: 10,
+                      color: Color(0xFF69F0AE),
+                    ),
+                    const SizedBox(width: 3),
+                  ],
                   Expanded(
                     child: Text(
                       instrumentName,
@@ -254,18 +378,22 @@ class MidiTrackHeader extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 9,
                         fontWeight: FontWeight.w600,
-                        color: hasOverride
-                            ? const Color(0xFF00E5FF)
-                            : Colors.white.withValues(alpha: 0.9),
+                        color: hasVst3Synth
+                            ? const Color(0xFF69F0AE)
+                            : (hasOverride
+                                  ? const Color(0xFF00E5FF)
+                                  : Colors.white.withValues(alpha: 0.9)),
                       ),
                     ),
                   ),
                   Icon(
                     Icons.tune,
                     size: 11,
-                    color: hasOverride
-                        ? const Color(0xFF00E5FF)
-                        : Colors.white38,
+                    color: hasVst3Synth
+                        ? const Color(0xFF69F0AE)
+                        : (hasOverride
+                              ? const Color(0xFF00E5FF)
+                              : Colors.white38),
                   ),
                 ],
               ),

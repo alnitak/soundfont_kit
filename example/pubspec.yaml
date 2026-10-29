@@ -29,3 +29,8 @@ flutter:
   uses-material-design: true
   assets:
     - assets/
+
+hooks:
+  user_defines:
+    flutter_soloud:
+      enable_vst3: true
