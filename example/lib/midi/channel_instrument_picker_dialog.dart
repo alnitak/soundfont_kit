@@ -1,11 +1,7 @@
-// ignore_for_file: experimental_member_use
-
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter_soloud/flutter_soloud.dart' show Vst3InstrumentPlugin;
 import 'package:path/path.dart' as p;
 import 'package:soundfont_kit/soundfont_kit.dart';
 
@@ -18,7 +14,6 @@ class ChannelInstrumentPickerDialog extends StatefulWidget {
   final List<String> bundledSoundFonts;
   final SoundFontPlayer? currentPlayer;
   final Preset? currentPreset;
-  final MidiPlayer? midiPlayer;
   final Future<SoundFontPlayer?> Function(File file) onLoadFromFile;
   final Future<SoundFontPlayer?> Function(String assetPath) onLoadFromAsset;
 
@@ -31,7 +26,6 @@ class ChannelInstrumentPickerDialog extends StatefulWidget {
     required this.bundledSoundFonts,
     required this.currentPlayer,
     required this.currentPreset,
-    this.midiPlayer,
     required this.onLoadFromFile,
     required this.onLoadFromAsset,
   });
@@ -49,7 +43,6 @@ class _ChannelInstrumentPickerDialogState
   final TextEditingController _searchController = TextEditingController();
   bool _isLoading = false;
   String _searchFilter = '';
-  List<DiscoveredVst3Plugin> _discoveredVst3Synths = const [];
 
   @override
   void initState() {
@@ -70,24 +63,11 @@ class _ChannelInstrumentPickerDialogState
             ? _selectedPlayer.soundFont.presets.first
             : null);
 
-    if (SoundFontVst3Manager.instance.isSupported) {
-      _scanSystemVst3Synths();
-    }
-
     _searchController.addListener(() {
       setState(() {
         _searchFilter = _searchController.text.trim().toLowerCase();
       });
     });
-  }
-
-  void _scanSystemVst3Synths() {
-    try {
-      final all = SoundFontVst3Manager.instance.scanStandardDirectories();
-      _discoveredVst3Synths = all.where((p) => p.isInstrument).toList();
-    } catch (_) {
-      _discoveredVst3Synths = const [];
-    }
   }
 
   String? _findKeyForPlayer(SoundFontPlayer player) {
@@ -159,76 +139,6 @@ class _ChannelInstrumentPickerDialogState
     });
   }
 
-  Future<void> _loadVst3InstrumentFromPath(
-    String path, {
-    String? classUid,
-    String? displayName,
-  }) async {
-    if (widget.midiPlayer == null) return;
-    setState(() {
-      _isLoading = true;
-    });
-    final inst = SoundFontVst3Manager.instance.loadInstrument(
-      bundlePath: path,
-      classUid: classUid,
-      autoPlay: false,
-    );
-    if (!mounted) return;
-    setState(() {
-      _isLoading = false;
-    });
-    if (inst != null) {
-      final existing = widget.midiPlayer!.channels[widget.channel].vst3Instrument;
-      if (existing != null && !identical(existing, inst)) {
-        SoundFontVst3Manager.instance.unloadInstrument(existing);
-      }
-      widget.midiPlayer!.setChannelVst3Instrument(
-        widget.channel,
-        inst,
-        name: displayName ?? p.basenameWithoutExtension(path),
-      );
-      setState(() {});
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to load VST3 Instrument from $path'),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-    }
-  }
-
-  Future<void> _pickVst3Instrument() async {
-    if (widget.midiPlayer == null) return;
-    String? path;
-    if (!kIsWeb && Platform.isMacOS) {
-      path = await FilePicker.getDirectoryPath(
-        dialogTitle: 'Select a .vst3 Virtual Instrument Bundle',
-      );
-    } else {
-      final picked = await FilePicker.pickFile(
-        dialogTitle: 'Select a .vst3 Virtual Instrument Plugin',
-        type: FileType.custom,
-        allowedExtensions: ['vst3'],
-      );
-      path = picked?.path;
-    }
-    if (path == null || path.isEmpty) return;
-    await _loadVst3InstrumentFromPath(path);
-  }
-
-  void _previewVst3Note(Vst3InstrumentPlugin inst) {
-    inst.noteOn(pitch: 60, velocity: 0.85, channel: widget.channel);
-    Future.delayed(const Duration(milliseconds: 550), () {
-      if (!inst.isDisposed) {
-        inst.noteOff(pitch: 60, channel: widget.channel);
-      }
-    });
-  }
-
-  bool get _isDesktop =>
-      !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
-
   @override
   Widget build(BuildContext context) {
     final presets = _selectedPlayer.soundFont.presets.where((p) {
@@ -245,7 +155,7 @@ class _ChannelInstrumentPickerDialogState
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Container(
         width: 580,
-        height: 600,
+        height: 560,
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -260,7 +170,7 @@ class _ChannelInstrumentPickerDialogState
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  'Select SoundFont & Instrument for Channel ${widget.channel + 1}',
+                  'Select SoundFont & Preset for Channel ${widget.channel + 1}',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -387,195 +297,6 @@ class _ChannelInstrumentPickerDialogState
                       ),
                     ],
                   ),
-                  if (_isDesktop && widget.midiPlayer != null) ...[
-                    const Divider(height: 16, color: Colors.white12),
-                    if (!SoundFontVst3Manager.instance.isSupported)
-                      const Row(
-                        children: [
-                          Icon(
-                            Icons.info_outline,
-                            size: 14,
-                            color: Colors.amberAccent,
-                          ),
-                          SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              'VST3 support requires a full app restart (Stop & Run) so enable_vst3: true in pubspec.yaml is compiled.',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.amberAccent,
-                              ),
-                            ),
-                          ),
-                        ],
-                      )
-                    else
-                      Builder(
-                        builder: (context) {
-                          final chState =
-                              widget.midiPlayer!.channels[widget.channel];
-                          final activeVst3 = chState.vst3Instrument;
-                          return Row(
-                            children: [
-                              const Icon(
-                                Icons.extension,
-                                size: 15,
-                                color: Color(0xFF69F0AE),
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  activeVst3 != null
-                                      ? 'VST3 Synth: ${chState.vst3InstrumentName ?? "Loaded"}'
-                                      : 'Desktop VST3 Virtual Instrument (Optional)',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: activeVst3 != null
-                                        ? FontWeight.bold
-                                        : FontWeight.normal,
-                                    color: activeVst3 != null
-                                        ? const Color(0xFF69F0AE)
-                                        : Colors.white60,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              if (_discoveredVst3Synths.isNotEmpty) ...[
-                                PopupMenuButton<DiscoveredVst3Plugin>(
-                                  tooltip: 'Select installed system VST3 Synth',
-                                  color: const Color(0xFF222634),
-                                  onSelected: (plugin) {
-                                    _loadVst3InstrumentFromPath(
-                                      plugin.bundlePath,
-                                      classUid: plugin.classUid,
-                                      displayName: plugin.name,
-                                    );
-                                  },
-                                  itemBuilder: (context) {
-                                    return [
-                                      for (final plugin in _discoveredVst3Synths)
-                                        PopupMenuItem(
-                                          value: plugin,
-                                          child: Text(
-                                            plugin.name,
-                                            style: const TextStyle(fontSize: 12),
-                                          ),
-                                        ),
-                                    ];
-                                  },
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 5,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(
-                                        color: const Color(0xFF69F0AE),
-                                      ),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(
-                                          Icons.list_alt,
-                                          size: 13,
-                                          color: Color(0xFF69F0AE),
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          'Installed (${_discoveredVst3Synths.length})',
-                                          style: const TextStyle(
-                                            fontSize: 11,
-                                            color: Color(0xFF69F0AE),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                              ],
-                              OutlinedButton.icon(
-                                icon: const Icon(Icons.piano, size: 13),
-                                label: Text(
-                                  activeVst3 != null
-                                      ? 'Replace .vst3...'
-                                      : 'Load .vst3 Synth...',
-                                  style: const TextStyle(fontSize: 11),
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: const Color(0xFF69F0AE),
-                                  side: const BorderSide(
-                                    color: Color(0xFF69F0AE),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 6,
-                                  ),
-                                ),
-                                onPressed:
-                                    _isLoading ? null : _pickVst3Instrument,
-                              ),
-                              if (activeVst3 != null) ...[
-                                const SizedBox(width: 4),
-                                IconButton(
-                                  icon: const Icon(
-                                    Icons.volume_up,
-                                    size: 16,
-                                    color: Color(0xFF69F0AE),
-                                  ),
-                                  tooltip: 'Preview VST3 Synth (Middle C)',
-                                  onPressed: () => _previewVst3Note(activeVst3),
-                                ),
-                                if (activeVst3.hasEditor)
-                                  ElevatedButton.icon(
-                                    icon: const Icon(
-                                      Icons.open_in_new,
-                                      size: 13,
-                                    ),
-                                    label: const Text(
-                                      'VST3 GUI',
-                                      style: TextStyle(fontSize: 11),
-                                    ),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFF6C63FF),
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 6,
-                                      ),
-                                    ),
-                                    onPressed: () =>
-                                        activeVst3.openEditorWindow(
-                                          title:
-                                              'Ch ${widget.channel + 1} — ${chState.vst3InstrumentName ?? "VST3 Synth"}',
-                                        ),
-                                  ),
-                                const SizedBox(width: 4),
-                                IconButton(
-                                  icon: const Icon(
-                                    Icons.delete_outline,
-                                    size: 16,
-                                    color: Colors.redAccent,
-                                  ),
-                                  tooltip: 'Unload VST3 Instrument',
-                                  onPressed: () {
-                                    widget.midiPlayer!.setChannelVst3Instrument(
-                                      widget.channel,
-                                      null,
-                                    );
-                                    SoundFontVst3Manager.instance
-                                        .unloadInstrument(activeVst3);
-                                    setState(() {});
-                                  },
-                                ),
-                              ],
-                            ],
-                          );
-                        },
-                      ),
-                  ],
                 ],
               ),
             ),
@@ -707,26 +428,13 @@ class _ChannelInstrumentPickerDialogState
                     foregroundColor: Colors.orangeAccent,
                   ),
                   onPressed: () {
-                    final activeVst3 = widget
-                        .midiPlayer
-                        ?.channels[widget.channel]
-                        .vst3Instrument;
-                    if (activeVst3 != null) {
-                      widget.midiPlayer?.setChannelVst3Instrument(
-                        widget.channel,
-                        null,
-                      );
-                      SoundFontVst3Manager.instance.unloadInstrument(
-                        activeVst3,
-                      );
-                    }
                     Navigator.of(context).pop((null, null, true));
                   },
                 ),
                 const Spacer(),
                 TextButton(
                   child: const Text(
-                    'Close',
+                    'Cancel',
                     style: TextStyle(color: Colors.white60),
                   ),
                   onPressed: () => Navigator.of(context).pop(),
@@ -734,26 +442,13 @@ class _ChannelInstrumentPickerDialogState
                 const SizedBox(width: 8),
                 ElevatedButton.icon(
                   icon: const Icon(Icons.check, size: 16),
-                  label: const Text('Apply SoundFont Preset'),
+                  label: const Text('Apply Preset'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF6C63FF),
                     foregroundColor: Colors.white,
                   ),
                   onPressed: _selectedPreset != null
                       ? () {
-                          final activeVst3 = widget
-                              .midiPlayer
-                              ?.channels[widget.channel]
-                              .vst3Instrument;
-                          if (activeVst3 != null) {
-                            widget.midiPlayer?.setChannelVst3Instrument(
-                              widget.channel,
-                              null,
-                            );
-                            SoundFontVst3Manager.instance.unloadInstrument(
-                              activeVst3,
-                            );
-                          }
                           Navigator.of(
                             context,
                           ).pop((_selectedPlayer, _selectedPreset, false));

@@ -306,6 +306,8 @@ await midiPlayer.seek(const Duration(seconds: 45));
 await midiPlayer.stop();
 ```
 
+> **Desktop VST3 Setup Note:** To enable VST3 hosting on macOS, Windows, and Linux, add `enable_vst3: true` under `hooks.user_defines.flutter_soloud` in your app's `pubspec.yaml`. On **macOS**, also set `com.apple.security.app-sandbox` to `false` and `com.apple.security.cs.disable-library-validation` to `true` in `macos/Runner/DebugProfile.entitlements` and `Release.entitlements` (and optionally `NSDocumentsFolderUsageDescription` in `macos/Runner/Info.plist`) so the app can scan `/Library/Audio/Plug-Ins/VST3` and load third-party `.vst3` bundles.
+
 ---
 
 ## Example App Capabilities

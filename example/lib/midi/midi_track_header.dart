@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:soundfont_kit/soundfont_kit.dart';
 
-/// Fixed-width column header corner showing track count and toggle button.
+/// Fixed-width column header corner showing track count, global VST3 & FX buttons, and toggle button.
 class MidiTracksHeaderCorner extends StatelessWidget {
   const MidiTracksHeaderCorner({
     super.key,
@@ -9,12 +9,20 @@ class MidiTracksHeaderCorner extends StatelessWidget {
     required this.usedCount,
     required this.showAllChannels,
     required this.onToggleShowAllChannels,
+    required this.hasGlobalVst3,
+    required this.onOpenGlobalVst3Picker,
+    required this.hasGlobalFx,
+    required this.onOpenGlobalFxRack,
   });
 
   final int activeCount;
   final int usedCount;
   final bool showAllChannels;
   final VoidCallback onToggleShowAllChannels;
+  final bool hasGlobalVst3;
+  final VoidCallback onOpenGlobalVst3Picker;
+  final bool hasGlobalFx;
+  final VoidCallback onOpenGlobalFxRack;
 
   @override
   Widget build(BuildContext context) {
@@ -36,6 +44,72 @@ class MidiTracksHeaderCorner extends StatelessWidget {
             ),
           ),
           const Spacer(),
+          Tooltip(
+            message: 'Multi-Timbral VST3 Instrument for All 16 Channels',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(4),
+              onTap: onOpenGlobalVst3Picker,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: hasGlobalVst3
+                      ? const Color(0xFF69F0AE).withValues(alpha: 0.25)
+                      : Colors.white10,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: hasGlobalVst3
+                        ? const Color(0xFF69F0AE)
+                        : Colors.white24,
+                    width: 0.8,
+                  ),
+                ),
+                child: Text(
+                  'VST',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    color: hasGlobalVst3
+                        ? const Color(0xFF69F0AE)
+                        : Colors.white70,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Tooltip(
+            message: 'Global Master FX & VST3 Effect Inserts (All Channels)',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(4),
+              onTap: onOpenGlobalFxRack,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: hasGlobalFx
+                      ? const Color(0xFF00E5FF).withValues(alpha: 0.25)
+                      : Colors.white10,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: hasGlobalFx
+                        ? const Color(0xFF00E5FF)
+                        : Colors.white24,
+                    width: 0.8,
+                  ),
+                ),
+                child: Text(
+                  'FX',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    color: hasGlobalFx
+                        ? const Color(0xFF00E5FF)
+                        : Colors.white70,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
           InkWell(
             borderRadius: BorderRadius.circular(4),
             onTap: onToggleShowAllChannels,
@@ -83,6 +157,7 @@ class MidiTrackHeader extends StatelessWidget {
     required this.onSoloToggled,
     required this.onVolumeChanged,
     required this.onOpenInstrumentPicker,
+    required this.onOpenVst3InstrumentPicker,
     required this.onOpenFxRack,
     this.trackHeight = 72.0,
   });
@@ -95,6 +170,7 @@ class MidiTrackHeader extends StatelessWidget {
   final VoidCallback onSoloToggled;
   final ValueChanged<double> onVolumeChanged;
   final VoidCallback onOpenInstrumentPicker;
+  final VoidCallback onOpenVst3InstrumentPicker;
   final VoidCallback onOpenFxRack;
   final double trackHeight;
 
@@ -115,8 +191,9 @@ class MidiTrackHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDrums = chIndex == 9;
-    final hasVst3Synth = chState.vst3Instrument != null;
-    final hasOverride = chState.presetOverride != null || hasVst3Synth;
+    final hasChannelVst3 = chState.vst3Instrument != null;
+    final hasEffectiveVst3 = chState.effectiveVst3Instrument != null;
+    final hasOverride = chState.presetOverride != null;
     final hasFx = _hasActiveFx;
 
     return Container(
@@ -131,7 +208,7 @@ class MidiTrackHeader extends StatelessWidget {
           left: BorderSide(
             color: isActive
                 ? const Color(0xFF00E5FF)
-                : (hasVst3Synth
+                : (hasEffectiveVst3
                       ? const Color(0xFF69F0AE)
                       : (hasOverride
                             ? const Color(0xFF6C63FF)
@@ -146,7 +223,7 @@ class MidiTrackHeader extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Top Row: LED, CH Name, VST3/MOD chip, 1-click VST3 GUI, FX, Mute, Solo
+          // Top Row: LED, CH Name, MOD chip, VST button, FX button, Mute, Solo
           Row(
             children: [
               Container(
@@ -177,63 +254,7 @@ class MidiTrackHeader extends StatelessWidget {
                   color: isDrums ? Colors.orangeAccent : Colors.white,
                 ),
               ),
-              if (hasVst3Synth) ...[
-                const SizedBox(width: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 3,
-                    vertical: 1,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF69F0AE).withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(2),
-                    border: Border.all(
-                      color: const Color(0xFF69F0AE),
-                      width: 0.6,
-                    ),
-                  ),
-                  child: const Text(
-                    'VST3',
-                    style: TextStyle(
-                      fontSize: 7,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF69F0AE),
-                    ),
-                  ),
-                ),
-                if (chState.vst3Instrument!.hasEditor) ...[
-                  const SizedBox(width: 3),
-                  Tooltip(
-                    message: 'Open VST3 Synth Editor Window',
-                    child: InkWell(
-                      onTap: () {
-                        chState.vst3Instrument!.openEditorWindow(
-                          title:
-                              'Ch ${chIndex + 1} — ${chState.vst3InstrumentName ?? "VST3 Synth"}',
-                        );
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 4,
-                          vertical: 1,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF6C63FF),
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                        child: const Text(
-                          'GUI',
-                          style: TextStyle(
-                            fontSize: 7,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ] else if (hasOverride) ...[
+              if (hasOverride && !hasChannelVst3) ...[
                 const SizedBox(width: 4),
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -255,6 +276,42 @@ class MidiTrackHeader extends StatelessWidget {
                 ),
               ],
               const Spacer(),
+              // VST3 Virtual Instrument Button
+              Tooltip(
+                message: 'Channel ${chIndex + 1} VST3 Virtual Instrument',
+                child: InkWell(
+                  onTap: onOpenVst3InstrumentPicker,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 1,
+                    ),
+                    decoration: BoxDecoration(
+                      color: hasChannelVst3
+                          ? const Color(0xFF69F0AE).withValues(alpha: 0.25)
+                          : Colors.white10,
+                      borderRadius: BorderRadius.circular(3),
+                      border: hasChannelVst3
+                          ? Border.all(
+                              color: const Color(0xFF69F0AE),
+                              width: 0.8,
+                            )
+                          : null,
+                    ),
+                    child: Text(
+                      'VST',
+                      style: TextStyle(
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.bold,
+                        color: hasChannelVst3
+                            ? const Color(0xFF69F0AE)
+                            : Colors.white60,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
               // FX / VST3 Insert Rack Button
               Tooltip(
                 message: 'Channel ${chIndex + 1} FX & VST3 Effect Inserts',
@@ -346,14 +403,14 @@ class MidiTrackHeader extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               decoration: BoxDecoration(
-                color: hasVst3Synth
+                color: hasEffectiveVst3
                     ? const Color(0xFF69F0AE).withValues(alpha: 0.12)
                     : (hasOverride
                           ? const Color(0xFF6C63FF).withValues(alpha: 0.15)
                           : Colors.white.withValues(alpha: 0.04)),
                 borderRadius: BorderRadius.circular(3),
                 border: Border.all(
-                  color: hasVst3Synth
+                  color: hasEffectiveVst3
                       ? const Color(0xFF69F0AE).withValues(alpha: 0.5)
                       : (hasOverride
                             ? const Color(0xFF00E5FF).withValues(alpha: 0.4)
@@ -363,7 +420,7 @@ class MidiTrackHeader extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  if (hasVst3Synth) ...[
+                  if (hasEffectiveVst3) ...[
                     const Icon(
                       Icons.extension,
                       size: 10,
@@ -378,7 +435,7 @@ class MidiTrackHeader extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 9,
                         fontWeight: FontWeight.w600,
-                        color: hasVst3Synth
+                        color: hasEffectiveVst3
                             ? const Color(0xFF69F0AE)
                             : (hasOverride
                                   ? const Color(0xFF00E5FF)
@@ -389,7 +446,7 @@ class MidiTrackHeader extends StatelessWidget {
                   Icon(
                     Icons.tune,
                     size: 11,
-                    color: hasVst3Synth
+                    color: hasEffectiveVst3
                         ? const Color(0xFF69F0AE)
                         : (hasOverride
                               ? const Color(0xFF00E5FF)

@@ -59,24 +59,49 @@ class SoundFontVst3Manager {
         .toList(growable: false);
   }
 
-  /// Scans all standard OS VST3 directories and returns discovered `.vst3` plugins.
-  List<DiscoveredVst3Plugin> scanStandardDirectories() {
+  /// Scans all standard OS VST3 directories (including vendor subdirectories)
+  /// and returns discovered `.vst3` plugins.
+  List<DiscoveredVst3Plugin> scanStandardDirectories({int maxDepth = 4}) {
     if (!isSupported) return const [];
     final discovered = <DiscoveredVst3Plugin>[];
+    final seenBundles = <String>{};
     for (final dirPath in standardSearchPaths) {
       final dir = Directory(dirPath);
-      if (!dir.existsSync()) continue;
-      try {
-        for (final entity in dir.listSync(followLinks: true)) {
-          if (entity.path.toLowerCase().endsWith('.vst3')) {
-            try {
-              discovered.addAll(scanBundle(entity.path));
-            } catch (_) {}
-          }
-        }
-      } catch (_) {}
+      _scanDirectoryRecursive(dir, maxDepth, discovered, seenBundles);
     }
     return discovered;
+  }
+
+  void _scanDirectoryRecursive(
+    Directory dir,
+    int depthRemaining,
+    List<DiscoveredVst3Plugin> out,
+    Set<String> seenBundles,
+  ) {
+    if (depthRemaining <= 0 || !dir.existsSync()) return;
+    try {
+      for (final entity in dir.listSync(followLinks: true)) {
+        final path = entity.path;
+        final base = path.split(Platform.pathSeparator).last;
+        if (base.startsWith('.')) continue;
+
+        if (path.toLowerCase().endsWith('.vst3')) {
+          final normalized = base.toLowerCase();
+          if (seenBundles.add(normalized)) {
+            try {
+              out.addAll(scanBundle(path));
+            } catch (_) {}
+          }
+        } else if (entity is Directory) {
+          _scanDirectoryRecursive(
+            entity,
+            depthRemaining - 1,
+            out,
+            seenBundles,
+          );
+        }
+      }
+    } catch (_) {}
   }
 
   /// Returns the currently loaded Master VST3 Effect in [slotIndex] (`0..7`), if any.
@@ -111,6 +136,9 @@ class SoundFontVst3Manager {
   /// Unloads and disposes the Master VST3 Effect at [slotIndex] (`0..7`).
   void unloadMasterEffect(int slotIndex) {
     final existing = _masterEffects.remove(slotIndex);
+    try {
+      existing?.closeEditorWindow();
+    } catch (_) {}
     existing?.dispose();
   }
 
@@ -143,6 +171,9 @@ class SoundFontVst3Manager {
   /// Unloads and disposes the Bus VST3 Effect on [bus] at [slotIndex] (`0..7`).
   void unloadBusEffect(Bus bus, int slotIndex) {
     final existing = _busEffects.remove('${bus.busId}:$slotIndex');
+    try {
+      existing?.closeEditorWindow();
+    } catch (_) {}
     existing?.dispose();
   }
 
@@ -230,6 +261,9 @@ class SoundFontVst3Manager {
         SoLoud.instance.stop(handle);
       } catch (_) {}
     }
+    try {
+      instrument.closeEditorWindow();
+    } catch (_) {}
     instrument.dispose();
   }
 

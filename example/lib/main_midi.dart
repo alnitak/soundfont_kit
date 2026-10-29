@@ -1,3 +1,5 @@
+// ignore_for_file: experimental_member_use
+
 import 'dart:async';
 import 'dart:developer' as dev;
 import 'dart:io';
@@ -375,20 +377,34 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
   Future<void> _attachMidiPlayer() async {
     if (_sfPlayer == null || _midiFile == null) return;
 
-    _posSub?.cancel();
-    _eventSub?.cancel();
-    _chordSub?.cancel();
-    _lyricSub?.cancel();
-    await _midiPlayer?.dispose();
+    MidiPlayer mPlayer;
+    if (_midiPlayer != null && identical(_midiPlayer!.player, _sfPlayer)) {
+      mPlayer = _midiPlayer!;
+    } else {
+      final prevGlobalInst = _midiPlayer?.globalVst3Instrument;
+      final prevGlobalName = _midiPlayer?.globalVst3InstrumentName;
+      _posSub?.cancel();
+      _eventSub?.cancel();
+      _chordSub?.cancel();
+      _lyricSub?.cancel();
+      if (_midiPlayer != null) {
+        _midiPlayer!.globalVst3Instrument = null;
+        await _midiPlayer!.dispose();
+      }
 
-    final mPlayer = MidiPlayer(player: _sfPlayer!);
-    mPlayer.transpose = _transpose;
-    mPlayer.speedMultiplier = _playbackSpeed;
-    mPlayer.looping = _isLooping;
-    if (_loopStart != null && _loopEnd != null) {
-      mPlayer.setLoopRange(_loopStart!, _loopEnd!);
+      mPlayer = MidiPlayer(player: _sfPlayer!);
+      mPlayer.transpose = _transpose;
+      mPlayer.speedMultiplier = _playbackSpeed;
+      mPlayer.looping = _isLooping;
+      if (_loopStart != null && _loopEnd != null) {
+        mPlayer.setLoopRange(_loopStart!, _loopEnd!);
+      }
+      if (prevGlobalInst != null && !prevGlobalInst.isDisposed) {
+        mPlayer.setGlobalVst3Instrument(prevGlobalInst, name: prevGlobalName);
+      }
+      _midiPlayer = mPlayer;
+      _subscribeMidiPlayerStreams(mPlayer);
     }
-    _midiPlayer = mPlayer;
 
     setState(() {
       _isLoading = true;
@@ -417,6 +433,14 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
     _currentChord = null;
     _currentLyric = null;
 
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _subscribeMidiPlayerStreams(MidiPlayer mPlayer) {
     _posSub = mPlayer.positionStream.listen((pos) {
       if (mounted) {
         setState(() {
@@ -488,12 +512,6 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
         });
       }
     });
-
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
-    }
   }
 
   void _setLoopStart() {
@@ -1399,6 +1417,19 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
     );
   }
 
+  bool get _hasGlobalFx {
+    const masterRack = SoundFontGlobalFilters();
+    for (final type in SoundFontFilterType.values) {
+      if (masterRack.isActive(type)) return true;
+    }
+    for (var i = 0; i < 8; i++) {
+      if (SoundFontVst3Manager.instance.getMasterEffect(i) != null) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   Widget _buildTracksHeaderCorner(int activeCount, int usedCount) {
     return MidiTracksHeaderCorner(
       activeCount: activeCount,
@@ -1409,7 +1440,44 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
           _showAllChannels = !_showAllChannels;
         });
       },
+      hasGlobalVst3: _midiPlayer?.globalVst3Instrument != null,
+      onOpenGlobalVst3Picker: _openGlobalVst3InstrumentPicker,
+      hasGlobalFx: _hasGlobalFx,
+      onOpenGlobalFxRack: _openGlobalFxRack,
     );
+  }
+
+  Future<void> _openGlobalVst3InstrumentPicker() async {
+    if (_midiPlayer == null) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return ChannelVst3InstrumentDialog(
+          channel: null,
+          midiPlayer: _midiPlayer!,
+        );
+      },
+    );
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _openGlobalFxRack() async {
+    if (_midiPlayer == null) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return ChannelFxRackDialog(
+          channel: null,
+          midiPlayer: _midiPlayer!,
+          instrumentName: 'All 16 Channels',
+        );
+      },
+    );
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _openChannelInstrumentPicker(int chIndex) async {
@@ -1427,7 +1495,6 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
           bundledSoundFonts: _bundledSoundFonts,
           currentPlayer: chState.customPlayer,
           currentPreset: chState.presetOverride,
-          midiPlayer: _midiPlayer,
           onLoadFromFile: _loadSoundFontPlayerFromFile,
           onLoadFromAsset: _loadSoundFontPlayerFromAsset,
         );
@@ -1446,7 +1513,21 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
         );
         await _midiPlayer!.preloadChannelPreset(chIndex);
       }
+      setState(() {});
     }
+  }
+
+  Future<void> _openChannelVst3InstrumentPicker(int chIndex) async {
+    if (_midiPlayer == null) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return ChannelVst3InstrumentDialog(
+          channel: chIndex,
+          midiPlayer: _midiPlayer!,
+        );
+      },
+    );
     if (mounted) {
       setState(() {});
     }
@@ -1497,6 +1578,8 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
         });
       },
       onOpenInstrumentPicker: () => _openChannelInstrumentPicker(chIndex),
+      onOpenVst3InstrumentPicker: () =>
+          _openChannelVst3InstrumentPicker(chIndex),
       onOpenFxRack: () => _openChannelFxRack(chIndex),
     );
   }
@@ -1920,6 +2003,29 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
         keyCount: 49, // 4 octaves
         activeKeys: _activeKeys,
         onNoteDown: (note, vel) {
+          final midiPlayer = _midiPlayer;
+          if (midiPlayer != null) {
+            final globalVst3 = midiPlayer.globalVst3Instrument;
+            if (globalVst3 != null && !globalVst3.isDisposed) {
+              globalVst3.noteOn(
+                pitch: note,
+                velocity: (vel / 127.0).clamp(0.0, 1.0),
+                channel: 0,
+              );
+              return;
+            }
+            for (final ch in midiPlayer.channels) {
+              final vst3 = ch.vst3Instrument;
+              if (vst3 != null && !vst3.isDisposed) {
+                vst3.noteOn(
+                  pitch: note,
+                  velocity: (vel / 127.0).clamp(0.0, 1.0),
+                  channel: ch.channel,
+                );
+                return;
+              }
+            }
+          }
           if (_sfPlayer != null) {
             final preset =
                 _forcedPreset ??
@@ -1932,6 +2038,21 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
           }
         },
         onNoteUp: (note) {
+          final midiPlayer = _midiPlayer;
+          if (midiPlayer != null) {
+            final globalVst3 = midiPlayer.globalVst3Instrument;
+            if (globalVst3 != null && !globalVst3.isDisposed) {
+              globalVst3.noteOff(pitch: note, channel: 0);
+              return;
+            }
+            for (final ch in midiPlayer.channels) {
+              final vst3 = ch.vst3Instrument;
+              if (vst3 != null && !vst3.isDisposed) {
+                vst3.noteOff(pitch: note, channel: ch.channel);
+                return;
+              }
+            }
+          }
           _sfPlayer?.noteOff(note);
         },
       ),

@@ -119,14 +119,18 @@ class SoundFontVoice {
     }
 
     final fadeDuration = duration;
+    final effectiveAtTime = atTime ??
+        (SoLoud.instance.isInitialized
+            ? SoLoud.instance.getPlayheadTime()
+            : null);
 
     for (final handle in handles) {
       if (!SoLoud.instance.getIsValidVoiceHandle(handle)) continue;
       try {
-        if (atTime != null) {
+        if (effectiveAtTime != null) {
           SoLoud.instance.fadeScheduled(
             handle,
-            atTime,
+            effectiveAtTime,
             0.0,
             fadeDuration,
             thenStop: true,

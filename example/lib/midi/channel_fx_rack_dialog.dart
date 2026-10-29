@@ -10,10 +10,11 @@ import 'package:soundfont_kit/soundfont_kit.dart';
 
 import '../piano/rotary_knob.dart';
 
-/// Modal dialog for managing per-channel VST3 Audio Effects (`Slot 1..8`)
-/// and built-in DSP filters on a MIDI channel's mixing [Bus].
+/// Modal dialog for managing VST3 Audio Effects (`Slot 1..8`) and built-in DSP
+/// filters either on a specific MIDI channel's mixing [Bus] (`channel != null`)
+/// or globally on the Master output (`channel == null`).
 class ChannelFxRackDialog extends StatefulWidget {
-  final int channel;
+  final int? channel;
   final MidiPlayer midiPlayer;
   final String instrumentName;
 
@@ -29,20 +30,30 @@ class ChannelFxRackDialog extends StatefulWidget {
 }
 
 class _ChannelFxRackDialogState extends State<ChannelFxRackDialog> {
-  late final MidiChannelState _chState;
+  static final Map<String, String> _slotNames = {};
+
+  MidiChannelState? _chState;
   late final SoundFontFilterRack _rack;
   List<DiscoveredVst3Plugin> _discoveredVst3Effects = const [];
-  final Map<int, String> _slotNames = {};
+
+  bool get _isGlobal => widget.channel == null;
 
   bool get _isDesktop =>
       !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
 
+  String _slotKey(int slotIndex) =>
+      _isGlobal ? 'master:$slotIndex' : 'ch:${widget.channel}:$slotIndex';
+
   @override
   void initState() {
     super.initState();
-    _chState = widget.midiPlayer.channels[widget.channel];
-    _chState.ensureBus();
-    _rack = _chState.filterRack;
+    if (_isGlobal) {
+      _rack = const SoundFontGlobalFilters();
+    } else {
+      _chState = widget.midiPlayer.channels[widget.channel!];
+      _chState!.ensureBus();
+      _rack = _chState!.filterRack;
+    }
 
     if (SoundFontVst3Manager.instance.isSupported) {
       _scanSystemVst3Effects();
@@ -64,23 +75,29 @@ class _ChannelFxRackDialogState extends State<ChannelFxRackDialog> {
     String? classUid,
     String? displayName,
   }) async {
-    final bus = _chState.ensureBus();
     try {
-      final fx = SoundFontVst3Manager.instance.loadBusEffect(
-        bus: bus,
-        slotIndex: slotIndex,
-        bundlePath: bundlePath,
-        classUid: classUid,
-      );
-      _slotNames[slotIndex] =
-          displayName ?? p.basenameWithoutExtension(bundlePath);
+      final fx = _isGlobal
+          ? SoundFontVst3Manager.instance.loadMasterEffect(
+              slotIndex: slotIndex,
+              bundlePath: bundlePath,
+              classUid: classUid,
+            )
+          : SoundFontVst3Manager.instance.loadBusEffect(
+              bus: _chState!.ensureBus(),
+              slotIndex: slotIndex,
+              bundlePath: bundlePath,
+              classUid: classUid,
+            );
+      final name = displayName ?? p.basenameWithoutExtension(bundlePath);
+      _slotNames[_slotKey(slotIndex)] = name;
       if (mounted) {
         setState(() {});
       }
       if (fx.hasEditor) {
         fx.openEditorWindow(
-          title:
-              'Ch ${widget.channel + 1} FX #${slotIndex + 1} — ${_slotNames[slotIndex]}',
+          title: _isGlobal
+              ? 'Master FX #${slotIndex + 1} — $name'
+              : 'Ch ${widget.channel! + 1} FX #${slotIndex + 1} — $name',
         );
       }
     } catch (e) {
@@ -117,7 +134,7 @@ class _ChannelFxRackDialogState extends State<ChannelFxRackDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final bus = _chState.ensureBus();
+    final bus = _isGlobal ? null : _chState!.ensureBus();
     final builtInTypes = SoundFontFilterType.values
         .where((t) => !t.isCustomSlot)
         .toList();
@@ -139,7 +156,9 @@ class _ChannelFxRackDialogState extends State<ChannelFxRackDialog> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Channel ${widget.channel + 1} FX & VST3 Rack — ${widget.instrumentName}',
+                    _isGlobal
+                        ? 'Global Master FX & VST3 Effect Rack (All Channels)'
+                        : 'Channel ${widget.channel! + 1} FX & VST3 Rack — ${widget.instrumentName}',
                     style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.bold,
@@ -155,7 +174,12 @@ class _ChannelFxRackDialogState extends State<ChannelFxRackDialog> {
                   ),
                   onPressed: () {
                     for (var i = 0; i < 8; i++) {
-                      SoundFontVst3Manager.instance.unloadBusEffect(bus, i);
+                      if (_isGlobal) {
+                        SoundFontVst3Manager.instance.unloadMasterEffect(i);
+                      } else {
+                        SoundFontVst3Manager.instance.unloadBusEffect(bus!, i);
+                      }
+                      _slotNames.remove(_slotKey(i));
                     }
                     _rack.deactivateAll();
                     setState(() {});
@@ -171,7 +195,7 @@ class _ChannelFxRackDialogState extends State<ChannelFxRackDialog> {
             Expanded(
               child: ListView(
                 children: [
-                  // 1. Desktop VST3 Effect Insert Slots (Slots 1..4 shown compactly, expandable to 8)
+                  // 1. Desktop VST3 Effect Insert Slots (Slots 1..4)
                   if (_isDesktop) ...[
                     Container(
                       padding: const EdgeInsets.all(12),
@@ -185,17 +209,19 @@ class _ChannelFxRackDialogState extends State<ChannelFxRackDialog> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Row(
+                          Row(
                             children: [
-                              Icon(
+                              const Icon(
                                 Icons.extension,
                                 size: 15,
                                 color: Color(0xFF69F0AE),
                               ),
-                              SizedBox(width: 6),
+                              const SizedBox(width: 6),
                               Text(
-                                'VST3 AUDIO EFFECT INSERTS (PER-CHANNEL BUS)',
-                                style: TextStyle(
+                                _isGlobal
+                                    ? 'VST3 AUDIO EFFECT INSERTS (GLOBAL MASTER BUS)'
+                                    : 'VST3 AUDIO EFFECT INSERTS (PER-CHANNEL BUS)',
+                                style: const TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.bold,
                                   letterSpacing: 0.8,
@@ -222,12 +248,14 @@ class _ChannelFxRackDialogState extends State<ChannelFxRackDialog> {
                     const SizedBox(height: 14),
                   ],
 
-                  // 2. Built-in SoLoud Per-Channel Bus DSP Filters
-                  const Padding(
-                    padding: EdgeInsets.only(left: 4, bottom: 6),
+                  // 2. Built-in SoLoud DSP Filters
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4, bottom: 6),
                     child: Text(
-                      'BUILT-IN CHANNEL BUS DSP FILTERS',
-                      style: TextStyle(
+                      _isGlobal
+                          ? 'BUILT-IN GLOBAL MASTER DSP FILTERS'
+                          : 'BUILT-IN CHANNEL BUS DSP FILTERS',
+                      style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 0.8,
@@ -259,10 +287,13 @@ class _ChannelFxRackDialogState extends State<ChannelFxRackDialog> {
   }
 
   Widget _buildVst3SlotRow(dynamic bus, int slotIdx) {
-    final loadedFx = SoundFontVst3Manager.instance.getBusEffect(bus, slotIdx);
+    final loadedFx = _isGlobal
+        ? SoundFontVst3Manager.instance.getMasterEffect(slotIdx)
+        : SoundFontVst3Manager.instance.getBusEffect(bus, slotIdx);
     final slotType = SoundFontFilterType.fromCustomSlotIndex(slotIdx);
     final params = _rack.getParameters(slotType);
     final wetParam = params.isNotEmpty ? params.first : null;
+    final slotName = _slotNames[_slotKey(slotIdx)] ?? 'VST3 Effect Loaded';
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),
@@ -300,9 +331,7 @@ class _ChannelFxRackDialogState extends State<ChannelFxRackDialog> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              loadedFx != null
-                  ? (_slotNames[slotIdx] ?? 'VST3 Effect Loaded')
-                  : 'Empty Insert Slot',
+              loadedFx != null ? slotName : 'Empty Insert Slot',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: loadedFx != null
@@ -410,8 +439,9 @@ class _ChannelFxRackDialogState extends State<ChannelFxRackDialog> {
                   visualDensity: VisualDensity.compact,
                 ),
                 onPressed: () => loadedFx.openEditorWindow(
-                  title:
-                      'Ch ${widget.channel + 1} FX #${slotIdx + 1} — ${_slotNames[slotIdx] ?? "VST3 FX"}',
+                  title: _isGlobal
+                      ? 'Master FX #${slotIdx + 1} — $slotName'
+                      : 'Ch ${widget.channel! + 1} FX #${slotIdx + 1} — $slotName',
                 ),
               ),
             ],
@@ -425,8 +455,12 @@ class _ChannelFxRackDialogState extends State<ChannelFxRackDialog> {
               visualDensity: VisualDensity.compact,
               tooltip: 'Remove VST3 Effect',
               onPressed: () {
-                SoundFontVst3Manager.instance.unloadBusEffect(bus, slotIdx);
-                _slotNames.remove(slotIdx);
+                if (_isGlobal) {
+                  SoundFontVst3Manager.instance.unloadMasterEffect(slotIdx);
+                } else {
+                  SoundFontVst3Manager.instance.unloadBusEffect(bus!, slotIdx);
+                }
+                _slotNames.remove(_slotKey(slotIdx));
                 setState(() {});
               },
             ),
