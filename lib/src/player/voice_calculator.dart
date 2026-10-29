@@ -159,4 +159,90 @@ class VoiceCalculator {
     final micros = (effectiveSec * 1000000).round();
     return Duration(microseconds: math.max(1000, micros));
   }
+
+  /// Resolves the 5 pre-release stages of the 6-stage DAHDSR Volume Envelope:
+  /// Delay, Attack, Hold, Decay, and linear Sustain target volume.
+  static ({
+    Duration delay,
+    Duration attack,
+    Duration hold,
+    Duration decay,
+    double sustainVolume,
+  })
+  calculateVolEnvStages({
+    Zone? zone,
+    Zone? presetZone,
+    required double peakVolume,
+  }) {
+    final delaySec = zone?.volEnvDelay ?? presetZone?.volEnvDelay ?? 0.0;
+    final attackSec = zone?.volEnvAttack ?? presetZone?.volEnvAttack ?? 0.0;
+    final holdSec = zone?.volEnvHold ?? presetZone?.volEnvHold ?? 0.0;
+    final decaySec = zone?.volEnvDecay ?? presetZone?.volEnvDecay ?? 0.0;
+    final rawSustain = zone?.volEnvSustain ?? presetZone?.volEnvSustain;
+
+    double sustainRatio = 1.0;
+    if (rawSustain != null) {
+      if (zone?.opcodes.containsKey('ampeg_sustain') == true) {
+        // SFZ ampeg_sustain is percentage 0..100
+        sustainRatio = (rawSustain / 100.0).clamp(0.0, 1.0);
+      } else {
+        // SF2 generator 37 is stored as gens[37] / 1000.0 where 1.0 = 100 dB attenuation
+        final attenDb = (rawSustain * 100.0).clamp(0.0, 144.0);
+        sustainRatio = attenDb >= 100.0
+            ? 0.0
+            : math.pow(10.0, -attenDb / 20.0).toDouble();
+      }
+    }
+
+    Duration toDur(double sec) => sec > 0.001
+        ? Duration(microseconds: (sec * 1000000).round())
+        : Duration.zero;
+
+    return (
+      delay: toDur(delaySec),
+      attack: toDur(attackSec),
+      hold: toDur(holdSec),
+      decay: toDur(decaySec),
+      sustainVolume: (peakVolume * sustainRatio).clamp(0.0, 2.0),
+    );
+  }
+
+  /// Resolves per-voice low-pass filter cutoff (Hz) and resonance Q from
+  /// instrument and preset zones.
+  static ({bool enabled, double cutoffHz, double resonanceQ})
+  calculateFilterParams({Zone? zone, Zone? presetZone}) {
+    final cutoff =
+        zone?.initialFilterCutoff ?? presetZone?.initialFilterCutoff;
+    final qDb = zone?.initialFilterQ ?? presetZone?.initialFilterQ ?? 0.0;
+
+    if (cutoff == null && qDb <= 0.0) {
+      return (enabled: false, cutoffHz: 20000.0, resonanceQ: 0.707);
+    }
+
+    final effectiveCutoff = (cutoff ?? 19900.0).clamp(20.0, 20000.0);
+    if (effectiveCutoff >= 18500.0 && qDb <= 0.5) {
+      return (enabled: false, cutoffHz: effectiveCutoff, resonanceQ: 0.707);
+    }
+
+    // Convert resonance in dB (0..96 dB) to SoLoud Biquad / SVF Q factor (0.707..20.0)
+    final linearQ = (0.707 * math.pow(10.0, qDb / 40.0)).clamp(0.5, 25.0);
+    return (
+      enabled: true,
+      cutoffHz: effectiveCutoff,
+      resonanceQ: linearQ.toDouble(),
+    );
+  }
+
+  /// Resolves the Exclusive Class (choke group) and Off-By group IDs for a zone.
+  static ({int? exclusiveClass, int? offByGroup}) resolveExclusiveClass({
+    Zone? zone,
+    Zone? presetZone,
+  }) {
+    final exc = zone?.exclusiveClass ?? presetZone?.exclusiveClass;
+    final offBy = zone?.offByGroup ?? presetZone?.offByGroup ?? exc;
+    if (exc == null || exc <= 0) {
+      return (exclusiveClass: null, offByGroup: null);
+    }
+    return (exclusiveClass: exc, offByGroup: offBy);
+  }
 }

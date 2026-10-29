@@ -1,6 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter_soloud/flutter_soloud.dart';
 
-/// Represents one or more active [SoundHandle] instances triggered for a note.
+import 'realtime_synthesizer.dart';
+
+/// Represents one or more active [SoundHandle] (or worker-isolate voice)
+/// instances triggered for a note.
 class SoundFontVoice {
   /// The MIDI key (0..127) for this voice.
   final int key;
@@ -29,6 +34,17 @@ class SoundFontVoice {
   /// The baseline stereo pan per handle (-1.0 to 1.0).
   final List<double> basePans;
 
+  /// Exclusive class (choke group) IDs associated with this voice (SF2 Gen 57 / SFZ `group`).
+  final Set<int> exclusiveClasses;
+
+  /// Worker-isolate voice IDs when played via [RealtimeSoundFontSynthesizer].
+  final List<int> realtimeVoiceIds;
+
+  /// Backing [RealtimeSoundFontSynthesizer] when played in isolate synth mode.
+  final RealtimeSoundFontSynthesizer? realtimeSynth;
+
+  final List<Timer> _envelopeTimers = [];
+
   bool _isReleased = false;
 
   /// Whether note-off release has already been triggered for this voice.
@@ -44,12 +60,45 @@ class SoundFontVoice {
     List<double>? baseSpeeds,
     List<double>? baseVolumes,
     List<double>? basePans,
+    Set<int>? exclusiveClasses,
+    this.realtimeVoiceIds = const [],
+    this.realtimeSynth,
   }) : baseSpeeds = baseSpeeds ?? List.filled(handles.length, 1.0),
        baseVolumes = baseVolumes ?? List.filled(handles.length, 1.0),
-       basePans = basePans ?? List.filled(handles.length, 0.0);
+       basePans = basePans ?? List.filled(handles.length, 0.0),
+       exclusiveClasses = exclusiveClasses ?? const {};
+
+  /// Registers an internal DAHDSR stage timer that will be automatically
+  /// cancelled if the voice is released or stopped early.
+  void addEnvelopeTimer(Timer timer) {
+    if (_isReleased) {
+      timer.cancel();
+      return;
+    }
+    _envelopeTimers.add(timer);
+  }
+
+  void _cancelEnvelopeTimers() {
+    for (final t in _envelopeTimers) {
+      t.cancel();
+    }
+    _envelopeTimers.clear();
+  }
+
+  /// Fast 5 ms anti-click choke used when an Exclusive Class (`exclusiveClass` / `off_by`)
+  /// group is re-triggered (e.g. Closed Hi-Hat choking Open Hi-Hat).
+  Future<void> choke({Duration? atTime}) async {
+    if (_isReleased) return;
+    _cancelEnvelopeTimers();
+    await release(
+      customRelease: const Duration(milliseconds: 6),
+      atTime: atTime,
+    );
+  }
 
   /// Triggers note-off volume fade and stop on the audio engine timeline.
   Future<void> release({Duration? customRelease, Duration? atTime}) async {
+    _cancelEnvelopeTimers();
     if (customRelease != null && customRelease <= Duration.zero) {
       await stop();
       return;
@@ -61,6 +110,12 @@ class SoundFontVoice {
     if (duration <= Duration.zero) {
       await stop();
       return;
+    }
+
+    if (realtimeSynth != null && realtimeVoiceIds.isNotEmpty) {
+      for (final id in realtimeVoiceIds) {
+        realtimeSynth!.releaseVoiceId(id, customRelease: duration);
+      }
     }
 
     final fadeDuration = duration;
@@ -90,6 +145,7 @@ class SoundFontVoice {
 
   /// Stops this voice at an absolute engine time with sample accuracy.
   void stopScheduled(Duration atTime) {
+    _cancelEnvelopeTimers();
     _isReleased = true;
     for (final handle in handles) {
       if (!SoLoud.instance.getIsValidVoiceHandle(handle)) continue;
@@ -122,7 +178,13 @@ class SoundFontVoice {
 
   /// Immediately stops all voice handles.
   Future<void> stop() async {
+    _cancelEnvelopeTimers();
     _isReleased = true;
+    if (realtimeSynth != null && realtimeVoiceIds.isNotEmpty) {
+      for (final id in realtimeVoiceIds) {
+        realtimeSynth!.stopVoiceId(id);
+      }
+    }
     for (final handle in handles) {
       if (!SoLoud.instance.getIsValidVoiceHandle(handle)) continue;
       try {
@@ -134,6 +196,7 @@ class SoundFontVoice {
   /// Dynamically applies a relative pitch bend multiplier to all active handles.
   void applyPitchBend(double bendMultiplier) {
     if (_isReleased) return;
+    realtimeSynth?.setPitchBend(bendMultiplier);
     for (int i = 0; i < handles.length; i++) {
       final handle = handles[i];
       if (!SoLoud.instance.getIsValidVoiceHandle(handle)) continue;

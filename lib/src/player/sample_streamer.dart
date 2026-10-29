@@ -1,3 +1,5 @@
+// ignore_for_file: experimental_member_use
+
 import 'dart:async';
 import 'dart:typed_data';
 
@@ -212,6 +214,115 @@ class SampleStreamer {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Creates a low-latency, lock-free [RealtimeStreamHandle] via
+  /// [SoLoud.setRealtimeStream] for uncompressed PCM samples (`pcm16` or
+  /// `pcmFloat32`), utilizing SIMD (`NEON`/`SSE2`) de-interleaving and
+  /// retroactive playing-window injection.
+  static RealtimeStreamHandle openRealtimeSampleStream({
+    required SoundFontFile soundFont,
+    required SampleInfo sample,
+    Uint8List? preloadedBytes,
+    int chunkSize = 16384,
+    int bufferFrames = 65536,
+    int historyFrames = 4096,
+  }) {
+    final format = sample.compression == SampleCompression.pcmFloat32
+        ? BufferType.f32le
+        : BufferType.s16le;
+    final channels = resolveChannels(sample.channels);
+    final effectiveRate = sample.sampleRate > 0 ? sample.sampleRate : 44100;
+
+    final stream = SoLoud.instance.setRealtimeStream(
+      sampleRate: effectiveRate,
+      channels: channels,
+      format: format,
+      bufferFrames: bufferFrames,
+      historyFrames: historyFrames,
+    );
+
+    if (preloadedBytes != null && preloadedBytes.isNotEmpty) {
+      _feedRealtimeBytesSync(stream, preloadedBytes, format);
+    } else {
+      _feedRealtimeStreamAsync(
+        stream,
+        soundFont.getSampleByteStream(sample, chunkSize: chunkSize),
+        format,
+      );
+    }
+
+    return stream;
+  }
+
+  /// Creates a low-latency, lock-free [RealtimeStreamHandle] for pre-joined
+  /// stereo 16-bit PCM bytes.
+  static RealtimeStreamHandle openRealtimeStereoPcmStream({
+    required Uint8List stereoPcmBytes,
+    required int sampleRate,
+    int bufferFrames = 65536,
+    int historyFrames = 4096,
+  }) {
+    final effectiveRate = sampleRate > 0 ? sampleRate : 44100;
+    final stream = SoLoud.instance.setRealtimeStream(
+      sampleRate: effectiveRate,
+      channels: Channels.stereo,
+      format: BufferType.s16le,
+      bufferFrames: bufferFrames,
+      historyFrames: historyFrames,
+    );
+    _feedRealtimeBytesSync(stream, stereoPcmBytes, BufferType.s16le);
+    return stream;
+  }
+
+  static void _feedRealtimeBytesSync(
+    RealtimeStreamHandle stream,
+    Uint8List bytes,
+    BufferType format,
+  ) {
+    try {
+      if (format == BufferType.f32le) {
+        final aligned =
+            (bytes.offsetInBytes % 4 == 0 && bytes.lengthInBytes % 4 == 0)
+            ? Float32List.view(
+                bytes.buffer,
+                bytes.offsetInBytes,
+                bytes.lengthInBytes ~/ 4,
+              )
+            : Uint8List.fromList(bytes).buffer.asFloat32List();
+        stream.pushFloat32(aligned);
+      } else {
+        final aligned =
+            (bytes.offsetInBytes.isEven && bytes.lengthInBytes.isEven)
+            ? Int16List.view(
+                bytes.buffer,
+                bytes.offsetInBytes,
+                bytes.lengthInBytes ~/ 2,
+              )
+            : Uint8List.fromList(bytes).buffer.asInt16List();
+        stream.pushInt16(aligned);
+      }
+    } catch (_) {
+      // Source may have been stopped or disposed early
+    }
+  }
+
+  static void _feedRealtimeStreamAsync(
+    RealtimeStreamHandle stream,
+    Stream<Uint8List> byteStream,
+    BufferType format,
+  ) {
+    scheduleMicrotask(() async {
+      try {
+        await for (final chunk in byteStream) {
+          if (chunk.isNotEmpty) {
+            _feedRealtimeBytesSync(stream, chunk, format);
+          }
+        }
+      } catch (_) {
+        // Source may have been stopped or disposed early
+      }
+    });
   }
 
   /// Fallback: Sets up a SoLoud buffer stream and streams sample bytes asynchronously.

@@ -33,11 +33,11 @@ void main() async {
 
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize SoLoud audio engine
+  // Initialize SoLoud audio engine with retroactive render-ahead ring buffer
   await SoLoud.instance.init(
     bufferSize: 1024,
     devicePeriodFrames: 128,
-    renderAheadFrames: 0,
+    renderAheadFrames: 1024,
   );
   SoLoud.instance.setMaxActiveVoiceCount(512);
   SoLoud.instance.setAudioDeviceIdleTimeout(null);
@@ -1427,6 +1427,7 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
           bundledSoundFonts: _bundledSoundFonts,
           currentPlayer: chState.customPlayer,
           currentPreset: chState.presetOverride,
+          midiPlayer: _midiPlayer,
           onLoadFromFile: _loadSoundFontPlayerFromFile,
           onLoadFromAsset: _loadSoundFontPlayerFromAsset,
         );

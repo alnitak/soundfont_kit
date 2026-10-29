@@ -1,3 +1,5 @@
+// ignore_for_file: experimental_member_use
+
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -14,6 +16,7 @@ class ChannelInstrumentPickerDialog extends StatefulWidget {
   final List<String> bundledSoundFonts;
   final SoundFontPlayer? currentPlayer;
   final Preset? currentPreset;
+  final MidiPlayer? midiPlayer;
   final Future<SoundFontPlayer?> Function(File file) onLoadFromFile;
   final Future<SoundFontPlayer?> Function(String assetPath) onLoadFromAsset;
 
@@ -26,6 +29,7 @@ class ChannelInstrumentPickerDialog extends StatefulWidget {
     required this.bundledSoundFonts,
     required this.currentPlayer,
     required this.currentPreset,
+    this.midiPlayer,
     required this.onLoadFromFile,
     required this.onLoadFromAsset,
   });
@@ -137,6 +141,51 @@ class _ChannelInstrumentPickerDialogState
         voice.release();
       });
     });
+  }
+
+  Future<void> _pickVst3Instrument() async {
+    if (widget.midiPlayer == null) return;
+    String? path;
+    if (Platform.isMacOS) {
+      path = await FilePicker.getDirectoryPath(
+        dialogTitle: 'Select a .vst3 Virtual Instrument Bundle',
+      );
+    } else {
+      final picked = await FilePicker.pickFile(
+        dialogTitle: 'Select a .vst3 Virtual Instrument Plugin',
+        type: FileType.custom,
+        allowedExtensions: ['vst3'],
+      );
+      path = picked?.path;
+    }
+    if (path == null || path.isEmpty) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+    final inst = SoundFontVst3Manager.instance.loadInstrument(
+      bundlePath: path,
+      autoPlay: false,
+    );
+    if (!mounted) return;
+    setState(() {
+      _isLoading = false;
+    });
+    if (inst != null) {
+      widget.midiPlayer!.setChannelVst3Instrument(
+        widget.channel,
+        inst,
+        name: p.basenameWithoutExtension(path),
+      );
+      setState(() {});
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to load VST3 Instrument from $path'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
   }
 
   @override
@@ -297,6 +346,105 @@ class _ChannelInstrumentPickerDialogState
                       ),
                     ],
                   ),
+                  if (SoundFontVst3Manager.instance.isSupported &&
+                      widget.midiPlayer != null) ...[
+                    const Divider(height: 16, color: Colors.white12),
+                    Builder(
+                      builder: (context) {
+                        final chState =
+                            widget.midiPlayer!.channels[widget.channel];
+                        final activeVst3 = chState.vst3Instrument;
+                        return Row(
+                          children: [
+                            const Icon(
+                              Icons.extension,
+                              size: 15,
+                              color: Color(0xFF69F0AE),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                activeVst3 != null
+                                    ? 'VST3 Synth: ${chState.vst3InstrumentName ?? "Loaded"}'
+                                    : 'Desktop VST3 Virtual Instrument (Optional)',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: activeVst3 != null
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  color: activeVst3 != null
+                                      ? const Color(0xFF69F0AE)
+                                      : Colors.white60,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            OutlinedButton.icon(
+                              icon: const Icon(Icons.piano, size: 13),
+                              label: Text(
+                                activeVst3 != null
+                                    ? 'Replace .vst3...'
+                                    : 'Load .vst3 Synth...',
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF69F0AE),
+                                side: const BorderSide(
+                                  color: Color(0xFF69F0AE),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 6,
+                                ),
+                              ),
+                              onPressed:
+                                  _isLoading ? null : _pickVst3Instrument,
+                            ),
+                            if (activeVst3 != null) ...[
+                              const SizedBox(width: 6),
+                              ElevatedButton.icon(
+                                icon: const Icon(Icons.open_in_new, size: 13),
+                                label: const Text(
+                                  'VST3 GUI',
+                                  style: TextStyle(fontSize: 11),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF6C63FF),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 6,
+                                  ),
+                                ),
+                                onPressed: () => activeVst3.openEditorWindow(
+                                  title:
+                                      'Ch ${widget.channel + 1} — ${chState.vst3InstrumentName ?? "VST3 Synth"}',
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  size: 16,
+                                  color: Colors.redAccent,
+                                ),
+                                tooltip: 'Unload VST3 Instrument',
+                                onPressed: () {
+                                  widget.midiPlayer!.setChannelVst3Instrument(
+                                    widget.channel,
+                                    null,
+                                  );
+                                  SoundFontVst3Manager.instance
+                                      .unloadInstrument(activeVst3);
+                                  setState(() {});
+                                },
+                              ),
+                            ],
+                          ],
+                        );
+                      },
+                    ),
+                  ],
                 ],
               ),
             ),

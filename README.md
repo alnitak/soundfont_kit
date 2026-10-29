@@ -1,6 +1,6 @@
 # SoundFont Kit
 
-A high-performance, pure Dart reader and playback engine for SoundFont files (**SF2**, **SF3**, and **SFZ**), powered by the [flutter_soloud](https://pub.dev/packages/flutter_soloud) low-latency audio engine.
+A high-performance, pure Dart reader, synthesizer, and playback engine for SoundFont files (**SF2**, **SF3**, and **SFZ**) and Standard MIDI Files (**SMF 0 & 1**), powered by the [flutter_soloud](https://pub.dev/packages/flutter_soloud) low-latency audio engine.
 
 ---
 
@@ -9,29 +9,31 @@ A high-performance, pure Dart reader and playback engine for SoundFont files (**
 - See [***web example***](https://marcobavagnoli.com/soundfont/)
 - See [***piano 3D***](https://marcobavagnoli.com/piano_3d) web example which uses [flutter_scene](https://pub.dev/packages/flutter_scene)
 - **Multi-Format Support**:
-  - **SF2** (SoundFont 2.04) — Full RIFF/sfbk parser (presets, instruments, zones, generators, modulators, and 16-bit PCM samples).
+  - **SF2** (SoundFont 2.04) — Full RIFF/sfbk parser (presets, instruments, zones, 6-stage DAHDSR envelopes, resonant filter cutoffs/Q, LFOs, exclusive choke groups, and 16-bit PCM samples).
   - **SF3** (SoundFont 3.0) — OGG Vorbis compressed sample streams with sub-chunk header extraction.
-  - **SFZ** (SFZ Instrument Definitions) — Parses opcode definitions and links to external `.wav`, `.flac`, or `.ogg` audio files.
+  - **SFZ** (SFZ Instrument Definitions) — Parses opcode definitions (`ampeg_*`, `fileg_*`, `pitcheg_*`, `pitchlfo_*`, `cutoff`, `resonance`, `group`, `off_by`, etc.) and links to external `.wav`, `.flac`, or `.ogg` audio files.
   - **Compressed Archives** — Transparently loads compressed archives (`.zip`, `.gz`, `.bz2`, `.tar`, `.tgz`, `.tbz2`) containing SoundFonts and loose sample hierarchies.
 - **Flexible Data Sources**:
   - Load from Flutter Assets (`SoundFontFile.fromAsset`).
   - Load from Local Disk (`SoundFontFile.fromFile`).
   - Load from In-Memory Byte Buffers (`SoundFontFile.fromBytes`).
   - Load from Remote HTTP URLs (`SoundFontFile.fromUrl`).
-- **High-Performance Audio Playback with `flutter_soloud`**:
-  - **Sample-Accurate Scheduling** using `playScheduled`, `fadeScheduled`, and `stopScheduled` on the native engine clock.
-  - **Real-Time Synthesis**: Pitch calculation, root key tracking, key-to-pitch scaling, MIDI velocity sensitivity, attenuation, panning, and loop points.
+- **Dual Synthesis Engine (`SoundFontSynthMode`)**:
+  - **`SoundFontSynthMode.soloudVoices` (Default)**: Plays each zone as a SoLoud `AudioSource` voice with sample-accurate `playScheduled` / `fadeScheduled` / `stopScheduled` retroactive playing-window splicing, full **6-stage DAHDSR** volume envelopes, **Exclusive Class (`exclusiveClass` / `off_by`)** voice choking, and per-voice Biquad resonant low-pass filtering.
+  - **`SoundFontSynthMode.realtimeIsolateSynth`**: Synthesizes polyphonic voices inside a dedicated background worker isolate (`RealtimeSoundFontSynthesizer` via `SoLoudIsolate` + `RealtimeStreamFeeder`) with zero-GC native buffers, per-voice Cytomic TPT resonant State-Variable Filters (SVF), 6-stage Volume & Modulation DAHDSR envelopes, ModLFO, and VibLFO across all platforms (including Web).
   - **Stereo Channel Joining**: Automatically interleaves paired Left and Right 16-bit PCM channels into true 2-channel stereo streams with centered mixer balance.
   - **Dynamic Unified Sustain & Release Control**:
     - **Unified Sustain (`sustain`)**: Single master control (`0.0` to `10.0`, default `1.0`) that automatically scales authentic envelopes on SoundFonts that have them, and scales clean fallback release decay on ones that don't.
     - **Fallback Sustain Time (`sustainTime`)**: Configures base fallback release duration (e.g. `0.2s`) for instruments or samples lacking a native release envelope.
     - **Staccato Mode (`sustain: 0.0`)**: Cuts off sound immediately upon key release across all SoundFonts.
-  - **Polyphonic Voice Lifecycle**: Manage note-on/note-off, chords, and polyphonic voice pools.
 - **Sample Preloading**:
-  - Preload all samples into memory upfront (`preloadAll`) for instant zero-latency playback, or stream them on-demand.
+  - Preload all samples into memory upfront (`preloadAll`) for instant zero-latency playback, or stream them on-demand via `SampleStreamer`.
   - Granular preloading per preset (`preloadPreset`) or per instrument (`preloadInstrument`) with real-time progress callbacks.
-- **Global Audio DSP Filters**:
-  - Built-in manager (`SoundFontGlobalFilters`) for `flutter_soloud` effects: **Freeverb**, **Echo/Delay**, **Biquad Resonant Filter**, **Flanger**, **Bass Boost**, **Lo-Fi**, and **Wave Shaper**.
+- **Global & Per-Bus Audio DSP Filter Racks (`SoundFontFilterRack`)**:
+  - Unified filter controller (`SoundFontFilterRack.global()` and `SoundFontFilterRack.forBus(Bus)`) supporting **Freeverb**, **Echo/Delay**, **Biquad Resonant Filter**, **Flanger**, **Bass Boost**, **Lo-Fi**, **Wave Shaper**, **Compressor**, **Limiter**, **Parametric EQ**, **Pitch Shift**, **Amplitude Modulator**, and **8 Custom C++/Web/VST3 Filter Slots (`customSlot0`..`customSlot7`)** with C++ parameter fades (`fadeParameter`) and LFO oscillation (`oscillateParameter`).
+- **Multi-Channel MIDI Sequencer & Desktop VST3 Hosting (`MidiPlayer` & `SoundFontVst3Manager`)**:
+  - Standard MIDI File (`SMF 0 & 1` and `RIFF/RMID`) parser and 16-channel sequencer with lazy per-channel SoLoud mixing `Bus` routing (`CC 1` Mod Wheel, `CC 91` Reverb Send, `CC 93` Chorus Send), real-time chord detection, and synchronized karaoke lyrics.
+  - **Desktop VST3 Hosting (`macOS`, `Windows`, `Linux`)**: Scan `.vst3` plugin bundles, insert VST3 Audio Effects into global or per-channel custom filter slots (`0..7`), assign VST3 Virtual Instruments (`Vst3InstrumentPlugin`) to any MIDI channel alongside SoundFont channels, and open native OS plugin editor windows (`openEditorWindow`).
 
 ---
 
@@ -43,8 +45,8 @@ Add `soundfont_kit` and `flutter_soloud` to your `pubspec.yaml`:
 dependencies:
   flutter:
     sdk: flutter
-  soundfont_kit: ^1.0.0
-  flutter_soloud: ^3.0.0
+  soundfont_kit: ^1.2.0
+  flutter_soloud: ^4.0.0
 ```
 
 Initialize the `flutter_soloud` audio engine prior to playback (e.g. in your `main()` function):
@@ -57,9 +59,12 @@ import 'package:soundfont_kit/soundfont_kit.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize the SoLoud audio engine
-  await SoLoud.instance.init();
-  SoLoud.instance.setMaxActiveVoiceCount(128);
+  // Initialize the SoLoud audio engine with retroactive render-ahead splicing
+  await SoLoud.instance.init(
+    renderAheadFrames: 1024,
+    devicePeriodFrames: 128,
+  );
+  SoLoud.instance.setMaxActiveVoiceCount(256);
 
   runApp(const MyApp());
 }
@@ -69,7 +74,7 @@ void main() async {
 
 ## AI Agent Skills
 
-`soundfont_kit` includes bundled **Agent Skills** (`SKILL.md` instruction files) to help AI coding agents (Claude, Cursor, Gemini, GitHub Copilot, Cline, Codex, OpenCode, etc.) generate correct, high-performance code for all features and functionalities of this package.
+`soundfont_kit` includes 9 bundled **Agent Skills** (`SKILL.md` instruction files) to help AI coding agents (Claude, Cursor, Gemini, GitHub Copilot, Cline, Codex, OpenCode, etc.) generate correct, high-performance code for all features of this package (`soundfont-kit-loading`, `soundfont-kit-playback`, `soundfont-kit-preloading`, `soundfont-kit-sustain`, `soundfont-kit-scheduling`, `soundfont-kit-filters`, `soundfont-kit-midi`, `soundfont-kit-vst3`, and `soundfont-kit-idioms`).
 
 Install or update the skills in your project by running:
 
@@ -129,19 +134,21 @@ for (final preset in sf.presets) {
 
 ---
 
-### 3. Playing Presets and Instruments
+### 3. Playing Presets, Instruments & Choosing a Synthesis Mode
 
-Create a `SoundFontPlayer` to play presets, instruments, or raw samples:
+Create a `SoundFontPlayer` to play presets, instruments, or raw samples using either `SoundFontSynthMode.soloudVoices` (default) or `SoundFontSynthMode.realtimeIsolateSynth`:
 
 ```dart
 // Create the player instance
 final player = sf.createPlayer(
   options: const SoundFontPlayerOptions(
-    joinStereoChannels: true,       // Join paired L/R mono samples to stereo
-    cacheAudioSources: true,        // Preserve audio buffers in RAM
-    useScheduledPlayback: true,     // Use sample-accurate engine clock
-    sustain: 1.0,                   // 1.0x = authentic release for all SoundFonts
-    sustainTime: 0.20,              // 200ms fallback for items without release
+    synthMode: SoundFontSynthMode.soloudVoices, // or SoundFontSynthMode.realtimeIsolateSynth
+    enablePerVoiceFilter: true,                 // Apply SF2/SFZ resonant filter per voice
+    joinStereoChannels: true,                   // Join paired L/R mono samples to stereo
+    cacheAudioSources: true,                    // Preserve audio buffers in RAM
+    useScheduledPlayback: true,                 // Use sample-accurate engine clock
+    sustain: 1.0,                               // 1.0x = authentic release for all SoundFonts
+    sustainTime: 0.20,                          // 200ms fallback for items without release
   ),
 );
 
@@ -156,6 +163,9 @@ final voice = await player.playPreset(
 // Release the note after 1.5 seconds (triggers release envelope)
 await Future.delayed(const Duration(milliseconds: 1500));
 await voice.release();
+
+// You can also switch synthesis modes dynamically at runtime:
+player.synthMode = SoundFontSynthMode.realtimeIsolateSynth;
 ```
 
 ---
@@ -219,39 +229,48 @@ await player.preloadPreset(preset);
 
 ---
 
-### 7. Applying Global Audio DSP Filters
+### 7. Global & Per-Bus Audio DSP Filters (`SoundFontFilterRack`)
 
-Use `SoundFontGlobalFilters` to apply and modulate audio effects on the master mix:
+Use `SoundFontFilterRack` (aliased as `SoundFontGlobalFilters`) to apply, fade, and oscillate audio effects on the master mix or on any mixing `Bus`:
 
 ```dart
-const filters = SoundFontGlobalFilters();
+// Master filter rack (or SoundFontFilterRack.forBus(bus) for a specific Bus):
+const filters = SoundFontFilterRack.global();
 
-// Activate Freeverb (Reverb)
+// Activate Freeverb (Reverb) and Limiter:
 filters.toggle(SoundFontFilterType.freeverb, true);
+filters.toggle(SoundFontFilterType.limiter, true);
 
-// Adjust parameters:
-final params = filters.getParameters(SoundFontFilterType.freeverb);
-for (final p in params) {
-  if (p.id == 'room_size') {
-    p.setValue(0.8); // 80% room size
-  }
-}
+// Smoothly fade Biquad filter cutoff to 1200 Hz over 1 second on the audio thread:
+filters.toggle(SoundFontFilterType.biquad, true);
+filters.fadeParameter(
+  SoundFontFilterType.biquad,
+  'frequency',
+  to: 1200.0,
+  duration: const Duration(seconds: 1),
+);
 
-// Available global filters:
+// Available built-in & custom filter types:
 // - SoundFontFilterType.freeverb
 // - SoundFontFilterType.echo
-// - SoundFontFilterType.biquad (Low-pass / resonant)
+// - SoundFontFilterType.biquad
 // - SoundFontFilterType.flanger
 // - SoundFontFilterType.bassBoost
 // - SoundFontFilterType.lofi
-// - SoundFontFilterType.waveShaper (Drive / distortion)
+// - SoundFontFilterType.waveShaper
+// - SoundFontFilterType.compressor
+// - SoundFontFilterType.limiter
+// - SoundFontFilterType.parametricEq
+// - SoundFontFilterType.pitchShift
+// - SoundFontFilterType.amplitudeModulator
+// - SoundFontFilterType.customSlot0 .. customSlot7
 ```
 
 ---
 
-### 8. MIDI File Reading & Playback
+### 8. MIDI File Playback, Per-Channel Buses & Desktop VST3 Hosting
 
-`soundfont_kit` includes a built-in Standard MIDI File (**SMF format 0 and 1**) parser and multi-channel sequencer engine:
+`soundfont_kit` includes a built-in Standard MIDI File (**SMF format 0 and 1**) parser, 16-channel sequencer engine (`MidiPlayer`), and desktop VST3 plugin manager (`SoundFontVst3Manager`):
 
 ```dart
 // 1. Load any SoundFont file (SF2, SF3, or SFZ)
@@ -265,70 +284,52 @@ final midi = await MidiReader.fromFile(File('assets/music/song.mid'));
 final midiPlayer = MidiPlayer(player: sfPlayer);
 await midiPlayer.load(midi, autoPreload: true);
 
-// 4. Playback controls
+// 4. Per-channel DSP filter rack (lazily creates a dedicated SoLoud Bus for Channel 0):
+midiPlayer.channels[0].filterRack.toggle(SoundFontFilterType.echo, true);
+
+// 5. Optional (Desktop: macOS, Windows, Linux): Assign a .vst3 Virtual Instrument to Channel 0
+if (SoundFontVst3Manager.instance.isSupported) {
+  final vst3Synth = SoundFontVst3Manager.instance.loadInstrument(
+    bundlePath: '/Library/Audio/Plug-Ins/VST3/Surge XT.vst3',
+    autoPlay: false,
+  );
+  if (vst3Synth != null) {
+    midiPlayer.setChannelVst3Instrument(0, vst3Synth, name: 'Surge XT');
+    vst3Synth.openEditorWindow(title: 'Ch 1 — Surge XT');
+  }
+}
+
+// 6. Playback controls
 await midiPlayer.play();
 await midiPlayer.pause();
 await midiPlayer.seek(const Duration(seconds: 45));
 await midiPlayer.stop();
-
-// Options:
-midiPlayer.speedMultiplier = 1.25; // 1.25x speed
-midiPlayer.looping = true;         // Auto-loop
-midiPlayer.setChannelMute(0, true); // Mute Channel 1
-midiPlayer.setChannelSolo(9, true); // Solo Drum Channel 10
-
-// Force all channels to play through a specific SoundFont preset (e.g. Piano Solo):
-midiPlayer.forcedPresetOverride = sf.presets.first;
 ```
 
 ---
 
 ## Example App Capabilities
 
-The included [`example/`](example) directory contains a complete Flutter desktop, mobile, and web demonstration app featuring:
+The included [`example/`](example) directory contains two full demonstration apps (`lib/main_full.dart` and `lib/main_midi.dart`) featuring:
 
-1. **Interactive SoundFont Inspector**:
+1. **Interactive SoundFont Inspector (`main_full.dart`)**:
    - Tree inspector for Presets, Instruments, Generator Zones, and Raw Sample descriptors.
-   - Raw binary header inspection (RIFF magic, OGG headers, FLAC metadata).
-   - Embedded audio waveform visualization widget (`SampleWaveform`) with:
-     - Real-time animated playhead tracking (red vertical line) driven by `SoLoud.instance.getPosition()`.
-     - Yellow vertical markers indicating `loopStart` and `loopEnd` boundary positions.
-2. **Dynamic Docked Piano Keyboard**:
-   - Resizable docked bottom panel.
-   - Chromatic multi-touch keyboard with vertical touch-velocity sensing (pressing higher on a key plays softer; pressing lower plays louder).
-   - Visual MIDI key numbers and keybinding badges on both white and black keys.
-   - Red indicator dots highlighting the root key and mapped ranges of the currently selected zone/sample.
-   - Full computer keyboard control and navigation:
-     - <kbd>Space</kbd>: Audition currently selected preset, instrument, or sample.
-     - <kbd>▲</kbd> / <kbd>▼</kbd> (Up / Down): Select previous / next item in the active tab list.
-     - <kbd>◄</kbd> / <kbd>►</kbd> (Left / Right): Shift keyboard octave down / up.
-     - <kbd>Canc</kbd> / <kbd>Delete</kbd>: Emergency stop for all playing voices.
-     - <kbd>A</kbd>..<kbd>K</kbd>: 1-octave chromatic QWERTY keyboard mapping.
-     - Top-right App Bar Info button with a built-in keyboard shortcuts guide dialog.
-3. **Rotary Knobs Parameter Rack**:
-   - **`Vol`**: Master volume control.
-   - **`Sus x` (Sustain Multiplier)**: Active when the selected target has native sustain (`0.0x` to `10.0x`).
-   - **`Sus` (Sustain Time)**: Active when the selected target has no native sustain (`0.05s` to `5.0s`).
-4. **Global Audio DSP Filters Rack**:
-   - Dedicated **Filters** button with an active filter counter badge.
-   - Interactive configuration sheet to toggle and adjust multiple global effects in real time:
-     - **Freeverb** (Room Size, Damp, Wet/Dry, Width)
-     - **Echo** (Delay Time, Decay, Filter)
-     - **Biquad Resonant Filter** (Low-pass / Band-pass frequency and resonance)
-     - **Flanger** (Delay, Frequency, Depth)
-     - **Bass Boost** (Boost dB)
-     - **Lo-Fi** (Sample rate reduction & bit depth decimation)
-     - **Wave Shaper** (Drive saturation & distortion)
-5. **File & Folder Pickers**:
-   - Open individual SoundFont files (`.sf2`, `.sf3`, `.sfz`, `.zip`, `.tar.gz`, etc.).
-   - Open entire uncompressed SFZ directory hierarchies with automatic nested sample resolution.
-   - Optional preloading prompt with real-time percentage progress bar.
+   - Embedded audio waveform visualization widget (`SampleWaveform`) with real-time playhead tracking and `loopStart`/`loopEnd` markers.
+   - **Synth Mode Selector**: Switch live between `Voices DAHDSR` (`SoundFontSynthMode.soloudVoices`) and `Isolate SVF` (`SoundFontSynthMode.realtimeIsolateSynth`).
+2. **Dynamic Docked Piano Keyboard & Expanded DSP / VST3 Rack**:
+   - Chromatic multi-touch and computer QWERTY keyboard with velocity sensing.
+   - Scrollable DSP filter rack covering all 12 built-in SoLoud filters (`Freeverb`, `Echo`, `Biquad`, `Flanger`, `Bass Boost`, `Lo-Fi`, `Wave Shaper`, `Compressor`, `Limiter`, `Parametric EQ`, `Pitch Shift`, `Amplitude Modulator`) plus **8 Custom DSP / Desktop VST3 Effect Slots** with `.vst3` bundle picker and `"Open VST3 GUI"` buttons.
+3. **16-Channel MIDI DAW & Hybrid SoundFont / VST3 Sequencer (`main_midi.dart`)**:
+   - Interactive 16-channel timeline, piano roll, chord detector, and synchronized karaoke lyrics banner.
+   - Per-channel instrument picker (`ChannelInstrumentPickerDialog`) supporting multi-SoundFont assignment and desktop `.vst3` Virtual Instrument loading with native VST3 GUI editor windows.
 
-To run the example app:
+To run the example apps:
 
 ```bash
 cd example
-flutter run
+flutter run -t lib/main_full.dart
+# or for the 16-channel MIDI DAW:
+flutter run -t lib/main_midi.dart
 ```
 
 ---

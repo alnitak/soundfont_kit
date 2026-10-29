@@ -69,8 +69,9 @@ class _RotaryKnobState extends State<RotaryKnob> {
   }
 
   void _onPanUpdate(DragUpdateDetails details) {
-    if (!widget.enabled || _dragStartY == null || _dragStartValue == null)
+    if (!widget.enabled || _dragStartY == null || _dragStartValue == null) {
       return;
+    }
 
     final dy = _dragStartY! - details.globalPosition.dy;
     final range = widget.max - widget.min;

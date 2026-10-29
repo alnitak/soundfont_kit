@@ -1,3 +1,8 @@
+// ignore_for_file: experimental_member_use
+
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_soloud/flutter_soloud.dart';
 import 'package:soundfont_kit/soundfont_kit.dart';
@@ -187,7 +192,9 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
   final Set<int> _activeKeys = {};
   double _globalVolume = 1.0;
   double _sustain = 1.0;
+  SoundFontSynthMode _synthMode = SoundFontSynthMode.soloudVoices;
   final SoundFontGlobalFilters _filters = const SoundFontGlobalFilters();
+  final SoundFontVst3Manager _vst3Manager = SoundFontVst3Manager();
   SoundFontFilterType _selectedFilterType = SoundFontFilterType.freeverb;
 
   @override
@@ -196,6 +203,7 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
     _height = widget.initialHeight;
     if (widget.player != null) {
       widget.player!.sustain = _sustain;
+      _synthMode = widget.player!.options.synthMode;
     }
     if (SoLoud.instance.isInitialized) {
       try {
@@ -209,6 +217,9 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
     super.didUpdateWidget(oldWidget);
     if (widget.player != oldWidget.player && widget.player != null) {
       widget.player!.sustain = _sustain;
+      widget.player!.options = widget.player!.options.copyWith(
+        synthMode: _synthMode,
+      );
     }
     if (widget.selectedTarget != oldWidget.selectedTarget) {
       _activeKeys.clear();
@@ -329,25 +340,30 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
                       ),
                     ),
                     const Divider(),
-                    ...SoundFontFilterType.values.map((filterType) {
-                      final isActive = _filters.isActive(filterType);
-                      return CheckboxListTile(
-                        value: isActive,
-                        title: Text(filterType.label),
-                        subtitle: Text(
-                          filterType.description,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                        onChanged: (val) {
-                          _filters.toggle(filterType, val ?? false);
-                          if (val == true) {
-                            _selectedFilterType = filterType;
-                          }
-                          setModalState(() {});
-                          setState(() {});
-                        },
-                      );
-                    }),
+                    Flexible(
+                      child: ListView(
+                        shrinkWrap: true,
+                        children: SoundFontFilterType.values.map((filterType) {
+                          final isActive = _filters.isActive(filterType);
+                          return CheckboxListTile(
+                            value: isActive,
+                            title: Text(filterType.label),
+                            subtitle: Text(
+                              filterType.description,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                            onChanged: (val) {
+                              _filters.toggle(filterType, val ?? false);
+                              if (val == true) {
+                                _selectedFilterType = filterType;
+                              }
+                              setModalState(() {});
+                              setState(() {});
+                            },
+                          );
+                        }).toList(),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -482,6 +498,36 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
                           ],
                         ),
                       ),
+
+                      // Synth Mode Selector (Voices vs Isolate SVF)
+                      if (widget.player != null)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6.0),
+                          child: ChoiceChip(
+                            label: Text(
+                              widget.player!.options.synthMode ==
+                                      SoundFontSynthMode.realtimeIsolateSynth
+                                  ? 'Isolate SVF'
+                                  : 'Voices DAHDSR',
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                            selected:
+                                widget.player!.options.synthMode ==
+                                SoundFontSynthMode.realtimeIsolateSynth,
+                            visualDensity: VisualDensity.compact,
+                            tooltip:
+                                'Toggle between SoLoud Voice Handles (6-stage DAHDSR) and Worker-Isolate Real-Time Synthesizer (SVF + ModEnv + LFO)',
+                            onSelected: (useIsolate) {
+                              setState(() {
+                                _synthMode = useIsolate
+                                    ? SoundFontSynthMode.realtimeIsolateSynth
+                                    : SoundFontSynthMode.soloudVoices;
+                                widget.player!.options = widget.player!.options
+                                    .copyWith(synthMode: _synthMode);
+                              });
+                            },
+                          ),
+                        ),
 
                       // Sustain Knob (unified across all SoundFonts)
                       Padding(
@@ -642,6 +688,76 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
                   ],
 
                   // Rotary knobs for the currently selected filter
+                  if (_selectedFilterType.isCustomSlot &&
+                      _vst3Manager.isSupported) ...[
+                    Builder(
+                      builder: (context) {
+                        final slotIdx = _selectedFilterType.customSlotIndex!;
+                        final loadedFx = _vst3Manager.getMasterEffect(slotIdx);
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            OutlinedButton.icon(
+                              icon: const Icon(Icons.extension, size: 14),
+                              label: Text(
+                                loadedFx != null
+                                    ? 'Replace .vst3'
+                                    : 'Load .vst3 FX',
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              onPressed: () async {
+                                String? path;
+                                if (Platform.isMacOS) {
+                                  path = await FilePicker.getDirectoryPath(
+                                    dialogTitle: 'Select a .vst3 Effect Bundle',
+                                  );
+                                } else {
+                                  final picked = await FilePicker.pickFile(
+                                    dialogTitle: 'Select a .vst3 Effect Bundle',
+                                    type: FileType.custom,
+                                    allowedExtensions: ['vst3'],
+                                  );
+                                  path = picked?.path;
+                                }
+                                if (path != null && path.isNotEmpty) {
+                                  try {
+                                    _vst3Manager.loadMasterEffect(
+                                      slotIndex: slotIdx,
+                                      bundlePath: path,
+                                    );
+                                    setState(() {});
+                                  } catch (_) {}
+                                }
+                              },
+                            ),
+                            if (loadedFx != null && loadedFx.hasEditor) ...[
+                              const SizedBox(width: 6),
+                              FilledButton.tonalIcon(
+                                icon: const Icon(Icons.open_in_new, size: 14),
+                                label: const Text(
+                                  'Open VST3 GUI',
+                                  style: TextStyle(fontSize: 11),
+                                ),
+                                style: FilledButton.styleFrom(
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                onPressed: () {
+                                  loadedFx.openEditorWindow(
+                                    title:
+                                        'VST3 FX Slot ${slotIdx + 1}',
+                                  );
+                                },
+                              ),
+                            ],
+                            const SizedBox(width: 8),
+                          ],
+                        );
+                      },
+                    ),
+                  ],
                   Expanded(
                     child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,

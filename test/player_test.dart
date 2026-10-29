@@ -184,7 +184,7 @@ void main() {
 
     test('SoundFontGlobalFilters exposes all useful global filter types', () {
       const filters = SoundFontGlobalFilters();
-      expect(SoundFontFilterType.values.length, equals(7));
+      expect(SoundFontFilterType.values.length, equals(20));
       for (final type in SoundFontFilterType.values) {
         expect(type.label.isNotEmpty, isTrue);
         expect(type.description.isNotEmpty, isTrue);

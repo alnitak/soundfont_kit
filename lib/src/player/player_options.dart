@@ -1,5 +1,30 @@
+/// Synthesis engine architecture used by [SoundFontPlayer].
+enum SoundFontSynthMode {
+  /// Default mode: Uses SoLoud [AudioSource] voice handles with scheduled
+  /// 6-stage DAHDSR volume fades, retroactive render-ahead splicing,
+  /// Exclusive Class (`exclusiveClass` / `off_by`) voice choking, and
+  /// per-voice biquad resonant filter support.
+  soloudVoices,
+
+  /// Real-time worker-isolate DSP synthesizer powered by `SoLoudIsolate`
+  /// and `RealtimeStreamFeeder` (`RealtimeNativeBuffer`).
+  ///
+  /// Computes sample-accurate 6-stage DAHDSR Volume & Modulation envelopes,
+  /// per-voice resonant State-Variable Filters (SVF) with dynamic modulation,
+  /// ModLFO & VibLFO, and zero-jitter audio-clock sequencing across all
+  /// platforms (including Web).
+  realtimeIsolateSynth,
+}
+
 /// Configuration options for [SoundFontPlayer].
 class SoundFontPlayerOptions {
+  /// Synthesis engine mode (defaults to [SoundFontSynthMode.soloudVoices]).
+  final SoundFontSynthMode synthMode;
+
+  /// Whether to apply per-voice low-pass resonant filters (`initialFilterCutoff`
+  /// and `initialFilterQ`) when specified by SF2/SFZ zones.
+  final bool enablePerVoiceFilter;
+
   /// Whether to automatically interleave and join paired Left and Right
   /// 16-bit PCM channels into a single stereo audio source.
   final bool joinStereoChannels;
@@ -48,6 +73,8 @@ class SoundFontPlayerOptions {
   double get sustainMultiplier => sustain;
 
   const SoundFontPlayerOptions({
+    this.synthMode = SoundFontSynthMode.soloudVoices,
+    this.enablePerVoiceFilter = true,
     this.joinStereoChannels = true,
     this.cacheAudioSources = true,
     this.streamChunkSize = 16384,
@@ -62,6 +89,8 @@ class SoundFontPlayerOptions {
   }) : sustain = sustainMultiplier ?? sustain;
 
   SoundFontPlayerOptions copyWith({
+    SoundFontSynthMode? synthMode,
+    bool? enablePerVoiceFilter,
     bool? joinStereoChannels,
     bool? cacheAudioSources,
     int? streamChunkSize,
@@ -75,6 +104,8 @@ class SoundFontPlayerOptions {
     double? sustainTime,
   }) {
     return SoundFontPlayerOptions(
+      synthMode: synthMode ?? this.synthMode,
+      enablePerVoiceFilter: enablePerVoiceFilter ?? this.enablePerVoiceFilter,
       joinStereoChannels: joinStereoChannels ?? this.joinStereoChannels,
       cacheAudioSources: cacheAudioSources ?? this.cacheAudioSources,
       streamChunkSize: streamChunkSize ?? this.streamChunkSize,

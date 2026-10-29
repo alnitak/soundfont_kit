@@ -1,7 +1,10 @@
+// ignore_for_file: experimental_member_use
+
 import 'dart:async';
 import 'package:flutter_soloud/flutter_soloud.dart';
 import '../models/preset.dart';
 import '../player/soundfont_player.dart';
+import '../player/vst3/soundfont_vst3_manager.dart';
 import 'chord_detector.dart';
 import 'midi_channel_state.dart';
 import 'midi_lyrics.dart';
@@ -57,6 +60,9 @@ class MidiPlaybackEvent {
 class MidiPlayer {
   /// The underlying [SoundFontPlayer] responsible for audio synthesis.
   final SoundFontPlayer player;
+
+  /// Optional [SoundFontVst3Manager] for desktop VST3 Effects and Instruments.
+  final SoundFontVst3Manager vst3Manager;
 
   /// The active parsed MIDI timeline.
   MidiTimeline? _timeline;
@@ -142,7 +148,33 @@ class MidiPlayer {
 
   String? _lastEmittedChord;
 
-  MidiPlayer({required this.player});
+  MidiPlayer({
+    required this.player,
+    SoundFontVst3Manager? vst3Manager,
+  }) : vst3Manager = vst3Manager ?? SoundFontVst3Manager();
+
+  /// Returns the current effective tempo in BPM at the active playback position.
+  double get currentBpm {
+    if (overrideBpm != null && overrideBpm! > 0) {
+      return overrideBpm! * _speedMultiplier;
+    }
+    if (_timeline == null) return 120.0 * _speedMultiplier;
+    final tick = _timeline!.tempoMap.durationToTick(_position);
+    final baseBpm = _timeline!.tempoMap.getBpmAtTick(tick);
+    return (baseBpm > 0 ? baseBpm : 120.0) * _speedMultiplier;
+  }
+
+  void _syncVst3Transport() {
+    if (!vst3Manager.isSupported) return;
+    final bpm = currentBpm;
+    vst3Manager.updateTransport(bpm: bpm, isPlaying: _isPlaying);
+    for (final ch in channels) {
+      final inst = ch.vst3Instrument;
+      if (inst != null && !inst.isDisposed) {
+        inst.setTransport(bpm: bpm, isPlaying: _isPlaying);
+      }
+    }
+  }
 
   /// The currently loaded [MidiFile] (or null if none).
   MidiFile? get midiFile => _timeline?.file;
@@ -289,6 +321,7 @@ class MidiPlayer {
     _playEpoch++;
     _playbackWallStart = DateTime.now();
     _playbackPosStart = _position;
+    _syncVst3Transport();
 
     _scheduleTimer?.cancel();
     _scheduleTimer = Timer.periodic(
@@ -313,6 +346,7 @@ class MidiPlayer {
     _isPlaying = false;
     _isPaused = true;
     _playEpoch++;
+    _syncVst3Transport();
 
     // Immediately stop and release all sounding voices
     await _releaseAllChannelVoices();
@@ -334,6 +368,7 @@ class MidiPlayer {
     _playEpoch++;
     _position = Duration.zero;
     _nextEventIndex = 0;
+    _syncVst3Transport();
 
     await _releaseAllChannelVoices();
     _applySnapshotAt(Duration.zero);
@@ -572,32 +607,46 @@ class MidiPlayer {
         ch.markNoteOn(effectiveNote);
         final shouldPlay = !ch.isMuted && (!anySolo || ch.isSolo);
         if (shouldPlay) {
-          final targetPlayer = ch.customPlayer ?? player;
-          final preset = _resolvePresetForChannel(ch);
-          if (preset != null) {
-            final noteVol = (event.velocity / 127.0).clamp(0.0, 1.0);
-            final playVol = (noteVol * ch.effectiveVolume).clamp(0.0, 1.0);
-            final currentEpoch = _playEpoch;
-            final scheduledAt = SoLoud.instance.isInitialized
-                ? SoLoud.instance.getEngineTime() + delay
-                : delay;
-            targetPlayer
-                .playPresetScheduled(
-                  preset,
-                  atTime: scheduledAt,
-                  key: effectiveNote,
-                  velocity: event.velocity,
-                  customVolume: playVol,
-                  baseVolume: noteVol,
-                  customPan: ch.pan,
-                )
-                .then((voice) {
-                  if (!_isPlaying || _playEpoch != currentEpoch) {
-                    voice.release(customRelease: Duration.zero);
-                  } else {
-                    ch.addVoice(effectiveNote, voice);
-                  }
-                });
+          if (ch.vst3Instrument != null && !ch.vst3Instrument!.isDisposed) {
+            if (delay > Duration.zero) {
+              final currentEpoch = _playEpoch;
+              Timer(delay, () {
+                if (_isPlaying && _playEpoch == currentEpoch) {
+                  ch.triggerVst3NoteOn(effectiveNote, event.velocity);
+                }
+              });
+            } else {
+              ch.triggerVst3NoteOn(effectiveNote, event.velocity);
+            }
+          } else {
+            final targetPlayer = ch.customPlayer ?? player;
+            final preset = _resolvePresetForChannel(ch);
+            if (preset != null) {
+              final noteVol = (event.velocity / 127.0).clamp(0.0, 1.0);
+              final playVol = (noteVol * ch.effectiveVolume).clamp(0.0, 1.0);
+              final currentEpoch = _playEpoch;
+              final scheduledAt = SoLoud.instance.isInitialized
+                  ? SoLoud.instance.getEngineTime() + delay
+                  : delay;
+              targetPlayer
+                  .playPreset(
+                    preset,
+                    atTime: scheduledAt,
+                    key: effectiveNote,
+                    velocity: event.velocity,
+                    customVolume: playVol,
+                    baseVolume: noteVol,
+                    customPan: ch.pan,
+                    busId: ch.effectiveBusId != 0 ? ch.effectiveBusId : null,
+                  )
+                  .then((voice) {
+                    if (!_isPlaying || _playEpoch != currentEpoch) {
+                      voice.release(customRelease: Duration.zero);
+                    } else {
+                      ch.addVoice(effectiveNote, voice);
+                    }
+                  });
+            }
           }
         }
 
@@ -649,19 +698,14 @@ class MidiPlayer {
         ch.bankLsb = event.value;
         if (event.channel != 9) ch.bank = (ch.bankMsb << 7) | ch.bankLsb;
       } else if (event.controller == 1) {
-        // Modulation Wheel (CC 1) -> use amplitudeModulatorFilter
-        ch.modulation = event.value / 127.0;
-        if (SoLoud.instance.isInitialized) {
-          final ampMod = SoLoud.instance.filters.amplitudeModulatorFilter;
-          if (ch.modulation > 0.01) {
-            if (!ampMod.isActive) ampMod.activate();
-            ampMod.frequency.value = 5.5; // musical tremolo / vibrato LFO
-            ampMod.wet.value = (ch.modulation * 0.7).clamp(0.0, 1.0);
-          } else if (ampMod.isActive) {
-            ampMod.wet.value = 0.0;
-            ampMod.deactivate();
-          }
-        }
+        // Modulation Wheel (CC 1) -> scoped strictly to this channel's mixing Bus!
+        ch.applyModulation(event.value / 127.0);
+      } else if (event.controller == 91) {
+        // Reverb Send (CC 91) -> scoped to this channel's mixing Bus Freeverb!
+        ch.applyReverbSend(event.value / 127.0);
+      } else if (event.controller == 93) {
+        // Chorus Send (CC 93) -> scoped to this channel's mixing Bus Flanger!
+        ch.applyChorusSend(event.value / 127.0);
       } else if (event.isSustainPedal) {
         ch.setSustainPedal(event.isSustainOn);
       } else if (event.controller == 66) {
@@ -706,6 +750,7 @@ class MidiPlayer {
         ),
       );
     } else if (event is SetTempoEvent) {
+      _syncVst3Transport();
       _eventController.add(
         MidiPlaybackEvent(
           type: MidiPlaybackEventType.tempoChange,
@@ -775,14 +820,53 @@ class MidiPlayer {
   }) {
     if (channel < 0 || channel >= channels.length) return;
     channels[channel].releaseAllVoices(releaseDuration: Duration.zero);
+    channels[channel].vst3Instrument = null;
+    channels[channel].vst3InstrumentName = null;
     channels[channel].customPlayer = customPlayer;
     channels[channel].presetOverride = preset;
   }
 
-  /// Clears any custom SoundFont or preset overrides for a specific MIDI channel (0-15).
+  /// Assigns (or clears) a desktop [Vst3InstrumentPlugin] for a specific MIDI [channel] (`0..15`).
+  ///
+  /// When assigned, MIDI notes on [channel] are synthesized by the VST3 Virtual
+  /// Instrument routed through [channel]'s dedicated SoLoud mixing [Bus] alongside
+  /// the other SoundFont channels!
+  void setChannelVst3Instrument(
+    int channel,
+    Vst3InstrumentPlugin? instrument, {
+    String? name,
+  }) {
+    if (channel < 0 || channel >= channels.length) return;
+    final ch = channels[channel];
+    ch.releaseAllVoices(releaseDuration: Duration.zero);
+    if (ch.vst3PlayHandle != null &&
+        SoLoud.instance.isInitialized &&
+        SoLoud.instance.getIsValidVoiceHandle(ch.vst3PlayHandle!)) {
+      try {
+        SoLoud.instance.stop(ch.vst3PlayHandle!);
+      } catch (_) {}
+      ch.vst3PlayHandle = null;
+    }
+    ch.vst3Instrument = instrument;
+    ch.vst3InstrumentName = name;
+    if (instrument != null && !instrument.isDisposed) {
+      instrument.setTransport(bpm: currentBpm, isPlaying: _isPlaying);
+      if (SoLoud.instance.isInitialized) {
+        final bus = ch.ensureBus();
+        ch.vst3PlayHandle = SoLoud.instance.play(
+          instrument.audioSource,
+          volume: ch.effectiveVolume,
+          pan: ch.pan,
+          busId: bus.busId,
+        );
+      }
+    }
+  }
+
+  /// Clears any custom SoundFont, preset, or VST3 instrument overrides for a specific MIDI channel (0-15).
   void clearChannelOverride(int channel) {
     if (channel < 0 || channel >= channels.length) return;
-    channels[channel].releaseAllVoices(releaseDuration: Duration.zero);
+    setChannelVst3Instrument(channel, null);
     channels[channel].customPlayer = null;
     channels[channel].presetOverride = null;
   }
@@ -837,16 +921,6 @@ class MidiPlayer {
   Future<void> _releaseAllChannelVoices() async {
     _lastEmittedChord = null;
     _chordController.add(null);
-    if (SoLoud.instance.isInitialized) {
-      try {
-        final ampMod = SoLoud.instance.filters.amplitudeModulatorFilter;
-        if (ampMod.isActive) {
-          ampMod.wet.value = 0.0;
-          ampMod.deactivate();
-        }
-        SoLoud.instance.stopAll();
-      } catch (_) {}
-    }
     for (final ch in channels) {
       await ch.releaseAllVoices(releaseDuration: Duration.zero);
     }
@@ -861,6 +935,10 @@ class MidiPlayer {
   /// Disposes of the player, stopping active playback and closing streams.
   Future<void> dispose() async {
     await stop();
+    for (final ch in channels) {
+      ch.disposeBus();
+    }
+    vst3Manager.disposeAll();
     _positionController.close();
     _eventController.close();
     _lyricController.close();

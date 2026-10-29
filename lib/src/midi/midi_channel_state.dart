@@ -1,5 +1,9 @@
+// ignore_for_file: experimental_member_use
+
 import 'dart:math' as math;
+import 'package:flutter_soloud/flutter_soloud.dart';
 import '../models/preset.dart';
+import '../player/filters/soundfont_filter.dart';
 import '../player/soundfont_player.dart';
 import '../player/soundfont_voice.dart';
 import '../soundfont_file.dart';
@@ -41,6 +45,12 @@ class MidiChannelState {
   /// Modulation depth multiplier (0.0 to 1.0), derived from CC 1 (Modulation Wheel).
   double modulation;
 
+  /// Reverb send level (0.0 to 1.0), derived from CC 91.
+  double reverbSend;
+
+  /// Chorus send level (0.0 to 1.0), derived from CC 93.
+  double chorusSend;
+
   /// Whether the sustain (damper) pedal is currently engaged (CC 64 >= 64).
   bool isSustainPedalOn;
 
@@ -65,6 +75,52 @@ class MidiChannelState {
   /// Optional preset override for this channel.
   Preset? presetOverride;
 
+  /// Optional desktop VST3 Virtual Instrument assigned to this MIDI channel.
+  /// When non-null, MIDI notes on this channel are routed to the VST3 synth!
+  Vst3InstrumentPlugin? vst3Instrument;
+
+  /// Human-readable display name for the assigned [vst3Instrument].
+  String? vst3InstrumentName;
+
+  /// Active SoLoud voice handle playing [vst3Instrument]'s custom audio source.
+  SoundHandle? vst3PlayHandle;
+
+  /// Active MIDI notes currently sounding on [vst3Instrument].
+  final Set<int> activeVst3Notes = {};
+
+  /// Notes on [vst3Instrument] deferred by the sustain pedal (CC 64).
+  final Set<int> sustainedVst3Notes = {};
+
+  Bus? _bus;
+
+  /// Returns this channel's dedicated SoLoud mixing [Bus] if already created, or `null`.
+  Bus? get bus => _bus;
+
+  /// Lazily creates and starts a dedicated SoLoud mixing [Bus] for this MIDI channel (`0..15`).
+  Bus ensureBus() {
+    if (_bus != null) {
+      if (!_bus!.isActive && SoLoud.instance.isInitialized) {
+        _bus!.playOnEngine();
+      }
+      return _bus!;
+    }
+    final created = SoLoud.instance.createMixingBus(
+      name: 'MIDI Ch ${channel + 1}',
+    );
+    if (SoLoud.instance.isInitialized) {
+      created.playOnEngine();
+    }
+    _bus = created;
+    return created;
+  }
+
+  /// Effective SoLoud `busId` for voices played on this channel (`0` if no bus created yet).
+  int get effectiveBusId =>
+      (_bus != null && _bus!.isActive) ? _bus!.busId : 0;
+
+  /// Per-channel [SoundFontFilterRack] (lazily initializes this channel's mixing [Bus]).
+  SoundFontFilterRack get filterRack => SoundFontFilterRack.forBus(ensureBus());
+
   /// Currently sounding voices keyed by MIDI note.
   final Map<int, List<SoundFontVoice>> activeVoices = {};
 
@@ -87,6 +143,8 @@ class MidiChannelState {
     this.pitchBend = 0.0,
     this.pitchBendRangeSemitones = 2.0,
     this.modulation = 0.0,
+    this.reverbSend = 0.0,
+    this.chorusSend = 0.0,
     this.isSustainPedalOn = false,
     this.isSostenutoPedalOn = false,
     this.isSoftPedalOn = false,
@@ -95,6 +153,8 @@ class MidiChannelState {
     this.isSolo = false,
     this.customPlayer,
     this.presetOverride,
+    this.vst3Instrument,
+    this.vst3InstrumentName,
   }) : bank = bank ?? (channel == 9 ? 128 : 0);
 
   /// Current relative pitch bend playback speed multiplier ($2^{\frac{\text{semitones} \times \text{bend}}{12}}$).
@@ -134,9 +194,47 @@ class MidiChannelState {
     activeVoices.putIfAbsent(key, () => []).add(voice);
   }
 
+  /// Triggers a Note-On on the assigned [vst3Instrument] if present.
+  void triggerVst3NoteOn(int key, int velocity) {
+    final inst = vst3Instrument;
+    if (inst == null || inst.isDisposed) return;
+
+    // Ensure the VST3 instrument's custom audio source is playing on the channel bus
+    if (SoLoud.instance.isInitialized &&
+        (vst3PlayHandle == null ||
+            !SoLoud.instance.getIsValidVoiceHandle(vst3PlayHandle!))) {
+      final b = ensureBus();
+      vst3PlayHandle = SoLoud.instance.play(
+        inst.audioSource,
+        volume: effectiveVolume,
+        pan: pan,
+        busId: b.busId,
+      );
+    }
+
+    sustainedVst3Notes.remove(key);
+    activeVst3Notes.add(key);
+    try {
+      inst.noteOn(
+        pitch: key,
+        velocity: (velocity / 127.0).clamp(0.0, 1.0),
+        channel: channel,
+      );
+    } catch (_) {}
+  }
+
   /// Handles Note-Off for [key]. If sustain or sostenuto pedal is pressed, the voice is marked for delayed release.
   Future<void> handleNoteOff(int key, {Duration? releaseDuration}) async {
     heldNotes.remove(key);
+    if (vst3Instrument != null && !vst3Instrument!.isDisposed) {
+      if (isSustainPedalOn) {
+        sustainedVst3Notes.add(key);
+      } else if (activeVst3Notes.remove(key)) {
+        try {
+          vst3Instrument!.noteOff(pitch: key, channel: channel);
+        } catch (_) {}
+      }
+    }
     final voices = activeVoices.remove(key);
     if (voices == null || voices.isEmpty) return;
 
@@ -156,6 +254,20 @@ class MidiChannelState {
   /// Updates the sustain pedal state (CC 64). When pedal is released, all deferred voices are faded out.
   Future<void> setSustainPedal(bool on, {Duration? releaseDuration}) async {
     isSustainPedalOn = on;
+    if (!on && sustainedVst3Notes.isNotEmpty) {
+      final inst = vst3Instrument;
+      for (final note in sustainedVst3Notes) {
+        if (!heldNotes.contains(note)) {
+          activeVst3Notes.remove(note);
+          if (inst != null && !inst.isDisposed) {
+            try {
+              inst.noteOff(pitch: note, channel: channel);
+            } catch (_) {}
+          }
+        }
+      }
+      sustainedVst3Notes.clear();
+    }
     if (!on && sustainedVoices.isNotEmpty) {
       final toRelease = List<SoundFontVoice>.from(sustainedVoices);
       sustainedVoices.clear();
@@ -232,6 +344,13 @@ class MidiChannelState {
   /// Dynamically updates stereo pan across all active and sounding voices.
   void applyPan(double p) {
     pan = p;
+    if (vst3PlayHandle != null &&
+        SoLoud.instance.isInitialized &&
+        SoLoud.instance.getIsValidVoiceHandle(vst3PlayHandle!)) {
+      try {
+        SoLoud.instance.setPan(vst3PlayHandle!, pan.clamp(-1.0, 1.0));
+      } catch (_) {}
+    }
     for (final vList in activeVoices.values) {
       for (final voice in vList) {
         voice.applyPan(pan);
@@ -245,8 +364,85 @@ class MidiChannelState {
     }
   }
 
+  /// Applies CC 1 (Modulation Wheel, `0.0..1.0`) scoped strictly to this channel's
+  /// mixing [Bus] (and worker-isolate VibLFO if active), preventing global bleed!
+  void applyModulation(double mod) {
+    modulation = mod.clamp(0.0, 1.0);
+    if (!SoLoud.instance.isInitialized) return;
+    if (modulation > 0.01) {
+      final b = ensureBus();
+      try {
+        final ampMod = b.filters.amplitudeModulatorFilter;
+        if (!ampMod.isActive) ampMod.activate();
+        ampMod.frequency().value = 5.5;
+        ampMod.wet().value = (modulation * 0.65).clamp(0.0, 1.0);
+      } catch (_) {}
+    } else if (_bus != null && _bus!.isActive) {
+      try {
+        final ampMod = _bus!.filters.amplitudeModulatorFilter;
+        if (ampMod.isActive) {
+          ampMod.wet().value = 0.0;
+          ampMod.deactivate();
+        }
+      } catch (_) {}
+    }
+  }
+
+  /// Applies CC 91 (Reverb Send, `0.0..1.0`) to this channel's mixing [Bus] Freeverb filter.
+  void applyReverbSend(double send) {
+    reverbSend = send.clamp(0.0, 1.0);
+    if (!SoLoud.instance.isInitialized) return;
+    if (reverbSend > 0.01) {
+      final b = ensureBus();
+      try {
+        final rev = b.filters.freeverbFilter;
+        if (!rev.isActive) rev.activate();
+        rev.wet().value = (reverbSend * 0.6).clamp(0.0, 1.0);
+      } catch (_) {}
+    } else if (_bus != null && _bus!.isActive) {
+      try {
+        final rev = _bus!.filters.freeverbFilter;
+        if (rev.isActive) {
+          rev.wet().value = 0.0;
+          rev.deactivate();
+        }
+      } catch (_) {}
+    }
+  }
+
+  /// Applies CC 93 (Chorus Send, `0.0..1.0`) to this channel's mixing [Bus] Flanger/Chorus filter.
+  void applyChorusSend(double send) {
+    chorusSend = send.clamp(0.0, 1.0);
+    if (!SoLoud.instance.isInitialized) return;
+    if (chorusSend > 0.01) {
+      final b = ensureBus();
+      try {
+        final flanger = b.filters.flangerFilter;
+        if (!flanger.isActive) flanger.activate();
+        flanger.delay().value = 0.008;
+        flanger.freq().value = 1.2;
+        flanger.wet().value = (chorusSend * 0.5).clamp(0.0, 1.0);
+      } catch (_) {}
+    } else if (_bus != null && _bus!.isActive) {
+      try {
+        final flanger = _bus!.filters.flangerFilter;
+        if (flanger.isActive) {
+          flanger.wet().value = 0.0;
+          flanger.deactivate();
+        }
+      } catch (_) {}
+    }
+  }
+
   void _applyVolumeToAllVoices() {
     final eff = effectiveVolume;
+    if (vst3PlayHandle != null &&
+        SoLoud.instance.isInitialized &&
+        SoLoud.instance.getIsValidVoiceHandle(vst3PlayHandle!)) {
+      try {
+        SoLoud.instance.setVolume(vst3PlayHandle!, eff.clamp(0.0, 1.0));
+      } catch (_) {}
+    }
     for (final vList in activeVoices.values) {
       for (final voice in vList) {
         voice.applyVolumeMultiplier(eff);
@@ -263,6 +459,15 @@ class MidiChannelState {
   /// Releases all active and sustained voices on this channel with release fade.
   Future<void> releaseAllVoices({Duration? releaseDuration}) async {
     heldNotes.clear();
+    if (vst3Instrument != null && !vst3Instrument!.isDisposed) {
+      for (final note in {...activeVst3Notes, ...sustainedVst3Notes}) {
+        try {
+          vst3Instrument!.noteOff(pitch: note, channel: channel);
+        } catch (_) {}
+      }
+    }
+    activeVst3Notes.clear();
+    sustainedVst3Notes.clear();
     final all = <SoundFontVoice>[];
     for (final vList in activeVoices.values) {
       all.addAll(vList);
@@ -281,6 +486,15 @@ class MidiChannelState {
   /// Immediately stops all sounding voices on this channel without fade (CC 120 All Sound Off).
   Future<void> stopAllVoicesImmediate() async {
     heldNotes.clear();
+    if (vst3Instrument != null && !vst3Instrument!.isDisposed) {
+      for (final note in {...activeVst3Notes, ...sustainedVst3Notes}) {
+        try {
+          vst3Instrument!.noteOff(pitch: note, channel: channel);
+        } catch (_) {}
+      }
+    }
+    activeVst3Notes.clear();
+    sustainedVst3Notes.clear();
     final all = <SoundFontVoice>[];
     for (final vList in activeVoices.values) {
       all.addAll(vList);
@@ -302,7 +516,9 @@ class MidiChannelState {
     expression = 1.0;
     pan = 0.0;
     pitchBend = 0.0;
-    modulation = 0.0;
+    applyModulation(0.0);
+    applyReverbSend(0.0);
+    applyChorusSend(0.0);
     isSustainPedalOn = false;
     isSostenutoPedalOn = false;
     isSoftPedalOn = false;
@@ -311,18 +527,40 @@ class MidiChannelState {
     bank = (channel == 9 ? 128 : 0);
   }
 
+  /// Disposes this channel's dedicated SoLoud mixing [Bus] if one was created.
+  void disposeBus() {
+    if (vst3PlayHandle != null &&
+        SoLoud.instance.isInitialized &&
+        SoLoud.instance.getIsValidVoiceHandle(vst3PlayHandle!)) {
+      try {
+        SoLoud.instance.stop(vst3PlayHandle!);
+      } catch (_) {}
+    }
+    vst3PlayHandle = null;
+    if (_bus != null) {
+      try {
+        _bus!.dispose();
+      } catch (_) {}
+      _bus = null;
+    }
+  }
+
   /// Returns the suggested or active instrument name for this channel.
   ///
   /// Checks in priority order:
-  /// 1. Channel 10 (index 9): "Standard Drum Kit"
-  /// 2. Active [presetOverride] name
-  /// 3. Matched preset in [soundFont] (if provided)
-  /// 4. Track or instrument name metadata from [midiFile] (if provided)
-  /// 5. Universal General MIDI 1 instrument name for [program]
+  /// 1. Assigned [vst3InstrumentName] (when a VST3 Virtual Instrument is active)
+  /// 2. Channel 10 (index 9): "Standard Drum Kit"
+  /// 3. Active [presetOverride] name
+  /// 4. Matched preset in [soundFont] (if provided)
+  /// 5. Track or instrument name metadata from [midiFile] (if provided)
+  /// 6. Universal General MIDI 1 instrument name for [program]
   String getSuggestedInstrumentName({
     SoundFontFile? soundFont,
     MidiFile? midiFile,
   }) {
+    if (vst3Instrument != null && !vst3Instrument!.isDisposed) {
+      return vst3InstrumentName ?? 'VST3 Synth';
+    }
     if (presetOverride != null) {
       return presetOverride!.name;
     }
@@ -346,8 +584,11 @@ class MidiChannelState {
   }
 
   /// Returns the General MIDI instrument family name (e.g. "Piano", "Strings", "Brass", "Synth Lead")
-  /// or "Drums / Percussion" for Channel 10, or the SoundFont name when a custom preset is assigned.
+  /// or "Drums / Percussion" for Channel 10, or the SoundFont/VST3 name when a custom preset or VST3 synth is assigned.
   String getSuggestedFamilyName() {
+    if (vst3Instrument != null && !vst3Instrument!.isDisposed) {
+      return 'VST3 Instrument';
+    }
     if (presetOverride != null) {
       final sfName = customPlayer?.soundFont.name;
       if (sfName != null && sfName.isNotEmpty) {

@@ -31,13 +31,13 @@ void main() async {
 
   WidgetsFlutterBinding.ensureInitialized();
 
-  /// Initialize the player.
+  /// Initialize the player with retroactive render-ahead ring buffer.
   await SoLoud.instance.init(
     bufferSize: 1024,
+    renderAheadFrames: 1024,
     devicePeriodFrames: 128,
-    renderAheadFrames: 0,
   );
-  SoLoud.instance.setMaxActiveVoiceCount(256);
+  SoLoud.instance.setMaxActiveVoiceCount(1023);
   SoLoud.instance.setAudioDeviceIdleTimeout(null);
 
   runApp(const SoundFontReaderDemoApp());
