@@ -28,6 +28,9 @@ class SoundFontPlayer {
   /// Active voices keyed by MIDI key for polyphonic voice lifecycle management.
   final Map<int, List<SoundFontVoice>> _activeVoices = {};
 
+  /// Voices currently fading out during release, keyed by MIDI key.
+  final Map<int, List<SoundFontVoice>> _releasingVoices = {};
+
   /// In-memory cache for raw or interleaved sample bytes.
   final Map<int, Uint8List> _sampleBytesCache = {};
 
@@ -940,7 +943,13 @@ class SoundFontPlayer {
     final voices = _activeVoices.remove(key);
     if (voices == null || voices.isEmpty) return;
 
+    final releasingList = _releasingVoices.putIfAbsent(key, () => []);
     for (final voice in voices) {
+      releasingList.add(voice);
+      final fade = releaseDuration ?? voice.releaseDuration;
+      Timer(fade + const Duration(milliseconds: 50), () {
+        releasingList.remove(voice);
+      });
       await voice.release(customRelease: releaseDuration);
     }
   }
@@ -953,6 +962,7 @@ class SoundFontPlayer {
       await noteOff(key, releaseDuration: releaseDuration);
     }
     _activeVoices.clear();
+    _releasingVoices.clear();
     _realtimeSynth?.allNotesOff(releaseDuration: releaseDuration);
   }
 
@@ -1604,26 +1614,30 @@ class SoundFontPlayer {
           Timer(timeToDecay, () {
             if (!voice.isReleased &&
                 SoLoud.instance.getIsValidVoiceHandle(handle)) {
-              SoLoud.instance.fadeVolume(
+              final now = SoLoud.instance.isInitialized
+                  ? SoLoud.instance.getEngineTime()
+                  : Duration.zero;
+              SoLoud.instance.fadeScheduled(
                 handle,
+                now,
                 volStages.sustainVolume,
                 volStages.decay,
+                thenStop: volStages.sustainVolume <= 0.0005,
               );
-              if (volStages.sustainVolume <= 0.0005) {
-                SoLoud.instance.scheduleStop(handle, volStages.decay);
-              }
             }
           }),
         );
       } else {
-        SoLoud.instance.fadeVolume(
+        final now = SoLoud.instance.isInitialized
+            ? SoLoud.instance.getEngineTime()
+            : Duration.zero;
+        SoLoud.instance.fadeScheduled(
           handle,
+          now,
           volStages.sustainVolume,
           volStages.decay,
+          thenStop: volStages.sustainVolume <= 0.0005,
         );
-        if (volStages.sustainVolume <= 0.0005) {
-          SoLoud.instance.scheduleStop(handle, volStages.decay);
-        }
       }
     }
 
@@ -1667,6 +1681,20 @@ class SoundFontPlayer {
       // Key was already released while this voice was being prepared asynchronously
       voice.release();
       return;
+    }
+    // Dampen existing active or releasing voices for the same key to avoid voice pile-up and phase artifacts
+    final existing = _activeVoices[key];
+    if (existing != null && existing.isNotEmpty) {
+      for (final v in existing) {
+        v.release(customRelease: const Duration(milliseconds: 15));
+      }
+      existing.clear();
+    }
+    final releasing = _releasingVoices.remove(key);
+    if (releasing != null && releasing.isNotEmpty) {
+      for (final v in releasing) {
+        v.release(customRelease: const Duration(milliseconds: 15));
+      }
     }
     _activeVoices.putIfAbsent(key, () => []).add(voice);
   }

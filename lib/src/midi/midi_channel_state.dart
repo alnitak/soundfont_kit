@@ -1,5 +1,6 @@
 // ignore_for_file: experimental_member_use
 
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter_soloud/flutter_soloud.dart';
 import '../models/preset.dart';
@@ -145,6 +146,9 @@ class MidiChannelState {
   /// Currently sounding voices keyed by MIDI note.
   final Map<int, List<SoundFontVoice>> activeVoices = {};
 
+  /// Voices currently fading out during release keyed by MIDI note.
+  final Map<int, List<SoundFontVoice>> releasingVoices = {};
+
   /// Voices whose NoteOff was received while sustain pedal was held down.
   final List<SoundFontVoice> sustainedVoices = [];
 
@@ -207,6 +211,35 @@ class MidiChannelState {
   void addVoice(int key, SoundFontVoice voice) {
     if (pitchBend != 0.0) {
       voice.applyPitchBend(pitchBendMultiplier);
+    }
+
+    // Dampen existing active, sustained, or releasing voices for the same key to avoid voice accumulation
+    sustainedVoices.removeWhere((prev) {
+      if (prev.key == key) {
+        prev.release(customRelease: const Duration(milliseconds: 15));
+        return true;
+      }
+      return false;
+    });
+    sostenutoVoices.removeWhere((prev) {
+      if (prev.key == key) {
+        prev.release(customRelease: const Duration(milliseconds: 15));
+        return true;
+      }
+      return false;
+    });
+    final prevVoices = activeVoices[key];
+    if (prevVoices != null && prevVoices.isNotEmpty) {
+      for (final prev in prevVoices) {
+        prev.release(customRelease: const Duration(milliseconds: 15));
+      }
+      prevVoices.clear();
+    }
+    final prevReleasing = releasingVoices.remove(key);
+    if (prevReleasing != null && prevReleasing.isNotEmpty) {
+      for (final prev in prevReleasing) {
+        prev.release(customRelease: const Duration(milliseconds: 15));
+      }
     }
 
     if (!heldNotes.contains(key)) {
@@ -289,6 +322,12 @@ class MidiChannelState {
       if (isSustainPedalOn) {
         sustainedVoices.add(voice);
       } else {
+        final releasingList = releasingVoices.putIfAbsent(key, () => []);
+        releasingList.add(voice);
+        final fade = releaseDuration ?? voice.releaseDuration;
+        Timer(fade + const Duration(milliseconds: 50), () {
+          releasingVoices[key]?.remove(voice);
+        });
         await voice.release(customRelease: releaseDuration, atTime: atTime);
       }
     }
@@ -521,6 +560,7 @@ class MidiChannelState {
     activeVoices.clear();
     sustainedVoices.clear();
     sostenutoVoices.clear();
+    releasingVoices.clear();
 
     for (final voice in all) {
       await voice.release(customRelease: releaseDuration);
@@ -549,6 +589,7 @@ class MidiChannelState {
     activeVoices.clear();
     sustainedVoices.clear();
     sostenutoVoices.clear();
+    releasingVoices.clear();
 
     for (final voice in all) {
       await voice.stop();

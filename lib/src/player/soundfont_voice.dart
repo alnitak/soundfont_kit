@@ -121,26 +121,22 @@ class SoundFontVoice {
     }
 
     final fadeDuration = duration;
-    final effectiveAtTime = atTime ??
-        (SoLoud.instance.isInitialized
-            ? SoLoud.instance.getPlayheadTime()
-            : null);
+    final effectiveAtTime = atTime;
 
     for (final handle in handles) {
       if (!SoLoud.instance.getIsValidVoiceHandle(handle)) continue;
       try {
-        if (effectiveAtTime != null) {
-          SoLoud.instance.fadeScheduled(
-            handle,
-            effectiveAtTime,
-            0.0,
-            fadeDuration,
-            thenStop: true,
-          );
-        } else {
-          SoLoud.instance.fadeVolume(handle, 0.0, fadeDuration);
-          SoLoud.instance.scheduleStop(handle, fadeDuration);
-        }
+        final at = effectiveAtTime ??
+            (SoLoud.instance.isInitialized
+                ? SoLoud.instance.getEngineTime()
+                : Duration.zero);
+        SoLoud.instance.fadeScheduled(
+          handle,
+          at,
+          0.0,
+          fadeDuration,
+          thenStop: true,
+        );
       } catch (_) {
         try {
           SoLoud.instance.stop(handle);
