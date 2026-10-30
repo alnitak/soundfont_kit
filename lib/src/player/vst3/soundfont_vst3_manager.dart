@@ -7,18 +7,31 @@ import '../filters/soundfont_filter.dart';
 
 /// Descriptor for a discovered `.vst3` plugin class and its bundle path.
 class DiscoveredVst3Plugin {
+  /// File system path to the `.vst3` bundle directory or binary.
   final String bundlePath;
+
+  /// VST3 component class metadata exported by the plugin factory.
   final Vst3ClassInfo classInfo;
 
+  /// Creates a [DiscoveredVst3Plugin] pairing a [bundlePath] with its [classInfo].
   const DiscoveredVst3Plugin({
     required this.bundlePath,
     required this.classInfo,
   });
 
+  /// Human-readable plugin name.
   String get name => classInfo.name;
+
+  /// 32-character hexadecimal VST3 class UID.
   String get classUid => classInfo.classUid;
+
+  /// VST3 subcategory string (e.g., `'Instrument|Synth'`, `'Fx|Delay'`).
   String get subCategories => classInfo.subCategories;
+
+  /// Whether this VST3 class is a virtual instrument (`Instrument`).
   bool get isInstrument => classInfo.isInstrument;
+
+  /// Whether this VST3 class is an audio effect processor (`Fx`).
   bool get isEffect => classInfo.isEffect;
 }
 
@@ -31,6 +44,7 @@ class SoundFontVst3Manager {
   /// Shared singleton instance for convenience.
   static final SoundFontVst3Manager instance = SoundFontVst3Manager();
 
+  /// Underlying `flutter_soloud` [Vst3Host] instance used to scan and instantiate plugins.
   final Vst3Host host = Vst3Host();
 
   /// Active master insert effects keyed by slot index (`0..7`).

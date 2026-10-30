@@ -13,31 +13,70 @@ import 'midi_timeline.dart';
 
 /// Event type emitted during live MIDI playback.
 enum MidiPlaybackEventType {
+  /// A MIDI note-on event was triggered.
   noteOn,
+
+  /// A MIDI note-off event was triggered.
   noteOff,
+
+  /// A MIDI program (patch) change occurred on a channel.
   programChange,
+
+  /// A MIDI control change (CC) message was processed on a channel.
   controlChange,
+
+  /// A MIDI pitch bend message was processed on a channel.
   pitchBend,
+
+  /// A tempo change (`SetTempoEvent`) occurred in the timeline.
   tempoChange,
+
+  /// A synchronized lyric syllable (`LyricEvent`) was reached.
   lyric,
+
+  /// A new musical chord was detected from the active melodic notes.
   chord,
+
+  /// Playback state changed (play, pause, or stop).
   stateChange,
+
+  /// The playback position was seeked to a new timestamp.
   seek,
 }
 
 /// Information packet emitted when an event occurs during MIDI playback.
 class MidiPlaybackEvent {
+  /// The category of playback event.
   final MidiPlaybackEventType type;
+
+  /// The 0-based MIDI channel (`0..15`) associated with this event.
   final int channel;
+
+  /// The MIDI key number (`0..127`) for note events.
   final int note;
+
+  /// The MIDI velocity (`0..127`) for note events.
   final int velocity;
+
+  /// The new program number (`0..127`) for [MidiPlaybackEventType.programChange] events.
   final int? program;
+
+  /// The MIDI CC controller number (`0..127`) for [MidiPlaybackEventType.controlChange] events.
   final int? controller;
+
+  /// The controller or pitch-bend value for CC and pitch-bend events.
   final int? value;
+
+  /// The new tempo in Beats Per Minute for [MidiPlaybackEventType.tempoChange] events.
   final double? bpm;
+
+  /// Lyric syllable or detected chord name for [MidiPlaybackEventType.lyric] and [MidiPlaybackEventType.chord] events.
   final String? text;
+
+  /// The timeline position at which this event occurred.
   final Duration timestamp;
 
+  /// Creates a [MidiPlaybackEvent].
   const MidiPlaybackEvent({
     required this.type,
     this.channel = 0,
@@ -157,6 +196,7 @@ class MidiPlayer {
 
   String? _lastEmittedChord;
 
+  /// Creates a [MidiPlayer] backed by [player] and an optional [vst3Manager].
   MidiPlayer({
     required this.player,
     SoundFontVst3Manager? vst3Manager,
@@ -675,6 +715,7 @@ class MidiPlayer {
                     customVolume: playVol,
                     baseVolume: noteVol,
                     customPan: ch.pan,
+                    trackVoice: false,
                     busId: ch.effectiveBusId != 0 ? ch.effectiveBusId : null,
                   )
                   .then((voice) {

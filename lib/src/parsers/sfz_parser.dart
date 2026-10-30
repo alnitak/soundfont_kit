@@ -8,15 +8,27 @@ import '../models/soundfont_format.dart';
 import '../models/zone.dart';
 import '../sources/soundfont_source.dart';
 
-/// Result container for parsed SFZ files.
+/// Result container for parsed SFZ instrument definition files.
 class SfzData {
+  /// Name of the SFZ instrument bank.
   final String name;
+
+  /// Optional comment or serialized `<control>` header metadata.
   final String? comment;
+
+  /// Synthesized presets wrapping the parsed SFZ instrument.
   final List<Preset> presets;
+
+  /// Parsed instruments containing the SFZ `<region>` zones.
   final List<Instrument> instruments;
+
+  /// Sample descriptors referenced by the SFZ `<region>` opcodes.
   final List<SampleInfo> samples;
+
+  /// Active [SoundFontSource] used to load external sample audio files.
   final SoundFontSource activeSource;
 
+  /// Creates an [SfzData] container with parsed SFZ presets, instruments, and samples.
   SfzData({
     required this.name,
     this.comment,
@@ -29,10 +41,13 @@ class SfzData {
 
 /// Parser for SFZ text-based instrument definitions and zipped SFZ packages.
 class SfzParser {
+  /// The input [SoundFontSource] providing the `.sfz` text or `.zip` archive.
   final SoundFontSource source;
 
+  /// Creates an [SfzParser] reading from [source].
   SfzParser(this.source);
 
+  /// Parses the SFZ definition from [source] and returns the resulting [SfzData].
   Future<SfzData> parse() async {
     SoundFontSource currentSource = source;
     final initialBytes = await source.getBytes();

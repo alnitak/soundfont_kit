@@ -94,8 +94,8 @@ class VoiceCalculator {
     return pan.clamp(-1.0, 1.0);
   }
 
-  /// Calculates loop region frame boundaries ([startFrames], [endFrames])
-  /// from sample frame loop boundaries.
+  /// Calculates loop region frame boundaries (`startFrames` and `endFrames`)
+  /// from [sample] and optional [zone] overrides.
   static ({bool isLooping, int startFrames, int? endFrames})
   calculateLoopRegion({required SampleInfo sample, Zone? zone}) {
     final startFrames = zone?.loopStart ?? sample.loopStart;

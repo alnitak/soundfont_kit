@@ -157,6 +157,7 @@ class MidiChannelState {
   /// Scheduled engine time for a NoteOff that arrived while an async NoteOn was still spawning.
   final Map<int, Duration?> pendingNoteOffAt = {};
 
+  /// Creates a [MidiChannelState] for the 0-based MIDI [channel] (`0..15`).
   MidiChannelState({
     required this.channel,
     int? bank,

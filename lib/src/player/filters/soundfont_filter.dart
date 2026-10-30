@@ -4,70 +4,112 @@ import 'package:flutter_soloud/flutter_soloud.dart';
 
 /// Available audio filter types for SoundFont playback (Master or Per-Bus).
 enum SoundFontFilterType {
+  /// Algorithmic room and hall reverberation (Freeverb).
   freeverb(
     'Reverb (Freeverb)',
     'Spatial room acoustics and concert hall resonance',
   ),
+
+  /// Stereo echo delay with feedback and tone damping.
   echo('Echo / Delay', 'Stereo echo repeats and feedback delay'),
+
+  /// Low-pass, high-pass, and band-pass biquad resonant filter.
   biquad('Biquad Filter', 'Lowpass, highpass, and bandpass resonant filter'),
+
+  /// Modulated delay-line flanger and chorus effect.
   flanger('Flanger / Chorus', 'Modulated pitch shimmering and stereo width'),
+
+  /// Low-frequency bass boost enhancer.
   bassBoost('Bass Boost', 'Low-frequency enhancement and punch'),
+
+  /// Bit-crushing and sample-rate reduction effect.
   lofi('Lo-Fi', 'Bit-crushing and vintage sampler rate reduction'),
+
+  /// Non-linear waveshaping distortion and harmonic saturation.
   waveShaper('Wave Shaper', 'Harmonic saturation and distortion'),
+
+  /// Dynamic range compressor with threshold, ratio, makeup gain, attack, and release.
   compressor(
     'Compressor',
     'Dynamic range compression with threshold, ratio, attack, and release',
   ),
+
+  /// Brickwall peak limiter and output ceiling protector.
   limiter(
     'Limiter',
     'Brickwall peak limiting and output ceiling protection',
   ),
+
+  /// Multi-band Gaussian parametric equalizer.
   parametricEq(
     'Parametric EQ',
     'Multi-band Gaussian parametric equalizer (Low, Mid, High)',
   ),
+
+  /// Real-time pitch shifter in semitones without altering tempo.
   pitchShift(
     'Pitch Shift',
     'Real-time pitch shifting in semitones without altering tempo',
   ),
+
+  /// Bipolar sine carrier ring and amplitude modulator.
   amplitudeModulator(
     'Ring / Amp Modulator',
     'Bipolar sine carrier amplitude modulation and vibrato/tremolo',
   ),
+
+  /// Custom DSP or desktop VST3 effect insert slot 1 (`0`).
   customSlot0(
     'Custom DSP / VST3 Slot 1',
     'User-programmable native/Web DSP callback or desktop VST3 effect insert #1',
   ),
+
+  /// Custom DSP or desktop VST3 effect insert slot 2 (`1`).
   customSlot1(
     'Custom DSP / VST3 Slot 2',
     'User-programmable native/Web DSP callback or desktop VST3 effect insert #2',
   ),
+
+  /// Custom DSP or desktop VST3 effect insert slot 3 (`2`).
   customSlot2(
     'Custom DSP / VST3 Slot 3',
     'User-programmable native/Web DSP callback or desktop VST3 effect insert #3',
   ),
+
+  /// Custom DSP or desktop VST3 effect insert slot 4 (`3`).
   customSlot3(
     'Custom DSP / VST3 Slot 4',
     'User-programmable native/Web DSP callback or desktop VST3 effect insert #4',
   ),
+
+  /// Custom DSP or desktop VST3 effect insert slot 5 (`4`).
   customSlot4(
     'Custom DSP / VST3 Slot 5',
     'User-programmable native/Web DSP callback or desktop VST3 effect insert #5',
   ),
+
+  /// Custom DSP or desktop VST3 effect insert slot 6 (`5`).
   customSlot5(
     'Custom DSP / VST3 Slot 6',
     'User-programmable native/Web DSP callback or desktop VST3 effect insert #6',
   ),
+
+  /// Custom DSP or desktop VST3 effect insert slot 7 (`6`).
   customSlot6(
     'Custom DSP / VST3 Slot 7',
     'User-programmable native/Web DSP callback or desktop VST3 effect insert #7',
   ),
+
+  /// Custom DSP or desktop VST3 effect insert slot 8 (`7`).
   customSlot7(
     'Custom DSP / VST3 Slot 8',
     'User-programmable native/Web DSP callback or desktop VST3 effect insert #8',
   );
 
+  /// Short human-readable display title of the filter.
   final String label;
+
+  /// Summary description of the filter's acoustic effect.
   final String description;
 
   const SoundFontFilterType(this.label, this.description);
@@ -104,19 +146,39 @@ enum SoundFontFilterType {
   }
 }
 
-/// Metadata description of a single adjustable filter parameter.
+/// Metadata description and live control callbacks for a single adjustable filter parameter.
 class FilterParameterInfo {
+  /// Stable machine-readable parameter identifier (e.g., `'wet'`, `'room_size'`).
   final String id;
+
+  /// Human-readable display label for the parameter.
   final String name;
+
+  /// Minimum allowed parameter value.
   final double min;
+
+  /// Maximum allowed parameter value.
   final double max;
+
+  /// Default initial parameter value.
   final double defaultValue;
+
+  /// Optional display unit suffix (e.g., `'Hz'`, `'dB'`, `'ms'`, `'%'`).
   final String unit;
+
+  /// Callback returning the current live value of this parameter.
   final double Function() getValue;
+
+  /// Callback setting the live value of this parameter.
   final void Function(double val) onSetValue;
+
+  /// Optional callback that smoothly fades this parameter to `to` over `duration`.
   final void Function(double to, Duration duration)? onFade;
+
+  /// Optional callback that continuously oscillates this parameter between `from` and `to` with LFO `period`.
   final void Function(double from, double to, Duration period)? onOscillate;
 
+  /// Creates a [FilterParameterInfo] descriptor.
   const FilterParameterInfo({
     required this.id,
     required this.name,
@@ -130,6 +192,7 @@ class FilterParameterInfo {
     this.onOscillate,
   });
 
+  /// Creates a [FilterParameterInfo] bound to a lazy SoLoud filter parameter resolver [resolveParam].
   factory FilterParameterInfo.fromParam({
     required String id,
     required String name,
@@ -178,8 +241,10 @@ class FilterParameterInfo {
     );
   }
 
+  /// Current live value of this filter parameter.
   double get currentValue => getValue();
 
+  /// Updates this filter parameter to [val], clamped to `[min, max]`.
   void setValue(double val) {
     onSetValue(val.clamp(min, max));
   }
@@ -212,7 +277,7 @@ typedef SoundFontFilterRack = SoundFontGlobalFilters;
 /// output or scoped to a specific mixing [Bus]).
 class SoundFontGlobalFilters {
   /// Optional mixing [Bus] when this filter rack is scoped to a specific channel
-  /// or player bus. When `null`, controls [SoLoud.instance.filters] globally.
+  /// or player bus. When `null`, controls `SoLoud.instance.filters` globally.
   final Bus? bus;
 
   /// Creates a global Master output filter controller.

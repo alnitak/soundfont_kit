@@ -12,6 +12,7 @@ class TempoChange {
   /// Elapsed microsecond timestamp from the start of the piece when this tempo begins.
   final int startMicroseconds;
 
+  /// Creates a [TempoChange] at [tick] and [startMicroseconds] with [microsecondsPerQuarterNote].
   const TempoChange({
     required this.tick,
     required this.microsecondsPerQuarterNote,
@@ -25,9 +26,13 @@ class TempoChange {
 /// Converts musical ticks to absolute real-world time (and vice versa) taking into
 /// account initial tempo and all intermediate `SetTempoEvent` changes.
 class TempoMap {
+  /// Pulses (ticks) per quarter note (PPQ).
   final int ppq;
+
+  /// Chronologically sorted list of tempo change points across the sequence.
   final List<TempoChange> tempoChanges;
 
+  /// Creates a [TempoMap] with resolution [ppq] and [tempoChanges].
   TempoMap({required this.ppq, required this.tempoChanges});
 
   /// Constructs a [TempoMap] from all tracks in a [MidiFile].
@@ -162,6 +167,7 @@ class TimedMidiEvent {
   /// Real-world timestamp calculated from the [TempoMap].
   final Duration timestamp;
 
+  /// Creates a [TimedMidiEvent] positioning [event] at [timestamp] and [absoluteTick].
   const TimedMidiEvent({
     required this.event,
     required this.trackIndex,
@@ -194,6 +200,7 @@ class MidiTimelineNote {
   /// Real-world end timestamp.
   Duration get end => start + duration;
 
+  /// Creates a [MidiTimelineNote] on [channel] for [note] spanning [duration] from [start].
   const MidiTimelineNote({
     required this.channel,
     required this.note,
@@ -207,17 +214,33 @@ class MidiTimelineNote {
       'MidiTimelineNote(ch: $channel, note: $note, vel: $velocity, start: ${start.inMilliseconds}ms, dur: ${duration.inMilliseconds}ms)';
 }
 
-/// Snapshot of the synthesizer state across all 16 MIDI channels at a specific point in time.
+/// Snapshot of the synthesizer state for a single MIDI channel at a specific point in time.
 class MidiChannelSnapshot {
+  /// 0-based MIDI channel index (`0..15`).
   final int channel;
+
+  /// Active MIDI bank number (`0..128`).
   int bank;
+
+  /// Active MIDI program (patch) number (`0..127`).
   int program;
+
+  /// Raw MIDI CC 7 channel volume (`0..127`, default `100`).
   int volume;
+
+  /// Raw MIDI CC 10 stereo pan (`0..127`, where `64` is center).
   int pan;
+
+  /// Raw MIDI CC 11 expression (`0..127`, default `127`).
   int expression;
+
+  /// Raw 14-bit unsigned MIDI pitch bend (`0..16383`, where `8192` is center).
   int pitchBend;
+
+  /// Whether the sustain pedal (CC 64) is depressed (`value >= 64`).
   bool isSustainPedalOn;
 
+  /// Creates a [MidiChannelSnapshot] for [channel].
   MidiChannelSnapshot({
     required this.channel,
     this.bank = 0,
@@ -229,6 +252,7 @@ class MidiChannelSnapshot {
     this.isSustainPedalOn = false,
   });
 
+  /// Returns a copy of this [MidiChannelSnapshot].
   MidiChannelSnapshot clone() => MidiChannelSnapshot(
     channel: channel,
     bank: bank,
@@ -261,6 +285,7 @@ class MidiTimeline {
   /// Precomputed notes partitioned by 0-based MIDI channel (0-15).
   final Map<int, List<MidiTimelineNote>> channelNotes;
 
+  /// Creates a [MidiTimeline] with merged [events], [tempoMap], and [duration].
   const MidiTimeline({
     required this.file,
     required this.tempoMap,

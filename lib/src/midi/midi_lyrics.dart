@@ -33,6 +33,7 @@ class MidiLyricSpan {
   /// The musical tick position.
   final int absoluteTick;
 
+  /// Creates a [MidiLyricSpan] positioned at [timestamp] and [absoluteTick].
   const MidiLyricSpan({
     required this.timestamp,
     required this.text,

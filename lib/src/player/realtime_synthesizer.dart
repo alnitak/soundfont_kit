@@ -12,56 +12,134 @@ import 'voice_calculator.dart';
 
 /// Descriptor sent to the real-time synthesizer worker isolate to trigger a voice.
 class RealtimeVoiceTrigger {
+  /// Unique identifier assigned to this polyphonic voice instance.
   final int voiceId;
+
+  /// MIDI key number (`0..127`).
   final int key;
+
+  /// MIDI note-on velocity (`0..127`).
   final int velocity;
+
+  /// Sample ID of the mono or left-channel PCM sample in the worker isolate.
   final int leftSampleId;
+
+  /// Optional sample ID of the paired right-channel PCM sample for stereo voices.
   final int? rightSampleId;
+
+  /// Native sample rate of the source sample in Hz.
   final int sampleRate;
+
+  /// Initial playback speed ratio derived from root key and tuning offsets.
   final double basePitchRatio;
+
+  /// Linear peak amplitude (`0.0..2.0`) reached at the end of the attack phase.
   final double peakVolume;
+
+  /// Stereo pan position (`-1.0` left to `1.0` right).
   final double pan;
+
+  /// Whether the sample loops between [loopStart] and [loopEnd].
   final bool isLooping;
+
+  /// Loop start point in sample frames.
   final int loopStart;
+
+  /// Loop end point in sample frames.
   final int loopEnd;
 
   // Volume DAHDSR
+
+  /// Volume envelope delay phase duration in seconds.
   final double volDelaySec;
+
+  /// Volume envelope attack phase duration in seconds.
   final double volAttackSec;
+
+  /// Volume envelope hold phase duration in seconds.
   final double volHoldSec;
+
+  /// Volume envelope decay phase duration in seconds.
   final double volDecaySec;
+
+  /// Normalized sustain amplitude level (`0.0..1.0` relative to [peakVolume]).
   final double volSustainLevel;
+
+  /// Volume envelope release phase duration in seconds.
   final double volReleaseSec;
 
   // Modulation DAHDSR
+
+  /// Modulation envelope delay phase duration in seconds.
   final double modDelaySec;
+
+  /// Modulation envelope attack phase duration in seconds.
   final double modAttackSec;
+
+  /// Modulation envelope hold phase duration in seconds.
   final double modHoldSec;
+
+  /// Modulation envelope decay phase duration in seconds.
   final double modDecaySec;
+
+  /// Modulation envelope sustain level (`0.0..1.0`).
   final double modSustainLevel;
+
+  /// Modulation envelope release phase duration in seconds.
   final double modReleaseSec;
+
+  /// Pitch modulation depth from the modulation envelope in cents.
   final int modEnvToPitchCents;
+
+  /// Filter cutoff modulation depth from the modulation envelope in cents.
   final int modEnvToFilterCents;
 
   // Low-Pass Resonant SVF Filter
+
+  /// Whether the per-voice low-pass State-Variable Filter (SVF) is active.
   final bool filterEnabled;
+
+  /// Initial low-pass filter cutoff frequency in Hz.
   final double filterCutoffHz;
+
+  /// Filter resonance Q factor (`0.5..25.0`).
   final double filterResonanceQ;
 
   // LFOs
+
+  /// Delay in seconds before the modulation LFO starts oscillating.
   final double modLfoDelaySec;
+
+  /// Modulation LFO frequency in Hz.
   final double modLfoFreqHz;
+
+  /// Pitch modulation depth from the modulation LFO in cents.
   final int modLfoToPitchCents;
+
+  /// Filter cutoff modulation depth from the modulation LFO in cents.
   final int modLfoToFilterCents;
+
+  /// Volume modulation depth (tremolo) from the modulation LFO in dB.
   final double modLfoToVolumeDb;
+
+  /// Delay in seconds before the vibrato LFO starts oscillating.
   final double vibLfoDelaySec;
+
+  /// Vibrato LFO frequency in Hz.
   final double vibLfoFreqHz;
+
+  /// Pitch modulation depth (vibrato) from the vibrato LFO in cents.
   final int vibLfoToPitchCents;
 
   // Choke Group
+
+  /// Exclusive class group ID (`1..127`) for this voice, if any.
   final int? exclusiveClass;
+
+  /// Exclusive class group ID that chokes existing voices when this voice triggers.
   final int? offByGroup;
 
+  /// Creates a [RealtimeVoiceTrigger] message payload for the worker isolate.
   const RealtimeVoiceTrigger({
     required this.voiceId,
     required this.key,
@@ -648,7 +726,10 @@ void _stepModEnvelope(_ActiveSynthVoice v, double dt) {
 /// Real-time worker-isolate SoundFont DSP synthesizer powered by
 /// [SoLoud.setRealtimeStream] and [RealtimeStreamFeeder] (`SoLoudIsolate`).
 class RealtimeSoundFontSynthesizer {
+  /// Output audio sample rate in Hz (default `44100`).
   final int sampleRate;
+
+  /// Target SoLoud mixing bus ID (`0` for the main output bus).
   final int busId;
   RealtimeStreamHandle? _stream;
   RealtimeStreamFeeder<_IsolateSynthState>? _feeder;
@@ -656,11 +737,13 @@ class RealtimeSoundFontSynthesizer {
   final Set<int> _registeredSampleIds = {};
   int _nextVoiceId = 1;
 
+  /// Creates a [RealtimeSoundFontSynthesizer] rendering at [sampleRate] onto [busId].
   RealtimeSoundFontSynthesizer({
     this.sampleRate = 44100,
     this.busId = 0,
   });
 
+  /// Whether the background worker isolate feeder is currently running.
   bool get isRunning => _feeder != null && !_feeder!.isDisposed;
 
   void _ensureVoicePlaying() {

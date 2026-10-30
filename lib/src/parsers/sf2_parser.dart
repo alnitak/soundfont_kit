@@ -9,19 +9,39 @@ import '../models/zone.dart';
 import '../sources/soundfont_source.dart';
 import 'riff_reader.dart';
 
-/// Parsed SoundFont 2 container holding presets, instruments, and samples.
+/// Parsed SoundFont 2 / SoundFont 3 container holding presets, instruments, and samples.
 class Sf2Data {
+  /// Bank name parsed from the `INAM` info sub-chunk.
   final String? name;
+
+  /// Bank comment metadata parsed from the `ICMT` info sub-chunk.
   final String? comment;
+
+  /// All parsed presets (`phdr`/`pbag`/`pgen`).
   final List<Preset> presets;
+
+  /// All parsed instruments (`inst`/`ibag`/`igen`).
   final List<Instrument> instruments;
+
+  /// All parsed sample headers (`shdr`).
   final List<SampleInfo> samples;
+
+  /// Complete raw binary buffer of the SoundFont file.
   final Uint8List rawBytes;
+
+  /// Byte offset of the primary 16-bit PCM `smpl` sub-chunk in [rawBytes].
   final int smplOffset;
+
+  /// Byte length of the primary 16-bit PCM `smpl` sub-chunk.
   final int smplLength;
+
+  /// Byte offset of the optional 24-bit LSB `sm24` sub-chunk in [rawBytes].
   final int sm24Offset;
+
+  /// Byte length of the optional 24-bit LSB `sm24` sub-chunk.
   final int sm24Length;
 
+  /// Creates an [Sf2Data] container with parsed SoundFont structures and `sdta` offsets.
   Sf2Data({
     this.name,
     this.comment,
@@ -36,12 +56,18 @@ class Sf2Data {
   });
 }
 
-/// Parser for SF2 (SoundFont 2.0 / 2.04) binary files.
+/// Parser for SF2 (SoundFont 2.0 / 2.04) and SF3 binary RIFF files.
 class Sf2Parser {
+  /// The input [SoundFontSource] providing the binary SoundFont data.
   final SoundFontSource source;
 
+  /// Creates an [Sf2Parser] reading from [source].
   Sf2Parser(this.source);
 
+  /// Parses the SoundFont binary stream into an [Sf2Data] instance.
+  ///
+  /// When [isSf3] is `true`, sample offsets are interpreted using SoundFont 3
+  /// byte-offset conventions for compressed Ogg Vorbis streams.
   Future<Sf2Data> parse({bool isSf3 = false}) async {
     final bytes = await source.getBytes();
     final reader = RiffReader(bytes);

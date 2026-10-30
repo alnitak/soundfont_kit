@@ -99,6 +99,7 @@ class SoundFontPlayer {
   String _stereoCacheKey(int leftId, int rightId) =>
       'sf_${_playerId}_st_${leftId}_$rightId';
 
+  /// Creates a [SoundFontPlayer] for [soundFont] with optional [options].
   SoundFontPlayer({
     required this.soundFont,
     this.options = const SoundFontPlayerOptions(),
@@ -414,8 +415,10 @@ class SoundFontPlayer {
     );
     final scheduledAt = (atTime ?? Duration.zero) + volStages.delay;
     final hasAttack = volStages.attack > const Duration(milliseconds: 5);
-    final initialVol = (hasAttack && atTime == null) ? 0.01 : vol;
+    final initialVol = hasAttack ? 0.01 : vol;
     final targetBusId = busId ?? effectiveBusId;
+
+    _activatePerVoiceFilterOnSourceIfNeeded(audio, zone: zone, presetZone: presetZone);
 
     final handle = SoLoud.instance.playScheduled(
       audio,
@@ -1352,8 +1355,10 @@ class SoundFontPlayer {
     );
     final scheduledAt = (atTime ?? Duration.zero) + volStages.delay;
     final hasAttack = volStages.attack > const Duration(milliseconds: 5);
-    final initialVol = (hasAttack && atTime == null) ? 0.01 : vol;
+    final initialVol = hasAttack ? 0.01 : vol;
     final targetBusId = busId ?? effectiveBusId;
+
+    _activatePerVoiceFilterOnSourceIfNeeded(audio, zone: zone, presetZone: presetZone);
 
     // joinTwoSources resamples both channels to the engine sample rate, so
     // scale loop frame offsets from leftSample.sampleRate to engineSampleRate.
@@ -1428,6 +1433,28 @@ class SoundFontPlayer {
     }
   }
 
+  void _activatePerVoiceFilterOnSourceIfNeeded(
+    AudioSource audio, {
+    Zone? zone,
+    Zone? presetZone,
+  }) {
+    if (!options.enablePerVoiceFilter) return;
+    final filter = VoiceCalculator.calculateFilterParams(
+      zone: zone,
+      presetZone: presetZone,
+    );
+    if (!filter.enabled) return;
+
+    try {
+      final biquad = audio.filters.biquadFilter;
+      if (!biquad.isActive) {
+        biquad.activate();
+      }
+    } catch (_) {
+      // Gracefully ignore if single-source filter is unsupported on current target
+    }
+  }
+
   void _applyPerVoiceFilterIfNeeded(
     AudioSource audio,
     SoundHandle handle, {
@@ -1488,27 +1515,67 @@ class SoundFontPlayer {
       if (hasDecay) {
         final decayStart = scheduledStart + volStages.attack + volStages.hold;
         if (duration == null || decayStart < scheduledStart + duration) {
-          SoLoud.instance.fadeScheduled(
-            handle,
-            decayStart,
-            volStages.sustainVolume,
-            volStages.decay,
-            thenStop: volStages.sustainVolume <= 0.0005,
-          );
+          if (!hasAttack && duration == null) {
+            SoLoud.instance.fadeScheduled(
+              handle,
+              decayStart,
+              volStages.sustainVolume,
+              volStages.decay,
+              thenStop: volStages.sustainVolume <= 0.0005,
+            );
+          } else {
+            final timeToDecay =
+                volStages.delay + volStages.attack + volStages.hold;
+            voice.addEnvelopeTimer(
+              Timer(timeToDecay, () {
+                if (!voice.isReleased &&
+                    SoLoud.instance.getIsValidVoiceHandle(handle)) {
+                  SoLoud.instance.fadeScheduled(
+                    handle,
+                    decayStart,
+                    volStages.sustainVolume,
+                    volStages.decay,
+                    thenStop: volStages.sustainVolume <= 0.0005,
+                  );
+                }
+              }),
+            );
+          }
         }
       }
       if (duration != null) {
         final noteOffTime = scheduledStart + duration;
-        if (releaseDuration > Duration.zero) {
-          SoLoud.instance.fadeScheduled(
-            handle,
-            noteOffTime,
-            0.0,
-            releaseDuration,
-            thenStop: true,
-          );
+        if (!hasAttack && !hasDecay) {
+          if (releaseDuration > Duration.zero) {
+            SoLoud.instance.fadeScheduled(
+              handle,
+              noteOffTime,
+              0.0,
+              releaseDuration,
+              thenStop: true,
+            );
+          } else {
+            SoLoud.instance.stopScheduled(handle, noteOffTime);
+          }
         } else {
-          SoLoud.instance.stopScheduled(handle, noteOffTime);
+          voice.addEnvelopeTimer(
+            Timer(volStages.delay + duration, () {
+              if (!voice.isReleased &&
+                  SoLoud.instance.getIsValidVoiceHandle(handle)) {
+                if (releaseDuration > Duration.zero) {
+                  SoLoud.instance.fadeScheduled(
+                    handle,
+                    noteOffTime,
+                    0.0,
+                    releaseDuration,
+                    thenStop: true,
+                  );
+                } else {
+                  SoLoud.instance.stopScheduled(handle, noteOffTime);
+                }
+              }
+            }),
+          );
         }
       }
       return;

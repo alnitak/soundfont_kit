@@ -50,6 +50,7 @@ class SoundFontVoice {
   /// Whether note-off release has already been triggered for this voice.
   bool get isReleased => _isReleased;
 
+  /// Creates a [SoundFontVoice] tracking active [handles] for MIDI [key] and [velocity].
   SoundFontVoice({
     required this.key,
     required this.velocity,
@@ -68,7 +69,7 @@ class SoundFontVoice {
        basePans = basePans ?? List.filled(handles.length, 0.0),
        exclusiveClasses = exclusiveClasses ?? const {};
 
-  /// Registers an internal DAHDSR stage timer that will be automatically
+  /// Registers an internal DAHDSR stage [timer] that will be automatically
   /// cancelled if the voice is released or stopped early.
   void addEnvelopeTimer(Timer timer) {
     if (_isReleased) {
@@ -85,8 +86,8 @@ class SoundFontVoice {
     _envelopeTimers.clear();
   }
 
-  /// Fast 5 ms anti-click choke used when an Exclusive Class (`exclusiveClass` / `off_by`)
-  /// group is re-triggered (e.g. Closed Hi-Hat choking Open Hi-Hat).
+  /// Fast 6 ms anti-click choke used when an Exclusive Class (`exclusiveClass` / `off_by`)
+  /// group is re-triggered (e.g. Closed Hi-Hat choking Open Hi-Hat), optionally scheduled at [atTime].
   Future<void> choke({Duration? atTime}) async {
     if (_isReleased) return;
     _cancelEnvelopeTimers();
@@ -96,7 +97,8 @@ class SoundFontVoice {
     );
   }
 
-  /// Triggers note-off volume fade and stop on the audio engine timeline.
+  /// Triggers note-off volume fade and stop on the audio engine timeline,
+  /// using [customRelease] (or [releaseDuration]) starting at [atTime].
   Future<void> release({Duration? customRelease, Duration? atTime}) async {
     _cancelEnvelopeTimers();
     if (customRelease != null && customRelease <= Duration.zero) {
@@ -147,7 +149,7 @@ class SoundFontVoice {
     }
   }
 
-  /// Stops this voice at an absolute engine time with sample accuracy.
+  /// Stops this voice at an absolute engine time [atTime] with sample accuracy.
   void stopScheduled(Duration atTime) {
     _cancelEnvelopeTimers();
     _isReleased = true;
@@ -159,7 +161,8 @@ class SoundFontVoice {
     }
   }
 
-  /// Fades this voice starting at an absolute engine time.
+  /// Fades this voice to volume [to] over [time] starting at absolute engine time [atTime],
+  /// optionally stopping the voice when the fade completes if [thenStop] is `true`.
   void fadeScheduled(
     Duration atTime, {
     required double to,
@@ -197,7 +200,7 @@ class SoundFontVoice {
     }
   }
 
-  /// Dynamically applies a relative pitch bend multiplier to all active handles.
+  /// Dynamically applies a relative pitch bend [bendMultiplier] to all active handles.
   void applyPitchBend(double bendMultiplier) {
     if (_isReleased) return;
     realtimeSynth?.setPitchBend(bendMultiplier);
@@ -224,7 +227,7 @@ class SoundFontVoice {
     }
   }
 
-  /// Dynamically adjusts the stereo pan of all active handles.
+  /// Dynamically adjusts the stereo [pan] (`-1.0` to `1.0`) of all active handles.
   void applyPan(double pan) {
     if (_isReleased) return;
     for (final handle in handles) {

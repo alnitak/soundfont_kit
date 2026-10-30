@@ -156,7 +156,7 @@ class SampleStreamer {
   }
 
   /// Joins two audio sample buffers (Left and Right) into a single 2-channel stereo [AudioSource]
-  /// using SoLoud's native [joinTwoSources] C++ engine method.
+  /// using SoLoud's native [SoLoud.joinTwoSources] C++ engine method.
   static Future<AudioSource?> joinTwoAudioSources({
     required Uint8List leftBytes,
     required Uint8List rightBytes,

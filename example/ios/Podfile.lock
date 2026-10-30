@@ -22,7 +22,7 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   file_picker_darwin: 4c2b9a50ea44cb3b071381ea0cf48591bdd80251
   Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
-  flutter_soloud: 9f1184400eba4c826ee5ffaa0f2ad39903018ab2
+  flutter_soloud: 9e634ca684bac957fe75764cc31cecf0c371be0c
 
 PODFILE CHECKSUM: 3ba3a73b1b12adcf321a227a745625fe0888cc82
 

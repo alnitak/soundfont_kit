@@ -9,17 +9,18 @@ import 'package:path/path.dart' as p;
 import '../utils/file_utils.dart'
     if (dart.library.js_interop) '../utils/file_utils_web.dart';
 
-/// Abstract data source for SoundFont files.
+/// Abstract data source for reading SoundFont files and associated external sample files.
 abstract class SoundFontSource {
+  /// Creates a [SoundFontSource].
   const SoundFontSource();
 
   /// Base directory or context path for resolving relative sample paths.
   String? get basePath => null;
 
-  /// Fetches byte buffer of the main file or a byte slice.
+  /// Fetches the byte buffer of the main file or a slice starting at [offset] with [length].
   Future<Uint8List> getBytes([int? offset, int? length]);
 
-  /// Returns a stream of byte chunks for a given offset and length.
+  /// Returns a stream of byte chunks of size [chunkSize] for the given [offset] and [length].
   Stream<Uint8List> getByteStream([
     int? offset,
     int? length,
@@ -34,7 +35,7 @@ abstract class SoundFontSource {
     }
   }
 
-  /// Returns a stream of byte chunks for a subfile.
+  /// Returns a stream of byte chunks of size [chunkSize] for a subfile at [relativePath].
   Stream<Uint8List> getSubFileByteStream(
     String relativePath, {
     int chunkSize = 16384,
@@ -48,7 +49,7 @@ abstract class SoundFontSource {
     }
   }
 
-  /// Reads a text representation of the file (or subfile).
+  /// Reads a UTF-8 text representation of the main file or a subfile at [relativePath].
   Future<String> readAsString([String? relativePath]) async {
     final bytes = relativePath != null
         ? await getSubFileBytes(relativePath)
@@ -56,36 +57,37 @@ abstract class SoundFontSource {
     return utf8.decode(bytes, allowMalformed: true);
   }
 
-  /// Fetches sub-file bytes (e.g. for SFZ sample files or ZIP archives).
+  /// Fetches sub-file bytes at [relativePath] (e.g. for SFZ sample files or ZIP archives).
   Future<Uint8List> getSubFileBytes(String relativePath);
 
-  /// Checks if a relative sub-file exists.
+  /// Checks whether a relative sub-file exists at [relativePath].
   Future<bool> hasSubFile(String relativePath);
 
-  /// Factory constructor for memory buffers.
+  /// Creates an in-memory [SoundFontSource] backed by [bytes].
   factory SoundFontSource.fromBytes(Uint8List bytes, {String? basePath}) =
       MemorySource;
 
-  /// Factory constructor for file paths on disk.
+  /// Creates a [SoundFontSource] backed by a file at [filePath] on disk.
   factory SoundFontSource.fromFile(String filePath) = FileSource;
 
-  /// Factory constructor for Flutter asset keys.
+  /// Creates a [SoundFontSource] backed by a Flutter asset at [assetPath].
   factory SoundFontSource.fromAsset(String assetPath) = AssetSource;
 
-  /// Factory constructor for remote HTTP URLs.
+  /// Creates a [SoundFontSource] backed by a remote HTTP [url].
   factory SoundFontSource.fromUrl(String url) = UrlSource;
 
-  /// Factory constructor for Zip archives.
+  /// Creates a [SoundFontSource] backed by an in-memory [Archive].
   factory SoundFontSource.fromZipArchive(Archive archive, {String? basePath}) =
       ZipSource;
 }
 
-/// In-memory byte buffer source.
+/// In-memory byte buffer [SoundFontSource].
 class MemorySource extends SoundFontSource {
   final Uint8List _bytes;
   @override
   final String? basePath;
 
+  /// Creates a [MemorySource] from raw [bytes] and an optional [basePath].
   MemorySource(Uint8List bytes, {this.basePath}) : _bytes = bytes;
 
   @override
@@ -107,10 +109,12 @@ class MemorySource extends SoundFontSource {
   Future<bool> hasSubFile(String relativePath) async => false;
 }
 
-/// Disk file path source.
+/// Disk file path [SoundFontSource].
 class FileSource extends SoundFontSource {
+  /// Path to the SoundFont file on the local file system.
   final String filePath;
 
+  /// Creates a [FileSource] reading from [filePath].
   FileSource(this.filePath);
 
   @override
@@ -134,10 +138,12 @@ class FileSource extends SoundFontSource {
   }
 }
 
-/// Flutter Asset source.
+/// Flutter asset bundle [SoundFontSource].
 class AssetSource extends SoundFontSource {
+  /// Flutter asset key path in `rootBundle`.
   final String assetPath;
 
+  /// Creates an [AssetSource] reading from [assetPath].
   AssetSource(this.assetPath);
 
   @override
@@ -178,11 +184,13 @@ class AssetSource extends SoundFontSource {
   }
 }
 
-/// Remote HTTP URL source.
+/// Remote HTTP URL [SoundFontSource].
 class UrlSource extends SoundFontSource {
+  /// Remote HTTP or HTTPS URL of the SoundFont file.
   final String url;
   Uint8List? _cachedBytes;
 
+  /// Creates a [UrlSource] fetching from [url].
   UrlSource(this.url);
 
   @override
@@ -223,13 +231,15 @@ class UrlSource extends SoundFontSource {
   }
 }
 
-/// Zip Archive source (e.g., zipped SFZ + audio files).
+/// Archive [SoundFontSource] (e.g., zipped SFZ definition and external sample files).
 class ZipSource extends SoundFontSource {
+  /// Decoded archive containing the SoundFont definition and sample files.
   final Archive archive;
   @override
   final String? basePath;
   final Map<String, ArchiveFile> _fileMap = {};
 
+  /// Creates a [ZipSource] backed by [archive] and an optional [basePath].
   ZipSource(this.archive, {this.basePath}) {
     for (final file in archive) {
       if (file.isFile) {
