@@ -38,7 +38,7 @@ void main() async {
   // Initialize SoLoud audio engine with retroactive render-ahead ring buffer
   await SoLoud.instance.init(
     bufferSize: 1024,
-    devicePeriodFrames: 128,
+    devicePeriodFrames: 256,
     renderAheadFrames: 1024,
   );
   SoLoud.instance.setMaxActiveVoiceCount(512);
@@ -967,9 +967,6 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                 color: Colors.amberAccent,
               ),
               const SizedBox(width: 10),
-              // Detected Chord Badge
-              _buildChordChip(),
-              const SizedBox(width: 10),
               // Expressive MIDI Controllers
               _buildControllersCluster(),
             ],
@@ -1091,55 +1088,6 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                 ),
               ],
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildChordChip() {
-    final chord = _currentChord;
-    final hasChord = chord != null && chord.isNotEmpty;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: const Color(0xFF141720),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: hasChord ? const Color(0xFF00E5FF) : Colors.white12,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.music_note,
-            size: 18,
-            color: hasChord ? const Color(0xFF00E5FF) : Colors.white38,
-          ),
-          const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Detected Chord',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.white54,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                hasChord ? chord : '—',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: hasChord ? const Color(0xFF00E5FF) : Colors.white38,
-                ),
-              ),
-            ],
           ),
         ],
       ),

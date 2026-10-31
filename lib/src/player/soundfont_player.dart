@@ -272,7 +272,9 @@ class SoundFontPlayer {
     int velocity = 100,
     double? volume,
     double? baseVolume,
+    double volumeScale = 1.0,
     double? pan,
+    double panOffset = 0.0,
     double? pitchRatio,
     bool? looping,
     int? loopingStartOffsetAt,
@@ -311,7 +313,7 @@ class SoundFontPlayer {
           presetZone: presetZone,
         );
 
-    final vol =
+    final rawVol =
         volume ??
         VoiceCalculator.calculateVolume(
           velocity: velocity,
@@ -319,14 +321,16 @@ class SoundFontPlayer {
           presetZone: presetZone,
           masterVolume: options.masterVolume,
         );
+    final vol = (rawVol * volumeScale).clamp(0.0, 2.0);
 
-    final p =
+    final rawPan =
         pan ??
         VoiceCalculator.calculatePan(
           zone: zone,
           presetZone: presetZone,
           sample: sample,
         );
+    final p = (rawPan + panOffset).clamp(-1.0, 1.0);
 
     final loopInfo = VoiceCalculator.calculateLoopRegion(
       sample: sample,
@@ -386,8 +390,10 @@ class SoundFontPlayer {
           releaseDuration: releaseDuration,
           sampleId: sample.id,
           baseSpeeds: [speed],
-          baseVolumes: [baseVolume ?? vol],
-          basePans: [p],
+          baseVolumes: [baseVolume ?? rawVol],
+          basePans: [rawPan],
+          initialVolumeMultiplier: volumeScale,
+          initialPanOffset: panOffset,
           exclusiveClasses: exc.exclusiveClass != null
               ? {exc.exclusiveClass!}
               : const {},
@@ -416,7 +422,12 @@ class SoundFontPlayer {
       presetZone: presetZone,
       peakVolume: vol,
     );
+    final nowEngine = SoLoud.instance.getEngineTime();
+    final effectiveAt = atTime ?? nowEngine;
     final scheduledAt = (atTime ?? Duration.zero) + volStages.delay;
+    final decayStartEngine =
+        effectiveAt + volStages.delay + volStages.attack + volStages.hold;
+    final sustainRatio = vol > 0 ? (volStages.sustainVolume / vol) : 1.0;
     final hasAttack = volStages.attack > const Duration(milliseconds: 5);
     final initialVol = hasAttack ? 0.01 : vol;
     final targetBusId = busId ?? effectiveBusId;
@@ -446,8 +457,13 @@ class SoundFontPlayer {
       releaseDuration: releaseDuration,
       sampleId: sample.id,
       baseSpeeds: [speed],
-      baseVolumes: [baseVolume ?? vol],
-      basePans: [p],
+      baseVolumes: [baseVolume ?? rawVol],
+      basePans: [rawPan],
+      sustainRatios: [sustainRatio],
+      decayDurations: [volStages.decay],
+      decayStartEngineTimes: [decayStartEngine],
+      initialVolumeMultiplier: volumeScale,
+      initialPanOffset: panOffset,
       exclusiveClasses: exc.exclusiveClass != null
           ? {exc.exclusiveClass!}
           : const {},
@@ -478,7 +494,9 @@ class SoundFontPlayer {
     int velocity = 100,
     double? customVolume,
     double? baseVolume,
+    double volumeScale = 1.0,
     double? customPan,
+    double panOffset = 0.0,
     Duration? atTime,
     Duration? duration,
     Zone? presetZone,
@@ -516,6 +534,9 @@ class SoundFontPlayer {
     final allBaseSpeeds = <double>[];
     final allBaseVolumes = <double>[];
     final allBasePans = <double>[];
+    final allSustainRatios = <double>[];
+    final allDecayDurations = <Duration>[];
+    final allDecayStartTimes = <Duration>[];
     final allExclusiveClasses = <int>{};
     final allRealtimeVoiceIds = <int>[];
     RealtimeSoundFontSynthesizer? activeRealtimeSynth;
@@ -556,7 +577,9 @@ class SoundFontPlayer {
             presetZone: presetZone,
             customVolume: customVolume,
             baseVolume: baseVolume,
+            volumeScale: volumeScale,
             customPan: customPan,
+            panOffset: panOffset,
             atTime: atTime,
             duration: duration,
             busId: busId,
@@ -567,6 +590,9 @@ class SoundFontPlayer {
           allBaseSpeeds.addAll(stereoVoice.baseSpeeds);
           allBaseVolumes.addAll(stereoVoice.baseVolumes);
           allBasePans.addAll(stereoVoice.basePans);
+          allSustainRatios.addAll(stereoVoice.sustainRatios);
+          allDecayDurations.addAll(stereoVoice.decayDurations);
+          allDecayStartTimes.addAll(stereoVoice.decayStartEngineTimes);
           allExclusiveClasses.addAll(stereoVoice.exclusiveClasses);
           allRealtimeVoiceIds.addAll(stereoVoice.realtimeVoiceIds);
           activeRealtimeSynth ??= stereoVoice.realtimeSynth;
@@ -584,7 +610,9 @@ class SoundFontPlayer {
         velocity: velocity,
         volume: customVolume,
         baseVolume: baseVolume,
+        volumeScale: volumeScale,
         pan: customPan,
+        panOffset: panOffset,
         atTime: atTime,
         duration: duration,
         zone: zone,
@@ -598,6 +626,9 @@ class SoundFontPlayer {
       allBaseSpeeds.addAll(voice.baseSpeeds);
       allBaseVolumes.addAll(voice.baseVolumes);
       allBasePans.addAll(voice.basePans);
+      allSustainRatios.addAll(voice.sustainRatios);
+      allDecayDurations.addAll(voice.decayDurations);
+      allDecayStartTimes.addAll(voice.decayStartEngineTimes);
       allExclusiveClasses.addAll(voice.exclusiveClasses);
       allRealtimeVoiceIds.addAll(voice.realtimeVoiceIds);
       activeRealtimeSynth ??= voice.realtimeSynth;
@@ -615,6 +646,11 @@ class SoundFontPlayer {
       baseSpeeds: allBaseSpeeds,
       baseVolumes: allBaseVolumes,
       basePans: allBasePans,
+      sustainRatios: allSustainRatios,
+      decayDurations: allDecayDurations,
+      decayStartEngineTimes: allDecayStartTimes,
+      initialVolumeMultiplier: volumeScale,
+      initialPanOffset: panOffset,
       exclusiveClasses: allExclusiveClasses,
       realtimeVoiceIds: allRealtimeVoiceIds,
       realtimeSynth: activeRealtimeSynth,
@@ -634,7 +670,9 @@ class SoundFontPlayer {
     int velocity = 100,
     double? customVolume,
     double? baseVolume,
+    double volumeScale = 1.0,
     double? customPan,
+    double panOffset = 0.0,
     Duration? atTime,
     Duration? duration,
     bool trackVoice = true,
@@ -660,6 +698,9 @@ class SoundFontPlayer {
     final allBaseSpeeds = <double>[];
     final allBaseVolumes = <double>[];
     final allBasePans = <double>[];
+    final allSustainRatios = <double>[];
+    final allDecayDurations = <Duration>[];
+    final allDecayStartTimes = <Duration>[];
     final allExclusiveClasses = <int>{};
     final allRealtimeVoiceIds = <int>[];
     RealtimeSoundFontSynthesizer? activeRealtimeSynth;
@@ -680,7 +721,9 @@ class SoundFontPlayer {
           velocity: velocity,
           customVolume: customVolume,
           baseVolume: baseVolume,
+          volumeScale: volumeScale,
           customPan: customPan,
+          panOffset: panOffset,
           atTime: atTime,
           duration: duration,
           presetZone: pz,
@@ -693,6 +736,9 @@ class SoundFontPlayer {
         allBaseSpeeds.addAll(voice.baseSpeeds);
         allBaseVolumes.addAll(voice.baseVolumes);
         allBasePans.addAll(voice.basePans);
+        allSustainRatios.addAll(voice.sustainRatios);
+        allDecayDurations.addAll(voice.decayDurations);
+        allDecayStartTimes.addAll(voice.decayStartEngineTimes);
         allExclusiveClasses.addAll(voice.exclusiveClasses);
         allRealtimeVoiceIds.addAll(voice.realtimeVoiceIds);
         activeRealtimeSynth ??= voice.realtimeSynth;
@@ -726,7 +772,9 @@ class SoundFontPlayer {
                 presetZone: pz,
                 customVolume: customVolume,
                 baseVolume: baseVolume,
+                volumeScale: volumeScale,
                 customPan: customPan,
+                panOffset: panOffset,
                 atTime: atTime,
                 duration: duration,
                 busId: busId,
@@ -737,6 +785,9 @@ class SoundFontPlayer {
               allBaseSpeeds.addAll(stereoVoice.baseSpeeds);
               allBaseVolumes.addAll(stereoVoice.baseVolumes);
               allBasePans.addAll(stereoVoice.basePans);
+              allSustainRatios.addAll(stereoVoice.sustainRatios);
+              allDecayDurations.addAll(stereoVoice.decayDurations);
+              allDecayStartTimes.addAll(stereoVoice.decayStartEngineTimes);
               allExclusiveClasses.addAll(stereoVoice.exclusiveClasses);
               allRealtimeVoiceIds.addAll(stereoVoice.realtimeVoiceIds);
               activeRealtimeSynth ??= stereoVoice.realtimeSynth;
@@ -754,7 +805,9 @@ class SoundFontPlayer {
             velocity: velocity,
             volume: customVolume,
             baseVolume: baseVolume,
+            volumeScale: volumeScale,
             pan: customPan,
+            panOffset: panOffset,
             atTime: atTime,
             duration: duration,
             presetZone: pz,
@@ -766,6 +819,9 @@ class SoundFontPlayer {
           allBaseSpeeds.addAll(voice.baseSpeeds);
           allBaseVolumes.addAll(voice.baseVolumes);
           allBasePans.addAll(voice.basePans);
+          allSustainRatios.addAll(voice.sustainRatios);
+          allDecayDurations.addAll(voice.decayDurations);
+          allDecayStartTimes.addAll(voice.decayStartEngineTimes);
           allExclusiveClasses.addAll(voice.exclusiveClasses);
           allRealtimeVoiceIds.addAll(voice.realtimeVoiceIds);
           activeRealtimeSynth ??= voice.realtimeSynth;
@@ -785,6 +841,11 @@ class SoundFontPlayer {
       baseSpeeds: allBaseSpeeds,
       baseVolumes: allBaseVolumes,
       basePans: allBasePans,
+      sustainRatios: allSustainRatios,
+      decayDurations: allDecayDurations,
+      decayStartEngineTimes: allDecayStartTimes,
+      initialVolumeMultiplier: volumeScale,
+      initialPanOffset: panOffset,
       exclusiveClasses: allExclusiveClasses,
       realtimeVoiceIds: allRealtimeVoiceIds,
       realtimeSynth: activeRealtimeSynth,
@@ -1241,7 +1302,9 @@ class SoundFontPlayer {
     Zone? presetZone,
     double? customVolume,
     double? baseVolume,
+    double volumeScale = 1.0,
     double? customPan,
+    double panOffset = 0.0,
     Duration? atTime,
     Duration? duration,
     int? busId,
@@ -1261,7 +1324,7 @@ class SoundFontPlayer {
       presetZone: presetZone,
     );
 
-    final vol =
+    final rawVol =
         customVolume ??
         VoiceCalculator.calculateVolume(
           velocity: velocity,
@@ -1269,12 +1332,15 @@ class SoundFontPlayer {
           presetZone: presetZone,
           masterVolume: options.masterVolume,
         );
+    final vol = (rawVol * volumeScale).clamp(0.0, 2.0);
 
     if (!SoLoud.instance.isInitialized) {
       return SoundFontVoice(key: key, velocity: velocity, handles: []);
     }
 
-    final p = customPan ?? VoiceCalculator.calculatePan(presetZone: presetZone);
+    final rawPan =
+        customPan ?? VoiceCalculator.calculatePan(presetZone: presetZone);
+    final p = (rawPan + panOffset).clamp(-1.0, 1.0);
 
     final loopInfo = VoiceCalculator.calculateLoopRegion(
       sample: leftSample,
@@ -1343,8 +1409,10 @@ class SoundFontPlayer {
           releaseDuration: releaseDuration,
           sampleId: leftSample.id,
           baseSpeeds: [speed],
-          baseVolumes: [baseVolume ?? vol],
-          basePans: [p],
+          baseVolumes: [baseVolume ?? rawVol],
+          basePans: [rawPan],
+          initialVolumeMultiplier: volumeScale,
+          initialPanOffset: panOffset,
           exclusiveClasses: exc.exclusiveClass != null
               ? {exc.exclusiveClass!}
               : const {},
@@ -1370,7 +1438,12 @@ class SoundFontPlayer {
       presetZone: presetZone,
       peakVolume: vol,
     );
+    final nowEngine = SoLoud.instance.getEngineTime();
+    final effectiveAt = atTime ?? nowEngine;
     final scheduledAt = (atTime ?? Duration.zero) + volStages.delay;
+    final decayStartEngine =
+        effectiveAt + volStages.delay + volStages.attack + volStages.hold;
+    final sustainRatio = vol > 0 ? (volStages.sustainVolume / vol) : 1.0;
     final hasAttack = volStages.attack > const Duration(milliseconds: 5);
     final initialVol = hasAttack ? 0.01 : vol;
     final targetBusId = busId ?? effectiveBusId;
@@ -1416,8 +1489,13 @@ class SoundFontPlayer {
       releaseDuration: releaseDuration,
       sampleId: leftSample.id,
       baseSpeeds: [speed],
-      baseVolumes: [baseVolume ?? vol],
-      basePans: [p],
+      baseVolumes: [baseVolume ?? rawVol],
+      basePans: [rawPan],
+      sustainRatios: [sustainRatio],
+      decayDurations: [volStages.decay],
+      decayStartEngineTimes: [decayStartEngine],
+      initialVolumeMultiplier: volumeScale,
+      initialPanOffset: panOffset,
       exclusiveClasses: exc.exclusiveClass != null
           ? {exc.exclusiveClass!}
           : const {},

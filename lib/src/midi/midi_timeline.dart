@@ -222,6 +222,12 @@ class MidiChannelSnapshot {
   /// Active MIDI bank number (`0..128`).
   int bank;
 
+  /// Raw MIDI CC 0 Bank Select MSB (`0..127`).
+  int bankMsb;
+
+  /// Raw MIDI CC 32 Bank Select LSB (`0..127`).
+  int bankLsb;
+
   /// Active MIDI program (patch) number (`0..127`).
   int program;
 
@@ -237,31 +243,60 @@ class MidiChannelSnapshot {
   /// Raw 14-bit unsigned MIDI pitch bend (`0..16383`, where `8192` is center).
   int pitchBend;
 
+  /// Raw MIDI CC 1 modulation wheel (`0..127`, default `0`).
+  int modulation;
+
+  /// Raw MIDI CC 91 reverb send (`0..127`, default `0`).
+  int reverbSend;
+
+  /// Raw MIDI CC 93 chorus send (`0..127`, default `0`).
+  int chorusSend;
+
   /// Whether the sustain pedal (CC 64) is depressed (`value >= 64`).
   bool isSustainPedalOn;
+
+  /// Whether the sostenuto pedal (CC 66) is depressed (`value >= 64`).
+  bool isSostenutoPedalOn;
+
+  /// Whether the soft pedal (CC 67) is depressed (`value >= 64`).
+  bool isSoftPedalOn;
 
   /// Creates a [MidiChannelSnapshot] for [channel].
   MidiChannelSnapshot({
     required this.channel,
     this.bank = 0,
+    this.bankMsb = 0,
+    this.bankLsb = 0,
     this.program = 0,
     this.volume = 100,
     this.pan = 64, // Center
     this.expression = 127,
     this.pitchBend = 8192, // Center / 0 bend
+    this.modulation = 0,
+    this.reverbSend = 0,
+    this.chorusSend = 0,
     this.isSustainPedalOn = false,
+    this.isSostenutoPedalOn = false,
+    this.isSoftPedalOn = false,
   });
 
   /// Returns a copy of this [MidiChannelSnapshot].
   MidiChannelSnapshot clone() => MidiChannelSnapshot(
     channel: channel,
     bank: bank,
+    bankMsb: bankMsb,
+    bankLsb: bankLsb,
     program: program,
     volume: volume,
     pan: pan,
     expression: expression,
     pitchBend: pitchBend,
+    modulation: modulation,
+    reverbSend: reverbSend,
+    chorusSend: chorusSend,
     isSustainPedalOn: isSustainPedalOn,
+    isSostenutoPedalOn: isSostenutoPedalOn,
+    isSoftPedalOn: isSoftPedalOn,
   );
 }
 
@@ -567,7 +602,19 @@ class MidiTimeline {
         if (state != null) {
           switch (event.controller) {
             case 0: // Bank Select MSB
-              state.bank = event.value;
+              state.bankMsb = event.value;
+              if (event.channel != 9) {
+                state.bank = (state.bankMsb << 7) | state.bankLsb;
+              }
+              break;
+            case 32: // Bank Select LSB
+              state.bankLsb = event.value;
+              if (event.channel != 9) {
+                state.bank = (state.bankMsb << 7) | state.bankLsb;
+              }
+              break;
+            case 1: // Modulation Wheel
+              state.modulation = event.value;
               break;
             case 7: // Channel Volume
               state.volume = event.value;
@@ -581,10 +628,25 @@ class MidiTimeline {
             case 64: // Sustain Pedal
               state.isSustainPedalOn = event.value >= 64;
               break;
+            case 66: // Sostenuto Pedal
+              state.isSostenutoPedalOn = event.value >= 64;
+              break;
+            case 67: // Soft Pedal
+              state.isSoftPedalOn = event.value >= 64;
+              break;
+            case 91: // Reverb Send
+              state.reverbSend = event.value;
+              break;
+            case 93: // Chorus Send
+              state.chorusSend = event.value;
+              break;
             case 121: // Reset All Controllers
               state.expression = 127;
               state.pitchBend = 8192;
+              state.modulation = 0;
               state.isSustainPedalOn = false;
+              state.isSostenutoPedalOn = false;
+              state.isSoftPedalOn = false;
               break;
           }
         }

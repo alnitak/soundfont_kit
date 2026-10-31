@@ -340,7 +340,11 @@ class MidiChannelState {
   }
 
   /// Updates the sustain pedal state (CC 64). When pedal is released, all deferred voices are faded out.
-  Future<void> setSustainPedal(bool on, {Duration? releaseDuration}) async {
+  Future<void> setSustainPedal(
+    bool on, {
+    Duration? releaseDuration,
+    Duration? atTime,
+  }) async {
     isSustainPedalOn = on;
     if (!on && sustainedVst3Notes.isNotEmpty) {
       final inst = effectiveVst3Instrument;
@@ -361,7 +365,7 @@ class MidiChannelState {
       sustainedVoices.clear();
       for (final voice in toRelease) {
         if (!sostenutoVoices.contains(voice)) {
-          await voice.release(customRelease: releaseDuration);
+          await voice.release(customRelease: releaseDuration, atTime: atTime);
         }
       }
     }
@@ -371,7 +375,11 @@ class MidiChannelState {
   ///
   /// When depressed, locks in all currently sounding voices and keeps them sounding
   /// even through subsequent NoteOffs until the pedal is released.
-  Future<void> setSostenutoPedal(bool on, {Duration? releaseDuration}) async {
+  Future<void> setSostenutoPedal(
+    bool on, {
+    Duration? releaseDuration,
+    Duration? atTime,
+  }) async {
     isSostenutoPedalOn = on;
     if (on) {
       // Capture all currently active voices
@@ -388,16 +396,16 @@ class MidiChannelState {
         if (isSustainPedalOn) {
           sustainedVoices.add(voice);
         } else {
-          await voice.release(customRelease: releaseDuration);
+          await voice.release(customRelease: releaseDuration, atTime: atTime);
         }
       }
     }
   }
 
   /// Updates the soft pedal (una corda) state (CC 67).
-  void setSoftPedal(bool on) {
+  void setSoftPedal(bool on, {Duration? atTime}) {
     isSoftPedalOn = on;
-    _applyVolumeToAllVoices();
+    _applyVolumeToAllVoices(atTime: atTime);
   }
 
   /// Dynamically updates pitch bend across all active, sustained, and sostenuto voices.
@@ -418,15 +426,15 @@ class MidiChannelState {
   }
 
   /// Dynamically updates volume across all active and sounding voices.
-  void applyVolume(double vol) {
+  void applyVolume(double vol, {Duration? atTime}) {
     volume = vol;
-    _applyVolumeToAllVoices();
+    _applyVolumeToAllVoices(atTime: atTime);
   }
 
   /// Dynamically updates expression across all active and sounding voices.
-  void applyExpression(double expr) {
+  void applyExpression(double expr, {Duration? atTime}) {
     expression = expr;
-    _applyVolumeToAllVoices();
+    _applyVolumeToAllVoices(atTime: atTime);
   }
 
   /// Dynamically updates stereo pan across all active and sounding voices.
@@ -522,7 +530,7 @@ class MidiChannelState {
     }
   }
 
-  void _applyVolumeToAllVoices() {
+  void _applyVolumeToAllVoices({Duration? atTime}) {
     final eff = effectiveVolume;
     if (vst3PlayHandle != null &&
         SoLoud.instance.isInitialized &&
@@ -533,19 +541,22 @@ class MidiChannelState {
     }
     for (final vList in activeVoices.values) {
       for (final voice in vList) {
-        voice.applyVolumeMultiplier(eff);
+        voice.applyVolumeMultiplier(eff, atTime: atTime);
       }
     }
     for (final voice in sustainedVoices) {
-      voice.applyVolumeMultiplier(eff);
+      voice.applyVolumeMultiplier(eff, atTime: atTime);
     }
     for (final voice in sostenutoVoices) {
-      voice.applyVolumeMultiplier(eff);
+      voice.applyVolumeMultiplier(eff, atTime: atTime);
     }
   }
 
   /// Releases all active and sustained voices on this channel with release fade.
-  Future<void> releaseAllVoices({Duration? releaseDuration}) async {
+  Future<void> releaseAllVoices({
+    Duration? releaseDuration,
+    Duration? atTime,
+  }) async {
     heldNotes.clear();
     final inst = effectiveVst3Instrument;
     if (inst != null) {
@@ -572,7 +583,7 @@ class MidiChannelState {
     releasingVoices.clear();
 
     for (final voice in all) {
-      await voice.release(customRelease: releaseDuration);
+      await voice.release(customRelease: releaseDuration, atTime: atTime);
     }
   }
 

@@ -715,8 +715,6 @@ class MidiPlayer {
             final targetPlayer = ch.customPlayer ?? player;
             final preset = _resolvePresetForChannel(ch);
             if (preset != null) {
-              final noteVol = (event.velocity / 127.0).clamp(0.0, 1.0);
-              final playVol = (noteVol * ch.effectiveVolume).clamp(0.0, 1.0);
               final currentEpoch = _playEpoch;
               final scheduledAt = SoLoud.instance.isInitialized
                   ? SoLoud.instance.getEngineTime() + delay
@@ -727,9 +725,8 @@ class MidiPlayer {
                     atTime: scheduledAt,
                     key: effectiveNote,
                     velocity: event.velocity,
-                    customVolume: playVol,
-                    baseVolume: noteVol,
-                    customPan: ch.pan,
+                    volumeScale: ch.effectiveVolume,
+                    panOffset: ch.pan,
                     trackVoice: false,
                     busId: ch.effectiveBusId != 0 ? ch.effectiveBusId : null,
                   )
@@ -810,8 +807,8 @@ class MidiPlayer {
         emitNoteOff();
       }
     } else if (event is ProgramChangeEvent) {
-      void applyProgramChange() {
-        channels[event.channel].program = event.program;
+      channels[event.channel].program = event.program;
+      void emitProgramChange() {
         _eventController.add(
           MidiPlaybackEvent(
             type: MidiPlaybackEventType.programChange,
@@ -825,56 +822,59 @@ class MidiPlayer {
         final currentEpoch = _playEpoch;
         Timer(delay, () {
           if (_isPlaying && _playEpoch == currentEpoch) {
-            applyProgramChange();
+            emitProgramChange();
           }
         });
       } else {
-        applyProgramChange();
+        emitProgramChange();
       }
     } else if (event is ControlChangeEvent) {
-      void applyCc() {
-        final ch = channels[event.channel];
-        if (event.controller == 0) {
-          // Bank Select MSB
-          ch.bankMsb = event.value;
-          if (event.channel != 9) ch.bank = (ch.bankMsb << 7) | ch.bankLsb;
-        } else if (event.controller == 32) {
-          // Bank Select LSB
-          ch.bankLsb = event.value;
-          if (event.channel != 9) ch.bank = (ch.bankMsb << 7) | ch.bankLsb;
-        } else if (event.controller == 1) {
-          // Modulation Wheel (CC 1) -> scoped strictly to this channel's mixing Bus!
-          ch.applyModulation(event.value / 127.0);
-        } else if (event.controller == 91) {
-          // Reverb Send (CC 91) -> scoped to this channel's mixing Bus Freeverb!
-          ch.applyReverbSend(event.value / 127.0);
-        } else if (event.controller == 93) {
-          // Chorus Send (CC 93) -> scoped to this channel's mixing Bus Flanger!
-          ch.applyChorusSend(event.value / 127.0);
-        } else if (event.isSustainPedal) {
-          ch.setSustainPedal(event.isSustainOn);
-        } else if (event.controller == 66) {
-          // Sostenuto Pedal (CC 66)
-          ch.setSostenutoPedal(event.value >= 64);
-        } else if (event.controller == 67) {
-          // Soft Pedal / Una Corda (CC 67)
-          ch.setSoftPedal(event.value >= 64);
-        } else if (event.controller == 7) {
-          ch.applyVolume(event.value / 127.0);
-        } else if (event.controller == 10) {
-          ch.applyPan((event.value - 64) / 64.0);
-        } else if (event.controller == 11) {
-          ch.applyExpression(event.value / 127.0);
-        } else if (event.controller == 120) {
-          // All Sound Off
-          ch.stopAllVoicesImmediate();
-        } else if (event.controller == 121) {
-          // Reset All Controllers
-          ch.resetControllers();
-        } else if (event.isAllNotesOff) {
-          ch.releaseAllVoices();
-        }
+      final ch = channels[event.channel];
+      final scheduledAt = SoLoud.instance.isInitialized
+          ? SoLoud.instance.getEngineTime() + delay
+          : null;
+      if (event.controller == 0) {
+        // Bank Select MSB
+        ch.bankMsb = event.value;
+        if (event.channel != 9) ch.bank = (ch.bankMsb << 7) | ch.bankLsb;
+      } else if (event.controller == 32) {
+        // Bank Select LSB
+        ch.bankLsb = event.value;
+        if (event.channel != 9) ch.bank = (ch.bankMsb << 7) | ch.bankLsb;
+      } else if (event.controller == 1) {
+        // Modulation Wheel (CC 1) -> scoped strictly to this channel's mixing Bus!
+        ch.applyModulation(event.value / 127.0);
+      } else if (event.controller == 91) {
+        // Reverb Send (CC 91) -> scoped to this channel's mixing Bus Freeverb!
+        ch.applyReverbSend(event.value / 127.0);
+      } else if (event.controller == 93) {
+        // Chorus Send (CC 93) -> scoped to this channel's mixing Bus Flanger!
+        ch.applyChorusSend(event.value / 127.0);
+      } else if (event.isSustainPedal) {
+        ch.setSustainPedal(event.isSustainOn, atTime: scheduledAt);
+      } else if (event.controller == 66) {
+        // Sostenuto Pedal (CC 66)
+        ch.setSostenutoPedal(event.value >= 64, atTime: scheduledAt);
+      } else if (event.controller == 67) {
+        // Soft Pedal / Una Corda (CC 67)
+        ch.setSoftPedal(event.value >= 64, atTime: scheduledAt);
+      } else if (event.controller == 7) {
+        ch.applyVolume(event.value / 127.0, atTime: scheduledAt);
+      } else if (event.controller == 10) {
+        ch.applyPan((event.value - 64) / 64.0);
+      } else if (event.controller == 11) {
+        ch.applyExpression(event.value / 127.0, atTime: scheduledAt);
+      } else if (event.controller == 120) {
+        // All Sound Off
+        ch.stopAllVoicesImmediate();
+      } else if (event.controller == 121) {
+        // Reset All Controllers
+        ch.resetControllers();
+      } else if (event.isAllNotesOff) {
+        ch.releaseAllVoices(atTime: scheduledAt);
+      }
 
+      void emitCc() {
         _eventController.add(
           MidiPlaybackEvent(
             type: MidiPlaybackEventType.controlChange,
@@ -889,15 +889,15 @@ class MidiPlayer {
         final currentEpoch = _playEpoch;
         Timer(delay, () {
           if (_isPlaying && _playEpoch == currentEpoch) {
-            applyCc();
+            emitCc();
           }
         });
       } else {
-        applyCc();
+        emitCc();
       }
     } else if (event is PitchBendEvent) {
-      void applyPitchBend() {
-        channels[event.channel].applyPitchBend(event.normalized);
+      channels[event.channel].applyPitchBend(event.normalized);
+      void emitPitchBend() {
         _eventController.add(
           MidiPlaybackEvent(
             type: MidiPlaybackEventType.pitchBend,
@@ -911,11 +911,11 @@ class MidiPlayer {
         final currentEpoch = _playEpoch;
         Timer(delay, () {
           if (_isPlaying && _playEpoch == currentEpoch) {
-            applyPitchBend();
+            emitPitchBend();
           }
         });
       } else {
-        applyPitchBend();
+        emitPitchBend();
       }
     } else if (event is SetTempoEvent) {
       _syncVst3Transport();
@@ -1121,6 +1121,8 @@ class MidiPlayer {
     for (final entry in snapshots.entries) {
       final ch = channels[entry.key];
       final snap = entry.value;
+      ch.bankMsb = snap.bankMsb;
+      ch.bankLsb = snap.bankLsb;
       ch.bank = snap.bank;
       ch.program = snap.program;
       ch.volume = snap.volume / 127.0;
@@ -1128,6 +1130,11 @@ class MidiPlayer {
       ch.pan = (snap.pan - 64) / 64.0;
       ch.pitchBend = (snap.pitchBend - 8192) / 8192.0;
       ch.isSustainPedalOn = snap.isSustainPedalOn;
+      ch.isSostenutoPedalOn = snap.isSostenutoPedalOn;
+      ch.isSoftPedalOn = snap.isSoftPedalOn;
+      ch.applyModulation(snap.modulation / 127.0);
+      ch.applyReverbSend(snap.reverbSend / 127.0);
+      ch.applyChorusSend(snap.chorusSend / 127.0);
     }
   }
 

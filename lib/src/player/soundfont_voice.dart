@@ -34,6 +34,15 @@ class SoundFontVoice {
   /// The baseline stereo pan per handle (-1.0 to 1.0).
   final List<double> basePans;
 
+  /// The DAHDSR sustain level ratio (`0.0..1.0` relative to peak volume) per handle.
+  final List<double> sustainRatios;
+
+  /// The DAHDSR decay duration per handle.
+  final List<Duration> decayDurations;
+
+  /// The engine timestamp when the DAHDSR decay stage starts per handle.
+  final List<Duration> decayStartEngineTimes;
+
   /// Exclusive class (choke group) IDs associated with this voice (SF2 Gen 57 / SFZ `group`).
   final Set<int> exclusiveClasses;
 
@@ -44,6 +53,7 @@ class SoundFontVoice {
   final RealtimeSoundFontSynthesizer? realtimeSynth;
 
   final List<Timer> _envelopeTimers = [];
+  final List<Timer> _volumeTimers = [];
 
   bool _isReleased = false;
   DateTime? _releaseEndWallTime;
@@ -62,12 +72,24 @@ class SoundFontVoice {
     List<double>? baseSpeeds,
     List<double>? baseVolumes,
     List<double>? basePans,
+    List<double>? sustainRatios,
+    List<Duration>? decayDurations,
+    List<Duration>? decayStartEngineTimes,
+    double? initialVolumeMultiplier,
+    double? initialPanOffset,
     Set<int>? exclusiveClasses,
     this.realtimeVoiceIds = const [],
     this.realtimeSynth,
   }) : baseSpeeds = baseSpeeds ?? List.filled(handles.length, 1.0),
        baseVolumes = baseVolumes ?? List.filled(handles.length, 1.0),
        basePans = basePans ?? List.filled(handles.length, 0.0),
+       sustainRatios = sustainRatios ?? List.filled(handles.length, 1.0),
+       decayDurations =
+           decayDurations ?? List.filled(handles.length, Duration.zero),
+       decayStartEngineTimes =
+           decayStartEngineTimes ?? List.filled(handles.length, Duration.zero),
+       _lastVolumeMultiplier = initialVolumeMultiplier,
+       _lastPan = initialPanOffset,
        exclusiveClasses = exclusiveClasses ?? const {};
 
   /// Registers an internal DAHDSR stage [timer] that will be automatically
@@ -80,7 +102,15 @@ class SoundFontVoice {
     _envelopeTimers.add(timer);
   }
 
+  void _cancelVolumeTimers() {
+    for (final t in _volumeTimers) {
+      t.cancel();
+    }
+    _volumeTimers.clear();
+  }
+
   void _cancelEnvelopeTimers() {
+    _cancelVolumeTimers();
     for (final t in _envelopeTimers) {
       t.cancel();
     }
@@ -209,6 +239,11 @@ class SoundFontVoice {
   /// Dynamically applies a relative pitch bend [bendMultiplier] to all active handles.
   void applyPitchBend(double bendMultiplier) {
     if (_isReleased) return;
+    if (_lastPitchBendMultiplier != null &&
+        (_lastPitchBendMultiplier! - bendMultiplier).abs() < 0.0005) {
+      return;
+    }
+    _lastPitchBendMultiplier = bendMultiplier;
     realtimeSynth?.setPitchBend(bendMultiplier);
     for (int i = 0; i < handles.length; i++) {
       final handle = handles[i];
@@ -220,23 +255,129 @@ class SoundFontVoice {
     }
   }
 
+  double? _lastPitchBendMultiplier = 1.0;
   double? _lastVolumeMultiplier;
   double? _lastPan;
 
-  /// Dynamically scales the volume of all active handles by [multiplier].
-  void applyVolumeMultiplier(double multiplier) {
+  /// Dynamically scales the volume of all active handles by [multiplier],
+  /// optionally scheduled at engine time [atTime].
+  void applyVolumeMultiplier(double multiplier, {Duration? atTime}) {
     if (_isReleased) return;
     if (_lastVolumeMultiplier != null &&
         (_lastVolumeMultiplier! - multiplier).abs() < 0.002) {
       return;
     }
     _lastVolumeMultiplier = multiplier;
+    _cancelVolumeTimers();
+    final nowEngine = SoLoud.instance.isInitialized
+        ? SoLoud.instance.getEngineTime()
+        : Duration.zero;
+    final effectiveAt =
+        (atTime != null && atTime > nowEngine) ? atTime : nowEngine;
     for (int i = 0; i < handles.length; i++) {
       final handle = handles[i];
       if (!SoLoud.instance.getIsValidVoiceHandle(handle)) continue;
       final base = i < baseVolumes.length ? baseVolumes[i] : 1.0;
+      final peak = (base * multiplier).clamp(0.0, 1.0);
+      final sustainRatio = i < sustainRatios.length ? sustainRatios[i] : 1.0;
+      final decayDur = i < decayDurations.length
+          ? decayDurations[i]
+          : Duration.zero;
+      final decayStart = i < decayStartEngineTimes.length
+          ? decayStartEngineTimes[i]
+          : Duration.zero;
+      final hasDecay =
+          decayDur > const Duration(milliseconds: 5) &&
+          (1.0 - sustainRatio).abs() > 0.005;
       try {
-        SoLoud.instance.setVolume(handle, (base * multiplier).clamp(0.0, 1.0));
+        if (!hasDecay) {
+          SoLoud.instance.fadeScheduled(
+            handle,
+            effectiveAt,
+            peak,
+            const Duration(milliseconds: 10),
+          );
+        } else if (effectiveAt <= decayStart) {
+          SoLoud.instance.fadeScheduled(
+            handle,
+            effectiveAt,
+            peak,
+            const Duration(milliseconds: 6),
+          );
+          final targetSustain = (peak * sustainRatio).clamp(0.0, 1.0);
+          final timeToDecay = decayStart - nowEngine;
+          if (timeToDecay > Duration.zero) {
+            _volumeTimers.add(
+              Timer(timeToDecay, () {
+                if (!_isReleased &&
+                    SoLoud.instance.getIsValidVoiceHandle(handle)) {
+                  try {
+                    SoLoud.instance.fadeScheduled(
+                      handle,
+                      decayStart,
+                      targetSustain,
+                      decayDur,
+                      thenStop: targetSustain <= 0.0005,
+                    );
+                  } catch (_) {}
+                }
+              }),
+            );
+          }
+        } else {
+          final elapsedUs = (effectiveAt - decayStart).inMicroseconds;
+          final totalDecayUs = decayDur.inMicroseconds;
+          final targetSustain = (peak * sustainRatio).clamp(0.0, 1.0);
+          if (elapsedUs >= totalDecayUs) {
+            SoLoud.instance.fadeScheduled(
+              handle,
+              effectiveAt,
+              targetSustain,
+              const Duration(milliseconds: 10),
+            );
+          } else {
+            final t = (elapsedUs / totalDecayUs).clamp(0.0, 1.0);
+            final currentVol = (peak + (targetSustain - peak) * t).clamp(
+              0.0,
+              1.0,
+            );
+            final remainingUs = totalDecayUs - elapsedUs;
+            const rampDur = Duration(milliseconds: 12);
+            SoLoud.instance.fadeScheduled(
+              handle,
+              effectiveAt,
+              currentVol,
+              rampDur,
+            );
+            if (remainingUs > 20000) {
+              final resumeEngineAt = effectiveAt + rampDur;
+              final resumeWallDelay =
+                  (effectiveAt > nowEngine
+                      ? effectiveAt - nowEngine
+                      : Duration.zero) +
+                  const Duration(milliseconds: 15);
+              final remainingAfterRamp = Duration(
+                microseconds: remainingUs - rampDur.inMicroseconds,
+              );
+              _volumeTimers.add(
+                Timer(resumeWallDelay, () {
+                  if (!_isReleased &&
+                      SoLoud.instance.getIsValidVoiceHandle(handle)) {
+                    try {
+                      SoLoud.instance.fadeScheduled(
+                        handle,
+                        resumeEngineAt,
+                        targetSustain,
+                        remainingAfterRamp,
+                        thenStop: targetSustain <= 0.0005,
+                      );
+                    } catch (_) {}
+                  }
+                }),
+              );
+            }
+          }
+        }
       } catch (_) {}
     }
   }
@@ -248,10 +389,12 @@ class SoundFontVoice {
       return;
     }
     _lastPan = pan;
-    for (final handle in handles) {
+    for (int i = 0; i < handles.length; i++) {
+      final handle = handles[i];
       if (!SoLoud.instance.getIsValidVoiceHandle(handle)) continue;
+      final basePan = i < basePans.length ? basePans[i] : 0.0;
       try {
-        SoLoud.instance.setPan(handle, pan.clamp(-1.0, 1.0));
+        SoLoud.instance.setPan(handle, (basePan + pan).clamp(-1.0, 1.0));
       } catch (_) {}
     }
   }
