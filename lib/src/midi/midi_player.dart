@@ -169,8 +169,11 @@ class MidiPlayer {
   bool looping = false;
 
   /// Lookahead window duration in milliseconds for sample-accurate scheduling.
-  /// Defaults to 0 for real-time sample accuracy and synchronized NoteOff/CC handling.
-  int lookaheadMs = 0;
+  /// Pre-scheduling notes ahead of the audio engine write head (>= 25-35 ms)
+  /// allows SoLoud to insert voices with sample-accurate hardware countdowns,
+  /// completely avoiding retroactive re-mixing and eliminating audio thread
+  /// contention during dense polyphony.
+  int lookaheadMs = 35;
 
   /// Scheduling timer interval in milliseconds.
   int scheduleIntervalMs = 15;
@@ -668,16 +671,28 @@ class MidiPlayer {
         } else {
           ch.handleNoteOff(effectiveNote, atTime: scheduledAt);
         }
-        _notifyChordChanged();
-        _eventController.add(
-          MidiPlaybackEvent(
-            type: MidiPlaybackEventType.noteOff,
-            channel: event.channel,
-            note: effectiveNote,
-            velocity: 0,
-            timestamp: timed.timestamp,
-          ),
-        );
+        void emitNoteOff() {
+          _notifyChordChanged();
+          _eventController.add(
+            MidiPlaybackEvent(
+              type: MidiPlaybackEventType.noteOff,
+              channel: event.channel,
+              note: effectiveNote,
+              velocity: 0,
+              timestamp: timed.timestamp,
+            ),
+          );
+        }
+        if (delay > Duration.zero) {
+          final currentEpoch = _playEpoch;
+          Timer(delay, () {
+            if (_isPlaying && _playEpoch == currentEpoch) {
+              emitNoteOff();
+            }
+          });
+        } else {
+          emitNoteOff();
+        }
       } else {
         ch.markNoteOn(effectiveNote);
         final shouldPlay = !ch.isMuted && (!anySolo || ch.isSolo);
@@ -720,7 +735,9 @@ class MidiPlayer {
                   )
                   .then((voice) {
                     if (!_isPlaying || _playEpoch != currentEpoch) {
-                      voice.release(customRelease: Duration.zero);
+                      voice.release(
+                        customRelease: const Duration(milliseconds: 15),
+                      );
                     } else {
                       ch.addVoice(effectiveNote, voice);
                     }
@@ -729,16 +746,28 @@ class MidiPlayer {
           }
         }
 
-        _notifyChordChanged();
-        _eventController.add(
-          MidiPlaybackEvent(
-            type: MidiPlaybackEventType.noteOn,
-            channel: event.channel,
-            note: effectiveNote,
-            velocity: event.velocity,
-            timestamp: timed.timestamp,
-          ),
-        );
+        void emitNoteOn() {
+          _notifyChordChanged();
+          _eventController.add(
+            MidiPlaybackEvent(
+              type: MidiPlaybackEventType.noteOn,
+              channel: event.channel,
+              note: effectiveNote,
+              velocity: event.velocity,
+              timestamp: timed.timestamp,
+            ),
+          );
+        }
+        if (delay > Duration.zero) {
+          final currentEpoch = _playEpoch;
+          Timer(delay, () {
+            if (_isPlaying && _playEpoch == currentEpoch) {
+              emitNoteOn();
+            }
+          });
+        } else {
+          emitNoteOn();
+        }
       }
     } else if (event is NoteOffEvent) {
       final ch = channels[event.channel];
@@ -758,88 +787,136 @@ class MidiPlayer {
       } else {
         ch.handleNoteOff(effectiveNote, atTime: scheduledAt);
       }
-      _notifyChordChanged();
-      _eventController.add(
-        MidiPlaybackEvent(
-          type: MidiPlaybackEventType.noteOff,
-          channel: event.channel,
-          note: effectiveNote,
-          velocity: event.velocity,
-          timestamp: timed.timestamp,
-        ),
-      );
-    } else if (event is ProgramChangeEvent) {
-      channels[event.channel].program = event.program;
-      _eventController.add(
-        MidiPlaybackEvent(
-          type: MidiPlaybackEventType.programChange,
-          channel: event.channel,
-          program: event.program,
-          timestamp: timed.timestamp,
-        ),
-      );
-    } else if (event is ControlChangeEvent) {
-      final ch = channels[event.channel];
-      if (event.controller == 0) {
-        // Bank Select MSB
-        ch.bankMsb = event.value;
-        if (event.channel != 9) ch.bank = (ch.bankMsb << 7) | ch.bankLsb;
-      } else if (event.controller == 32) {
-        // Bank Select LSB
-        ch.bankLsb = event.value;
-        if (event.channel != 9) ch.bank = (ch.bankMsb << 7) | ch.bankLsb;
-      } else if (event.controller == 1) {
-        // Modulation Wheel (CC 1) -> scoped strictly to this channel's mixing Bus!
-        ch.applyModulation(event.value / 127.0);
-      } else if (event.controller == 91) {
-        // Reverb Send (CC 91) -> scoped to this channel's mixing Bus Freeverb!
-        ch.applyReverbSend(event.value / 127.0);
-      } else if (event.controller == 93) {
-        // Chorus Send (CC 93) -> scoped to this channel's mixing Bus Flanger!
-        ch.applyChorusSend(event.value / 127.0);
-      } else if (event.isSustainPedal) {
-        ch.setSustainPedal(event.isSustainOn);
-      } else if (event.controller == 66) {
-        // Sostenuto Pedal (CC 66)
-        ch.setSostenutoPedal(event.value >= 64);
-      } else if (event.controller == 67) {
-        // Soft Pedal / Una Corda (CC 67)
-        ch.setSoftPedal(event.value >= 64);
-      } else if (event.controller == 7) {
-        ch.applyVolume(event.value / 127.0);
-      } else if (event.controller == 10) {
-        ch.applyPan((event.value - 64) / 64.0);
-      } else if (event.controller == 11) {
-        ch.applyExpression(event.value / 127.0);
-      } else if (event.controller == 120) {
-        // All Sound Off
-        ch.stopAllVoicesImmediate();
-      } else if (event.controller == 121) {
-        // Reset All Controllers
-        ch.resetControllers();
-      } else if (event.isAllNotesOff) {
-        ch.releaseAllVoices();
+      void emitNoteOff() {
+        _notifyChordChanged();
+        _eventController.add(
+          MidiPlaybackEvent(
+            type: MidiPlaybackEventType.noteOff,
+            channel: event.channel,
+            note: effectiveNote,
+            velocity: event.velocity,
+            timestamp: timed.timestamp,
+          ),
+        );
       }
+      if (delay > Duration.zero) {
+        final currentEpoch = _playEpoch;
+        Timer(delay, () {
+          if (_isPlaying && _playEpoch == currentEpoch) {
+            emitNoteOff();
+          }
+        });
+      } else {
+        emitNoteOff();
+      }
+    } else if (event is ProgramChangeEvent) {
+      void applyProgramChange() {
+        channels[event.channel].program = event.program;
+        _eventController.add(
+          MidiPlaybackEvent(
+            type: MidiPlaybackEventType.programChange,
+            channel: event.channel,
+            program: event.program,
+            timestamp: timed.timestamp,
+          ),
+        );
+      }
+      if (delay > Duration.zero) {
+        final currentEpoch = _playEpoch;
+        Timer(delay, () {
+          if (_isPlaying && _playEpoch == currentEpoch) {
+            applyProgramChange();
+          }
+        });
+      } else {
+        applyProgramChange();
+      }
+    } else if (event is ControlChangeEvent) {
+      void applyCc() {
+        final ch = channels[event.channel];
+        if (event.controller == 0) {
+          // Bank Select MSB
+          ch.bankMsb = event.value;
+          if (event.channel != 9) ch.bank = (ch.bankMsb << 7) | ch.bankLsb;
+        } else if (event.controller == 32) {
+          // Bank Select LSB
+          ch.bankLsb = event.value;
+          if (event.channel != 9) ch.bank = (ch.bankMsb << 7) | ch.bankLsb;
+        } else if (event.controller == 1) {
+          // Modulation Wheel (CC 1) -> scoped strictly to this channel's mixing Bus!
+          ch.applyModulation(event.value / 127.0);
+        } else if (event.controller == 91) {
+          // Reverb Send (CC 91) -> scoped to this channel's mixing Bus Freeverb!
+          ch.applyReverbSend(event.value / 127.0);
+        } else if (event.controller == 93) {
+          // Chorus Send (CC 93) -> scoped to this channel's mixing Bus Flanger!
+          ch.applyChorusSend(event.value / 127.0);
+        } else if (event.isSustainPedal) {
+          ch.setSustainPedal(event.isSustainOn);
+        } else if (event.controller == 66) {
+          // Sostenuto Pedal (CC 66)
+          ch.setSostenutoPedal(event.value >= 64);
+        } else if (event.controller == 67) {
+          // Soft Pedal / Una Corda (CC 67)
+          ch.setSoftPedal(event.value >= 64);
+        } else if (event.controller == 7) {
+          ch.applyVolume(event.value / 127.0);
+        } else if (event.controller == 10) {
+          ch.applyPan((event.value - 64) / 64.0);
+        } else if (event.controller == 11) {
+          ch.applyExpression(event.value / 127.0);
+        } else if (event.controller == 120) {
+          // All Sound Off
+          ch.stopAllVoicesImmediate();
+        } else if (event.controller == 121) {
+          // Reset All Controllers
+          ch.resetControllers();
+        } else if (event.isAllNotesOff) {
+          ch.releaseAllVoices();
+        }
 
-      _eventController.add(
-        MidiPlaybackEvent(
-          type: MidiPlaybackEventType.controlChange,
-          channel: event.channel,
-          controller: event.controller,
-          value: event.value,
-          timestamp: timed.timestamp,
-        ),
-      );
+        _eventController.add(
+          MidiPlaybackEvent(
+            type: MidiPlaybackEventType.controlChange,
+            channel: event.channel,
+            controller: event.controller,
+            value: event.value,
+            timestamp: timed.timestamp,
+          ),
+        );
+      }
+      if (delay > Duration.zero) {
+        final currentEpoch = _playEpoch;
+        Timer(delay, () {
+          if (_isPlaying && _playEpoch == currentEpoch) {
+            applyCc();
+          }
+        });
+      } else {
+        applyCc();
+      }
     } else if (event is PitchBendEvent) {
-      channels[event.channel].applyPitchBend(event.normalized);
-      _eventController.add(
-        MidiPlaybackEvent(
-          type: MidiPlaybackEventType.pitchBend,
-          channel: event.channel,
-          value: event.value,
-          timestamp: timed.timestamp,
-        ),
-      );
+      void applyPitchBend() {
+        channels[event.channel].applyPitchBend(event.normalized);
+        _eventController.add(
+          MidiPlaybackEvent(
+            type: MidiPlaybackEventType.pitchBend,
+            channel: event.channel,
+            value: event.value,
+            timestamp: timed.timestamp,
+          ),
+        );
+      }
+      if (delay > Duration.zero) {
+        final currentEpoch = _playEpoch;
+        Timer(delay, () {
+          if (_isPlaying && _playEpoch == currentEpoch) {
+            applyPitchBend();
+          }
+        });
+      } else {
+        applyPitchBend();
+      }
     } else if (event is SetTempoEvent) {
       _syncVst3Transport();
       _eventController.add(
@@ -1054,16 +1131,18 @@ class MidiPlayer {
     }
   }
 
-  Future<void> _releaseAllChannelVoices() async {
+  Future<void> _releaseAllChannelVoices({
+    Duration releaseDuration = const Duration(milliseconds: 15),
+  }) async {
     _lastEmittedChord = null;
     _chordController.add(null);
     for (final ch in channels) {
-      await ch.releaseAllVoices(releaseDuration: Duration.zero);
+      await ch.releaseAllVoices(releaseDuration: releaseDuration);
     }
-    await player.allNotesOff(releaseDuration: Duration.zero);
+    await player.allNotesOff(releaseDuration: releaseDuration);
     for (final ch in channels) {
       if (ch.customPlayer != null) {
-        await ch.customPlayer!.allNotesOff(releaseDuration: Duration.zero);
+        await ch.customPlayer!.allNotesOff(releaseDuration: releaseDuration);
       }
     }
   }

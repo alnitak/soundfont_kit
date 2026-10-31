@@ -10,10 +10,10 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_soloud:
-    git:
-      url: https://github.com/alnitak/flutter_soloud
-      ref: rtAudioMixer
-    # path: ../../flutter_soloud
+    # git:
+    #   url: https://github.com/alnitak/flutter_soloud
+    #   ref: rtAudioMixer
+    path: ../../flutter_soloud
 
   soundfont_kit:
     path: ../

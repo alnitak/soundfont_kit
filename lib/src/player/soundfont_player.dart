@@ -962,7 +962,14 @@ class SoundFontPlayer {
       await noteOff(key, releaseDuration: releaseDuration);
     }
     _activeVoices.clear();
+    final releasing = <SoundFontVoice>[];
+    for (final list in _releasingVoices.values) {
+      releasing.addAll(list);
+    }
     _releasingVoices.clear();
+    for (final voice in releasing) {
+      await voice.release(customRelease: releaseDuration);
+    }
     _realtimeSynth?.allNotesOff(releaseDuration: releaseDuration);
   }
 
@@ -1677,11 +1684,6 @@ class SoundFontPlayer {
   }
 
   void _trackVoice(int key, SoundFontVoice voice) {
-    if (!_heldKeys.contains(key)) {
-      // Key was already released while this voice was being prepared asynchronously
-      voice.release();
-      return;
-    }
     // Dampen existing active or releasing voices for the same key to avoid voice pile-up and phase artifacts
     final existing = _activeVoices[key];
     if (existing != null && existing.isNotEmpty) {
@@ -1695,6 +1697,17 @@ class SoundFontPlayer {
       for (final v in releasing) {
         v.release(customRelease: const Duration(milliseconds: 15));
       }
+    }
+    if (!_heldKeys.contains(key)) {
+      // Key was already released while this voice was being prepared asynchronously
+      final fade = voice.releaseDuration;
+      final releasingList = _releasingVoices.putIfAbsent(key, () => []);
+      releasingList.add(voice);
+      Timer(fade + const Duration(milliseconds: 50), () {
+        releasingList.remove(voice);
+      });
+      voice.release();
+      return;
     }
     _activeVoices.putIfAbsent(key, () => []).add(voice);
   }

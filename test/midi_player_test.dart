@@ -151,12 +151,12 @@ void main() {
       await midiPlayer.dispose();
     });
 
-    test('Verifies lookaheadMs is 0 and natural default release duration is 250ms', () async {
+    test('Verifies lookaheadMs is 35 and natural default release duration is 250ms', () async {
       final defaultSf = await SoundFontFile.fromFile(sf2Path);
       final defaultPlayer = defaultSf.createPlayer();
       final midiPlayer = MidiPlayer(player: defaultPlayer);
 
-      expect(midiPlayer.lookaheadMs, equals(0));
+      expect(midiPlayer.lookaheadMs, equals(35));
       expect(defaultPlayer.options.defaultReleaseDuration, equals(const Duration(milliseconds: 250)));
 
       // VoiceCalculator release calculation with default options gives 250ms at sustain 1.0

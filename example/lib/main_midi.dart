@@ -126,7 +126,9 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
   static const double _kTimelineZoom = 45.0; // Pixels per second
   static const double _kTrackHeight = 72.0;
   static const double _kHeaderWidth = 250.0;
-  static const double _kRulerHeight = 28.0;
+  static const double _kRulerHeight = 48.0;
+
+  double _masterVolume = 1.0;
 
   late final ScrollController _headersVerticalController;
   late final ScrollController _lanesVerticalController;
@@ -157,6 +159,9 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
   @override
   void initState() {
     super.initState();
+    if (SoLoud.instance.isInitialized) {
+      _masterVolume = SoLoud.instance.getGlobalVolume().clamp(0.0, 1.0);
+    }
     _headersVerticalController = ScrollController();
     _lanesVerticalController = ScrollController();
     _timelineHorizontalController = ScrollController();
@@ -1444,7 +1449,18 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
       onOpenGlobalVst3Picker: _openGlobalVst3InstrumentPicker,
       hasGlobalFx: _hasGlobalFx,
       onOpenGlobalFxRack: _openGlobalFxRack,
+      masterVolume: _masterVolume,
+      onMasterVolumeChanged: _onMasterVolumeChanged,
     );
+  }
+
+  void _onMasterVolumeChanged(double val) {
+    setState(() {
+      _masterVolume = val.clamp(0.0, 1.0);
+    });
+    if (SoLoud.instance.isInitialized) {
+      SoLoud.instance.setGlobalVolume(_masterVolume);
+    }
   }
 
   Future<void> _openGlobalVst3InstrumentPicker() async {
@@ -1561,6 +1577,7 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
       chState: chState,
       instrumentName: instrumentName,
       isActive: isActive,
+      masterVolume: _masterVolume,
       trackHeight: _kTrackHeight,
       onMuteToggled: () {
         setState(() {

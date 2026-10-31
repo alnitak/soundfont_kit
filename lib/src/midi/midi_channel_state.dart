@@ -247,6 +247,12 @@ class MidiChannelState {
       if (isSustainPedalOn) {
         sustainedVoices.add(voice);
       } else {
+        final releasingList = releasingVoices.putIfAbsent(key, () => []);
+        releasingList.add(voice);
+        final fade = voice.releaseDuration;
+        Timer(fade + const Duration(milliseconds: 50), () {
+          releasingVoices[key]?.remove(voice);
+        });
         voice.release(atTime: offAt);
       }
       return;
@@ -557,6 +563,9 @@ class MidiChannelState {
     }
     all.addAll(sustainedVoices);
     all.addAll(sostenutoVoices);
+    for (final vList in releasingVoices.values) {
+      all.addAll(vList);
+    }
     activeVoices.clear();
     sustainedVoices.clear();
     sostenutoVoices.clear();
@@ -586,6 +595,9 @@ class MidiChannelState {
     }
     all.addAll(sustainedVoices);
     all.addAll(sostenutoVoices);
+    for (final vList in releasingVoices.values) {
+      all.addAll(vList);
+    }
     activeVoices.clear();
     sustainedVoices.clear();
     sostenutoVoices.clear();

@@ -10,7 +10,7 @@ class MidiTimeRuler extends StatelessWidget {
     required this.timelineWidth,
     required this.zoom,
     required this.onSeek,
-    this.rulerHeight = 28.0,
+    this.rulerHeight = 48.0,
   });
 
   final double totalDurationSeconds;

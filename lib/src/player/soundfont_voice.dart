@@ -46,6 +46,7 @@ class SoundFontVoice {
   final List<Timer> _envelopeTimers = [];
 
   bool _isReleased = false;
+  DateTime? _releaseEndWallTime;
 
   /// Whether note-off release has already been triggered for this voice.
   bool get isReleased => _isReleased;
@@ -89,7 +90,6 @@ class SoundFontVoice {
   /// Fast 6 ms anti-click choke used when an Exclusive Class (`exclusiveClass` / `off_by`)
   /// group is re-triggered (e.g. Closed Hi-Hat choking Open Hi-Hat), optionally scheduled at [atTime].
   Future<void> choke({Duration? atTime}) async {
-    if (_isReleased) return;
     _cancelEnvelopeTimers();
     await release(
       customRelease: const Duration(milliseconds: 6),
@@ -105,14 +105,24 @@ class SoundFontVoice {
       await stop();
       return;
     }
-    if (_isReleased) return;
-    _isReleased = true;
-
     final duration = customRelease ?? releaseDuration;
     if (duration <= Duration.zero) {
       await stop();
       return;
     }
+    final nowWall = DateTime.now();
+    final newEndWall = nowWall.add(duration);
+    if (_isReleased) {
+      if (customRelease == null) return;
+      if (_releaseEndWallTime != null &&
+          !newEndWall.isBefore(
+            _releaseEndWallTime!.subtract(const Duration(milliseconds: 5)),
+          )) {
+        return;
+      }
+    }
+    _isReleased = true;
+    _releaseEndWallTime = newEndWall;
 
     if (realtimeSynth != null && realtimeVoiceIds.isNotEmpty) {
       for (final id in realtimeVoiceIds) {
@@ -210,9 +220,17 @@ class SoundFontVoice {
     }
   }
 
+  double? _lastVolumeMultiplier;
+  double? _lastPan;
+
   /// Dynamically scales the volume of all active handles by [multiplier].
   void applyVolumeMultiplier(double multiplier) {
     if (_isReleased) return;
+    if (_lastVolumeMultiplier != null &&
+        (_lastVolumeMultiplier! - multiplier).abs() < 0.002) {
+      return;
+    }
+    _lastVolumeMultiplier = multiplier;
     for (int i = 0; i < handles.length; i++) {
       final handle = handles[i];
       if (!SoLoud.instance.getIsValidVoiceHandle(handle)) continue;
@@ -226,6 +244,10 @@ class SoundFontVoice {
   /// Dynamically adjusts the stereo [pan] (`-1.0` to `1.0`) of all active handles.
   void applyPan(double pan) {
     if (_isReleased) return;
+    if (_lastPan != null && (_lastPan! - pan).abs() < 0.002) {
+      return;
+    }
+    _lastPan = pan;
     for (final handle in handles) {
       if (!SoLoud.instance.getIsValidVoiceHandle(handle)) continue;
       try {

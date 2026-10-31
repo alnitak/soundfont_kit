@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:soundfont_kit/soundfont_kit.dart';
 
-/// Fixed-width column header corner showing track count, global VST3 & FX buttons, and toggle button.
+/// Fixed-width column header corner showing track count, global VST3 & FX buttons, toggle button, and global volume slider.
 class MidiTracksHeaderCorner extends StatelessWidget {
   const MidiTracksHeaderCorner({
     super.key,
@@ -13,6 +13,8 @@ class MidiTracksHeaderCorner extends StatelessWidget {
     required this.onOpenGlobalVst3Picker,
     required this.hasGlobalFx,
     required this.onOpenGlobalFxRack,
+    required this.masterVolume,
+    required this.onMasterVolumeChanged,
   });
 
   final int activeCount;
@@ -23,120 +25,220 @@ class MidiTracksHeaderCorner extends StatelessWidget {
   final VoidCallback onOpenGlobalVst3Picker;
   final bool hasGlobalFx;
   final VoidCallback onOpenGlobalFxRack;
+  final double masterVolume;
+  final ValueChanged<double> onMasterVolumeChanged;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       color: const Color(0xFF181B24),
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      alignment: Alignment.centerLeft,
-      child: Row(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Icon(Icons.tune_outlined, size: 14, color: Colors.white54),
-          const SizedBox(width: 6),
-          Text(
-            'TRACKS ($activeCount)',
-            style: const TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.0,
-              color: Colors.white70,
-            ),
-          ),
-          const Spacer(),
-          Tooltip(
-            message: 'Multi-Timbral VST3 Instrument for All 16 Channels',
-            child: InkWell(
-              borderRadius: BorderRadius.circular(4),
-              onTap: onOpenGlobalVst3Picker,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: hasGlobalVst3
-                      ? const Color(0xFF69F0AE).withValues(alpha: 0.25)
-                      : Colors.white10,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(
-                    color: hasGlobalVst3
-                        ? const Color(0xFF69F0AE)
-                        : Colors.white24,
-                    width: 0.8,
-                  ),
+          // Row 1: TRACKS (N), VST, FX, Used (N) / All 16
+          SizedBox(
+            height: 20,
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.tune_outlined,
+                  size: 13,
+                  color: Colors.white54,
                 ),
-                child: Text(
-                  'VST',
-                  style: TextStyle(
-                    fontSize: 9,
+                const SizedBox(width: 4),
+                Text(
+                  'TRACKS ($activeCount)',
+                  style: const TextStyle(
+                    fontSize: 9.5,
                     fontWeight: FontWeight.bold,
-                    color: hasGlobalVst3
-                        ? const Color(0xFF69F0AE)
-                        : Colors.white70,
+                    letterSpacing: 0.8,
+                    color: Colors.white70,
                   ),
                 ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 4),
-          Tooltip(
-            message: 'Global Master FX & VST3 Effect Inserts (All Channels)',
-            child: InkWell(
-              borderRadius: BorderRadius.circular(4),
-              onTap: onOpenGlobalFxRack,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: hasGlobalFx
-                      ? const Color(0xFF00E5FF).withValues(alpha: 0.25)
-                      : Colors.white10,
+                const Spacer(),
+                Tooltip(
+                  message: 'Multi-Timbral VST3 Instrument for All 16 Channels',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(4),
+                    onTap: onOpenGlobalVst3Picker,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: hasGlobalVst3
+                            ? const Color(0xFF69F0AE).withValues(alpha: 0.25)
+                            : Colors.white10,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: hasGlobalVst3
+                              ? const Color(0xFF69F0AE)
+                              : Colors.white24,
+                          width: 0.8,
+                        ),
+                      ),
+                      child: Text(
+                        'VST',
+                        style: TextStyle(
+                          fontSize: 8.5,
+                          fontWeight: FontWeight.bold,
+                          color: hasGlobalVst3
+                              ? const Color(0xFF69F0AE)
+                              : Colors.white70,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Tooltip(
+                  message:
+                      'Global Master FX & VST3 Effect Inserts (All Channels)',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(4),
+                    onTap: onOpenGlobalFxRack,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: hasGlobalFx
+                            ? const Color(0xFF00E5FF).withValues(alpha: 0.25)
+                            : Colors.white10,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: hasGlobalFx
+                              ? const Color(0xFF00E5FF)
+                              : Colors.white24,
+                          width: 0.8,
+                        ),
+                      ),
+                      child: Text(
+                        'FX',
+                        style: TextStyle(
+                          fontSize: 8.5,
+                          fontWeight: FontWeight.bold,
+                          color: hasGlobalFx
+                              ? const Color(0xFF00E5FF)
+                              : Colors.white70,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                InkWell(
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(
-                    color: hasGlobalFx
-                        ? const Color(0xFF00E5FF)
-                        : Colors.white24,
-                    width: 0.8,
+                  onTap: onToggleShowAllChannels,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: showAllChannels
+                          ? const Color(0xFF6C63FF).withValues(alpha: 0.25)
+                          : Colors.white10,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: showAllChannels
+                            ? const Color(0xFF6C63FF)
+                            : Colors.white24,
+                        width: 0.8,
+                      ),
+                    ),
+                    child: Text(
+                      showAllChannels ? 'Used ($usedCount)' : 'All 16',
+                      style: TextStyle(
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.w600,
+                        color: showAllChannels
+                            ? const Color(0xFF00E5FF)
+                            : Colors.white70,
+                      ),
+                    ),
                   ),
                 ),
-                child: Text(
-                  'FX',
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold,
-                    color: hasGlobalFx
-                        ? const Color(0xFF00E5FF)
-                        : Colors.white70,
-                  ),
-                ),
-              ),
+              ],
             ),
           ),
-          const SizedBox(width: 4),
-          InkWell(
-            borderRadius: BorderRadius.circular(4),
-            onTap: onToggleShowAllChannels,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: showAllChannels
-                    ? const Color(0xFF6C63FF).withValues(alpha: 0.25)
-                    : Colors.white10,
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(
-                  color: showAllChannels
-                      ? const Color(0xFF6C63FF)
-                      : Colors.white24,
-                  width: 0.8,
+          const SizedBox(height: 2),
+          // Row 2: Global Master Volume Slider
+          SizedBox(
+            height: 18,
+            child: Row(
+              children: [
+                Tooltip(
+                  message: 'Reset master volume to 100%',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(3),
+                    onTap: () => onMasterVolumeChanged(1.0),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: Icon(
+                        masterVolume == 0
+                            ? Icons.volume_off
+                            : (masterVolume < 0.5
+                                  ? Icons.volume_down
+                                  : Icons.volume_up),
+                        size: 12,
+                        color: masterVolume > 0
+                            ? const Color(0xFF00E5FF)
+                            : Colors.white38,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-              child: Text(
-                showAllChannels ? 'Used ($usedCount)' : 'All 16',
-                style: TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w600,
-                  color: showAllChannels
-                      ? const Color(0xFF00E5FF)
-                      : Colors.white70,
+                const SizedBox(width: 3),
+                const Text(
+                  'VOL',
+                  style: TextStyle(
+                    fontSize: 8.5,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                    color: Colors.white54,
+                  ),
                 ),
-              ),
+                Expanded(
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 2,
+                      thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 4,
+                      ),
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 7,
+                      ),
+                      activeTrackColor: const Color(0xFF00E5FF),
+                      inactiveTrackColor: Colors.white12,
+                      thumbColor: Colors.white,
+                    ),
+                    child: Slider(
+                      value: masterVolume.clamp(0.0, 1.0),
+                      min: 0.0,
+                      max: 1.0,
+                      onChanged: onMasterVolumeChanged,
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 28,
+                  child: Text(
+                    '${(masterVolume * 100).round()}%',
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      fontSize: 8.5,
+                      fontFamily: 'monospace',
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white70,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -159,6 +261,7 @@ class MidiTrackHeader extends StatelessWidget {
     required this.onOpenInstrumentPicker,
     required this.onOpenVst3InstrumentPicker,
     required this.onOpenFxRack,
+    this.masterVolume = 1.0,
     this.trackHeight = 72.0,
   });
 
@@ -172,6 +275,7 @@ class MidiTrackHeader extends StatelessWidget {
   final VoidCallback onOpenInstrumentPicker;
   final VoidCallback onOpenVst3InstrumentPicker;
   final VoidCallback onOpenFxRack;
+  final double masterVolume;
   final double trackHeight;
 
   bool get _hasActiveFx {
@@ -339,9 +443,7 @@ class MidiTrackHeader extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 8.5,
                         fontWeight: FontWeight.bold,
-                        color: hasFx
-                            ? const Color(0xFF00E5FF)
-                            : Colors.white60,
+                        color: hasFx ? const Color(0xFF00E5FF) : Colors.white60,
                       ),
                     ),
                   ),
@@ -456,31 +558,73 @@ class MidiTrackHeader extends StatelessWidget {
               ),
             ),
           ),
-          // Bottom Row: Compact Volume Slider
+          // Bottom Row: Compact Volume Slider multiplied by masterVolume for effective feedback
           SizedBox(
             height: 18,
-            child: Row(
-              children: [
-                const Icon(Icons.volume_down, size: 10, color: Colors.white38),
-                Expanded(
-                  child: SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      trackHeight: 2,
-                      thumbShape: const RoundSliderThumbShape(
-                        enabledThumbRadius: 4,
-                      ),
-                      overlayShape: const RoundSliderOverlayShape(
-                        overlayRadius: 6,
-                      ),
-                    ),
-                    child: Slider(
-                      value: chState.volume,
-                      onChanged: onVolumeChanged,
+            child: () {
+              final displayVolume = (chState.volume * masterVolume).clamp(
+                0.0,
+                1.0,
+              );
+              return Row(
+                children: [
+                  Tooltip(
+                    message:
+                        'Channel ${chIndex + 1} Volume: ${(displayVolume * 100).round()}% (base: ${(chState.volume * 100).round()}%, master: ${(masterVolume * 100).round()}%)',
+                    child: Icon(
+                      displayVolume == 0
+                          ? Icons.volume_off
+                          : (displayVolume < 0.5
+                                ? Icons.volume_down
+                                : Icons.volume_up),
+                      size: 10,
+                      color: displayVolume > 0
+                          ? Colors.white60
+                          : Colors.white24,
                     ),
                   ),
-                ),
-              ],
-            ),
+                  const SizedBox(width: 2),
+                  Expanded(
+                    child: SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 2,
+                        thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 4,
+                        ),
+                        overlayShape: const RoundSliderOverlayShape(
+                          overlayRadius: 6,
+                        ),
+                        inactiveTrackColor: Colors.white12,
+                        thumbColor: Colors.white,
+                      ),
+                      child: Slider(
+                        value: displayVolume,
+                        min: 0.0,
+                        max: 1.0,
+                        onChanged: (newDisplayVal) {
+                          final newChVol = masterVolume > 0
+                              ? (newDisplayVal / masterVolume).clamp(0.0, 1.0)
+                              : newDisplayVal;
+                          onVolumeChanged(newChVol);
+                        },
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 26,
+                    child: Text(
+                      '${(displayVolume * 100).round()}%',
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        fontSize: 8,
+                        fontFamily: 'monospace',
+                        color: Colors.white54,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }(),
           ),
         ],
       ),
