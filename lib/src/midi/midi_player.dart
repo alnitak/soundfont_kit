@@ -1104,6 +1104,8 @@ class MidiPlayer {
         ? note
         : (note + transpose + ch.transpose).clamp(0, 127);
 
+    ch.markNoteOn(effectiveNote);
+
     final inst = ch.effectiveVst3Instrument ?? globalVst3Instrument;
     if (inst != null && !inst.isDisposed) {
       if (ch.vst3Instrument == null && globalVst3Instrument != null) {
