@@ -15,6 +15,8 @@ class MidiTrackLane extends StatelessWidget {
     required this.notes,
     required this.instrumentName,
     required this.onSeek,
+    this.isSelected = false,
+    this.onSelect,
     this.trackHeight = 72.0,
   });
 
@@ -25,20 +27,23 @@ class MidiTrackLane extends StatelessWidget {
   final List<MidiTimelineNote> notes;
   final String instrumentName;
   final ValueChanged<double> onSeek;
+  final bool isSelected;
+  final VoidCallback? onSelect;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTapDown: (details) {
+        onSelect?.call();
         onSeek(details.localPosition.dx / zoom);
       },
       child: Container(
         height: trackHeight,
         width: timelineWidth,
-        decoration: const BoxDecoration(
-          color: Color(0xFF13151B),
-          border: Border(bottom: BorderSide(color: Colors.white10, width: 1)),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF171A24) : const Color(0xFF13151B),
+          border: const Border(bottom: BorderSide(color: Colors.white10, width: 1)),
         ),
         child: Stack(
           children: [

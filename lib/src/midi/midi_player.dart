@@ -1084,6 +1084,70 @@ class MidiPlayer {
     channels[channel].presetOverride = null;
   }
 
+  /// Resolves the effective [Preset] configured or assigned for the given [channel] (0-15).
+  Preset? resolvePresetForChannel(int channel) {
+    if (channel < 0 || channel >= channels.length) return null;
+    return _resolvePresetForChannel(channels[channel]);
+  }
+
+  /// Triggers a Note-On on [channel] (0-15) using the channel's assigned instrument
+  /// (routing to a VST3 Virtual Instrument if assigned, or synthesizing via the channel's SoundFont preset).
+  Future<void> noteOn(
+    int note,
+    int velocity, {
+    int channel = 0,
+    bool applyTranspose = false,
+  }) async {
+    if (channel < 0 || channel >= channels.length) return;
+    final ch = channels[channel];
+    final effectiveNote = (channel == 9 || !applyTranspose)
+        ? note
+        : (note + transpose + ch.transpose).clamp(0, 127);
+
+    final inst = ch.effectiveVst3Instrument ?? globalVst3Instrument;
+    if (inst != null && !inst.isDisposed) {
+      if (ch.vst3Instrument == null && globalVst3Instrument != null) {
+        _ensureGlobalVst3Playing();
+      }
+      ch.triggerVst3NoteOn(effectiveNote, velocity);
+      return;
+    }
+
+    final targetPlayer = ch.customPlayer ?? player;
+    final preset = _resolvePresetForChannel(ch);
+    if (preset != null) {
+      final volumeScale = (ch.isMuted
+              ? (ch.volume > 0 ? ch.volume * ch.expression : 1.0)
+              : ch.effectiveVolume)
+          .clamp(0.0, 1.0);
+      final voice = await targetPlayer.playPreset(
+        preset,
+        key: effectiveNote,
+        velocity: velocity,
+        volumeScale: volumeScale,
+        panOffset: ch.pan,
+        trackVoice: false,
+        busId: ch.effectiveBusId != 0 ? ch.effectiveBusId : null,
+      );
+      ch.addVoice(effectiveNote, voice);
+    }
+  }
+
+  /// Triggers a Note-Off for [note] on [channel] (0-15).
+  Future<void> noteOff(
+    int note, {
+    int channel = 0,
+    bool applyTranspose = false,
+    Duration? releaseDuration,
+  }) async {
+    if (channel < 0 || channel >= channels.length) return;
+    final ch = channels[channel];
+    final effectiveNote = (channel == 9 || !applyTranspose)
+        ? note
+        : (note + transpose + ch.transpose).clamp(0, 127);
+    await ch.handleNoteOff(effectiveNote, releaseDuration: releaseDuration);
+  }
+
   Preset? _resolvePresetForChannel(MidiChannelState ch) {
     if (forcedPresetOverride != null) {
       return forcedPresetOverride;
@@ -1092,7 +1156,19 @@ class MidiPlayer {
       return ch.presetOverride;
     }
     final targetPlayer = ch.customPlayer ?? player;
-    final preset = targetPlayer.soundFont.findPreset(
+    final sf = targetPlayer.soundFont;
+    if (sf.presets.isEmpty) return null;
+
+    // Channel 9 (MIDI Channel 10) is dedicated to drums / percussion
+    if (ch.channel == 9) {
+      final drumPreset = sf.findPreset(bank: 128, program: ch.program) ??
+          sf.findPreset(bank: 128, program: 0) ??
+          sf.presets.where((p) => p.bank == 128 || p.name.toLowerCase().contains('drum')).firstOrNull;
+      if (drumPreset != null) return drumPreset;
+    }
+
+    // Exact match on bank & program
+    final preset = sf.findPreset(
       bank: ch.bank,
       program: ch.program,
     );
@@ -1100,17 +1176,21 @@ class MidiPlayer {
 
     // Fallback: search Bank 0 if requested bank was not found
     if (ch.bank != 0) {
-      final fallbackBank0 = targetPlayer.soundFont.findPreset(
+      final fallbackBank0 = sf.findPreset(
         bank: 0,
         program: ch.program,
       );
       if (fallbackBank0 != null) return fallbackBank0;
     }
 
+    // Fallback: if multiple melodic presets are available, map channel index to distinct presets
+    final melodicPresets = sf.presets.where((p) => p.bank != 128).toList();
+    if (melodicPresets.isNotEmpty) {
+      return melodicPresets[ch.channel % melodicPresets.length];
+    }
+
     // Default fallback: first preset in soundfont
-    return targetPlayer.soundFont.presets.isNotEmpty
-        ? targetPlayer.soundFont.presets.first
-        : null;
+    return sf.presets.first;
   }
 
   void _applySnapshotAt(Duration timestamp) {

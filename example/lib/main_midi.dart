@@ -105,6 +105,8 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
   Preset? _forcedPreset;
   bool _forceSinglePreset = false;
   bool _showAllChannels = false;
+  int _selectedChannel = 0;
+  final Map<int, int> _pianoHeldKeyChannels = {};
 
   double _sustain = 1.0;
   int _transpose = 0;
@@ -149,8 +151,8 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
 
   // Bundled asset soundfonts
   final List<String> _bundledSoundFonts = [
-    'assets/Celesta_minimal.sf3',
     'assets/RatAttack.sf2',
+    'assets/Celesta_minimal.sf3',
     'assets/Pac-Man-W2_.sf2.zip',
     'assets/SFX_StarWars_weapons.SF2',
     'assets/TerribleDanger.sf2',
@@ -265,8 +267,8 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
     });
 
     try {
-      // 1. Load default SoundFont
-      await _loadSoundFontFromAsset('assets/Celesta_minimal.sf3');
+      // 1. Load default multi-instrument SoundFont (RatAttack has 24 GM instruments + Drum Kit)
+      await _loadSoundFontFromAsset('assets/RatAttack.sf2');
 
       // 2. Load bundled Moonlight Sonata MIDI
       await _loadMidiFromAsset('assets/Piano Sonata n14 op27 - Moonlight.mid');
@@ -437,6 +439,9 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
     _activeKeys.clear();
     _currentChord = null;
     _currentLyric = null;
+
+    final usedList = (mPlayer.usedChannels.toList()..sort());
+    _selectedChannel = usedList.isNotEmpty ? usedList.first : 0;
 
     if (mounted) {
       setState(() {
@@ -1447,6 +1452,10 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
   Future<void> _openChannelInstrumentPicker(int chIndex) async {
     if (_midiPlayer == null || _sfPlayer == null) return;
 
+    setState(() {
+      _selectedChannel = chIndex;
+    });
+
     final chState = _midiPlayer!.channels[chIndex];
     final result = await showDialog<(SoundFontPlayer?, Preset?, bool)>(
       context: context,
@@ -1477,12 +1486,17 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
         );
         await _midiPlayer!.preloadChannelPreset(chIndex);
       }
-      setState(() {});
+      setState(() {
+        _selectedChannel = chIndex;
+      });
     }
   }
 
   Future<void> _openChannelVst3InstrumentPicker(int chIndex) async {
     if (_midiPlayer == null) return;
+    setState(() {
+      _selectedChannel = chIndex;
+    });
     await showDialog<void>(
       context: context,
       builder: (context) {
@@ -1493,7 +1507,9 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
       },
     );
     if (mounted) {
-      setState(() {});
+      setState(() {
+        _selectedChannel = chIndex;
+      });
     }
   }
 
@@ -1525,6 +1541,12 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
       chState: chState,
       instrumentName: instrumentName,
       isActive: isActive,
+      isSelected: chIndex == _selectedChannel,
+      onSelect: () {
+        setState(() {
+          _selectedChannel = chIndex;
+        });
+      },
       masterVolume: _masterVolume,
       trackHeight: _kTrackHeight,
       onMuteToggled: () {
@@ -1562,6 +1584,12 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
       trackHeight: _kTrackHeight,
       notes: notes,
       instrumentName: instrumentName,
+      isSelected: chIndex == _selectedChannel,
+      onSelect: () {
+        setState(() {
+          _selectedChannel = chIndex;
+        });
+      },
       onSeek: _seekToSeconds,
     );
   }
@@ -1957,69 +1985,239 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
   }
 
   Widget _buildVisualizerPiano() {
+    final midiPlayer = _midiPlayer;
+    final selectedCh = _selectedChannel.clamp(0, 15);
+    final chState = midiPlayer != null ? midiPlayer.channels[selectedCh] : null;
+    final isDrums = selectedCh == 9;
+    final instrumentName = midiPlayer?.getSuggestedInstrumentName(selectedCh) ??
+        (_forcedPreset?.name ??
+            (_soundFont != null && _soundFont!.presets.isNotEmpty
+                ? _soundFont!.presets.first.name
+                : 'Default Instrument'));
+    final hasChannelVst3 = chState?.vst3Instrument != null;
+    final hasEffectiveVst3 = chState?.effectiveVst3Instrument != null;
+    final hasOverride = chState?.presetOverride != null;
+
+    final usedList = (midiPlayer?.usedChannels.toList() ?? [])..sort();
+    final channelsList = _showAllChannels
+        ? List.generate(16, (i) => i)
+        : (usedList.isNotEmpty ? usedList : List.generate(16, (i) => i));
+
     return Container(
-      height: 110,
       decoration: const BoxDecoration(
         color: Color(0xFF101218),
         border: Border(top: BorderSide(color: Colors.white24)),
       ),
-      child: PianoKeyboard(
-        startNote: 36, // C2
-        keyCount: 49, // 4 octaves
-        activeKeys: _activeKeys,
-        onNoteDown: (note, vel) {
-          final midiPlayer = _midiPlayer;
-          if (midiPlayer != null) {
-            final globalVst3 = midiPlayer.globalVst3Instrument;
-            if (globalVst3 != null && !globalVst3.isDisposed) {
-              globalVst3.noteOn(
-                pitch: note,
-                velocity: (vel / 127.0).clamp(0.0, 1.0),
-                channel: 0,
-              );
-              return;
-            }
-            for (final ch in midiPlayer.channels) {
-              final vst3 = ch.vst3Instrument;
-              if (vst3 != null && !vst3.isDisposed) {
-                vst3.noteOn(
-                  pitch: note,
-                  velocity: (vel / 127.0).clamp(0.0, 1.0),
-                  channel: ch.channel,
-                );
-                return;
-              }
-            }
-          }
-          if (_sfPlayer != null) {
-            final preset =
-                _forcedPreset ??
-                (_soundFont != null && _soundFont!.presets.isNotEmpty
-                    ? _soundFont!.presets.first
-                    : null);
-            if (preset != null) {
-              _sfPlayer!.playPreset(preset, key: note, velocity: vel);
-            }
-          }
-        },
-        onNoteUp: (note) {
-          final midiPlayer = _midiPlayer;
-          if (midiPlayer != null) {
-            final globalVst3 = midiPlayer.globalVst3Instrument;
-            if (globalVst3 != null && !globalVst3.isDisposed) {
-              globalVst3.noteOff(pitch: note, channel: 0);
-              return;
-            }
-            for (final ch in midiPlayer.channels) {
-              final vst3 = ch.vst3Instrument;
-              if (vst3 != null && !vst3.isDisposed) {
-                vst3.noteOff(pitch: note, channel: ch.channel);
-                return;
-              }
-            }
-          }
-          _sfPlayer?.noteOff(note);
-        },
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Piano Channel Header & Routing Toolbar
+          Container(
+            height: 28,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            color: const Color(0xFF161922),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.piano,
+                  size: 14,
+                  color: Color(0xFF00E5FF),
+                ),
+                const SizedBox(width: 6),
+                const Text(
+                  'PIANO CHANNEL:',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                    color: Colors.white70,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // Channel Dropdown Picker
+                Container(
+                  height: 22,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1F2432),
+                    borderRadius: BorderRadius.circular(3),
+                    border: Border.all(
+                      color: const Color(0xFF00E5FF).withValues(alpha: 0.5),
+                      width: 0.8,
+                    ),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<int>(
+                      value: selectedCh,
+                      isDense: true,
+                      dropdownColor: const Color(0xFF1E212B),
+                      icon: const Icon(
+                        Icons.arrow_drop_down,
+                        size: 16,
+                        color: Color(0xFF00E5FF),
+                      ),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                      items: List.generate(16, (chIndex) {
+                        final isUsed = usedList.contains(chIndex);
+                        final name =
+                            midiPlayer?.getSuggestedInstrumentName(chIndex) ??
+                            'Channel ${chIndex + 1}';
+                        final drumLabel = chIndex == 9 ? ' 🥁' : '';
+                        final usedTag = isUsed ? ' •' : '';
+                        return DropdownMenuItem<int>(
+                          value: chIndex,
+                          child: Text(
+                            'CH ${chIndex + 1}$drumLabel: $name$usedTag',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight:
+                                  isUsed ? FontWeight.bold : FontWeight.normal,
+                              color: chIndex == selectedCh
+                                  ? const Color(0xFF00E5FF)
+                                  : (isUsed ? Colors.white : Colors.white60),
+                            ),
+                          ),
+                        );
+                      }),
+                      onChanged: (newCh) {
+                        if (newCh != null) {
+                          setState(() {
+                            _selectedChannel = newCh;
+                          });
+                        }
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                // Quick Prev / Next Channel buttons
+                IconButton(
+                  icon: const Icon(Icons.chevron_left, size: 16),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                  tooltip: 'Previous MIDI Channel',
+                  onPressed: () {
+                    final currIdx = channelsList.indexOf(selectedCh);
+                    if (currIdx > 0) {
+                      setState(() => _selectedChannel = channelsList[currIdx - 1]);
+                    } else if (channelsList.isNotEmpty) {
+                      setState(() => _selectedChannel = channelsList.last);
+                    }
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.chevron_right, size: 16),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                  tooltip: 'Next MIDI Channel',
+                  onPressed: () {
+                    final currIdx = channelsList.indexOf(selectedCh);
+                    if (currIdx >= 0 && currIdx < channelsList.length - 1) {
+                      setState(() => _selectedChannel = channelsList[currIdx + 1]);
+                    } else if (channelsList.isNotEmpty) {
+                      setState(() => _selectedChannel = channelsList.first);
+                    }
+                  },
+                ),
+                const SizedBox(width: 8),
+                // Instrument status indicator
+                if (hasEffectiveVst3)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF69F0AE).withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(3),
+                      border: Border.all(
+                        color: const Color(0xFF69F0AE),
+                        width: 0.8,
+                      ),
+                    ),
+                    child: Text(
+                      hasChannelVst3
+                          ? 'VST3: ${chState?.vst3InstrumentName ?? "Synth"}'
+                          : 'VST3 (Global)',
+                      style: const TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF69F0AE),
+                      ),
+                    ),
+                  )
+                else if (hasOverride)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF6C63FF).withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(3),
+                      border: Border.all(
+                        color: const Color(0xFF6C63FF),
+                        width: 0.8,
+                      ),
+                    ),
+                    child: Text(
+                      'SF: ${chState?.presetOverride?.name ?? "Custom"}',
+                      style: const TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF00E5FF),
+                      ),
+                    ),
+                  )
+                else
+                  Text(
+                    '${isDrums ? "🥁 " : ""}$instrumentName',
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: Colors.white54,
+                    ),
+                  ),
+                const Spacer(),
+              ],
+            ),
+          ),
+          // Visualizer Piano Keyboard
+          SizedBox(
+            height: 105,
+            child: PianoKeyboard(
+              startNote: 36, // C2
+              keyCount: 49, // 4 octaves
+              activeKeys: _activeKeys,
+              onNoteDown: (note, vel) {
+                final targetChannel = _selectedChannel.clamp(0, 15);
+                _pianoHeldKeyChannels[note] = targetChannel;
+                _channelActivity[targetChannel] = DateTime.now();
+
+                final midiPlayer = _midiPlayer;
+                if (midiPlayer != null) {
+                  midiPlayer.noteOn(note, vel, channel: targetChannel);
+                } else if (_sfPlayer != null) {
+                  final preset = _forcedPreset ??
+                      (_soundFont != null && _soundFont!.presets.isNotEmpty
+                          ? _soundFont!.presets.first
+                          : null);
+                  if (preset != null) {
+                    _sfPlayer!.playPreset(preset, key: note, velocity: vel);
+                  }
+                }
+              },
+              onNoteUp: (note) {
+                final targetChannel =
+                    _pianoHeldKeyChannels.remove(note) ?? _selectedChannel;
+                final midiPlayer = _midiPlayer;
+                if (midiPlayer != null) {
+                  midiPlayer.noteOff(note, channel: targetChannel);
+                } else {
+                  _sfPlayer?.noteOff(note);
+                }
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
