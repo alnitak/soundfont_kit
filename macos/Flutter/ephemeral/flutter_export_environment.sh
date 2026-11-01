@@ -1,8 +1,8 @@
 #!/bin/sh
 # This is a generated file; do not edit or check into version control.
-export "FLUTTER_ROOT=/home/deimos/dev/flutter"
-export "FLUTTER_APPLICATION_PATH=/home/deimos/FLUTTER/libs/soundfont_kit"
-export "FLUTTER_FRAMEWORK_SWIFT_PACKAGE_PATH=/home/deimos/FLUTTER/libs/soundfont_kit/macos/Flutter/ephemeral/Packages/.packages/FlutterFramework"
+export "FLUTTER_ROOT=c:\workspace\flutter"
+export "FLUTTER_APPLICATION_PATH=C:\workspace\libs\soundfont_kit"
+export "FLUTTER_FRAMEWORK_SWIFT_PACKAGE_PATH=C:\workspace\libs\soundfont_kit\macos\Flutter\ephemeral\Packages\.packages\FlutterFramework"
 export "COCOAPODS_PARALLEL_CODE_SIGN=true"
 export "FLUTTER_BUILD_DIR=build"
 export "FLUTTER_BUILD_NAME=1.1.2"
