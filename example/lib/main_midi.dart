@@ -1989,7 +1989,8 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
     final selectedCh = _selectedChannel.clamp(0, 15);
     final chState = midiPlayer != null ? midiPlayer.channels[selectedCh] : null;
     final isDrums = selectedCh == 9;
-    final instrumentName = midiPlayer?.getSuggestedInstrumentName(selectedCh) ??
+    final instrumentName =
+        midiPlayer?.getSuggestedInstrumentName(selectedCh) ??
         (_forcedPreset?.name ??
             (_soundFont != null && _soundFont!.presets.isNotEmpty
                 ? _soundFont!.presets.first.name
@@ -2018,11 +2019,7 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
             color: const Color(0xFF161922),
             child: Row(
               children: [
-                const Icon(
-                  Icons.piano,
-                  size: 14,
-                  color: Color(0xFF00E5FF),
-                ),
+                const Icon(Icons.piano, size: 14, color: Color(0xFF00E5FF)),
                 const SizedBox(width: 6),
                 const Text(
                   'PIANO CHANNEL:',
@@ -2074,8 +2071,9 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                             'CH ${chIndex + 1}$drumLabel: $name$usedTag',
                             style: TextStyle(
                               fontSize: 11,
-                              fontWeight:
-                                  isUsed ? FontWeight.bold : FontWeight.normal,
+                              fontWeight: isUsed
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
                               color: chIndex == selectedCh
                                   ? const Color(0xFF00E5FF)
                                   : (isUsed ? Colors.white : Colors.white60),
@@ -2098,12 +2096,17 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                 IconButton(
                   icon: const Icon(Icons.chevron_left, size: 16),
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                  constraints: const BoxConstraints(
+                    minWidth: 20,
+                    minHeight: 20,
+                  ),
                   tooltip: 'Previous MIDI Channel',
                   onPressed: () {
                     final currIdx = channelsList.indexOf(selectedCh);
                     if (currIdx > 0) {
-                      setState(() => _selectedChannel = channelsList[currIdx - 1]);
+                      setState(
+                        () => _selectedChannel = channelsList[currIdx - 1],
+                      );
                     } else if (channelsList.isNotEmpty) {
                       setState(() => _selectedChannel = channelsList.last);
                     }
@@ -2112,12 +2115,17 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                 IconButton(
                   icon: const Icon(Icons.chevron_right, size: 16),
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                  constraints: const BoxConstraints(
+                    minWidth: 20,
+                    minHeight: 20,
+                  ),
                   tooltip: 'Next MIDI Channel',
                   onPressed: () {
                     final currIdx = channelsList.indexOf(selectedCh);
                     if (currIdx >= 0 && currIdx < channelsList.length - 1) {
-                      setState(() => _selectedChannel = channelsList[currIdx + 1]);
+                      setState(
+                        () => _selectedChannel = channelsList[currIdx + 1],
+                      );
                     } else if (channelsList.isNotEmpty) {
                       setState(() => _selectedChannel = channelsList.first);
                     }
@@ -2127,7 +2135,10 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                 // Instrument status indicator
                 if (hasEffectiveVst3)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 1,
+                    ),
                     decoration: BoxDecoration(
                       color: const Color(0xFF69F0AE).withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(3),
@@ -2149,7 +2160,10 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                   )
                 else if (hasOverride)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 1,
+                    ),
                     decoration: BoxDecoration(
                       color: const Color(0xFF6C63FF).withValues(alpha: 0.25),
                       borderRadius: BorderRadius.circular(3),
@@ -2171,10 +2185,7 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                   Text(
                     '${isDrums ? "🥁 " : ""}$instrumentName',
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: Colors.white54,
-                    ),
+                    style: const TextStyle(fontSize: 10, color: Colors.white54),
                   ),
                 const Spacer(),
               ],
@@ -2196,7 +2207,8 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                 if (midiPlayer != null) {
                   midiPlayer.noteOn(note, vel, channel: targetChannel);
                 } else if (_sfPlayer != null) {
-                  final preset = _forcedPreset ??
+                  final preset =
+                      _forcedPreset ??
                       (_soundFont != null && _soundFont!.presets.isNotEmpty
                           ? _soundFont!.presets.first
                           : null);

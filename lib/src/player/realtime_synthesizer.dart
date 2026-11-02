@@ -340,13 +340,10 @@ void _handleSynthCommand(_IsolateSynthState state, Object? command) {
         state.voices.removeAt(0);
       }
 
-      final voice = _ActiveSynthVoice(
-        trigger: trig,
-        leftPcm: leftPcm,
-        rightPcm: rightPcm,
-      )
-        ..pitchBendMultiplier = state.pitchBendMultiplier
-        ..modWheelCents = state.modWheelCents;
+      final voice =
+          _ActiveSynthVoice(trigger: trig, leftPcm: leftPcm, rightPcm: rightPcm)
+            ..pitchBendMultiplier = state.pitchBendMultiplier
+            ..modWheelCents = state.modWheelCents;
       state.voices.add(voice);
 
     case 'noteOffKey':
@@ -500,7 +497,11 @@ int _generateSynthAudioChunk(
             .toDouble();
       }
       final amp =
-          v.volLevel * trig.peakVolume * v.volumeMultiplier * lfoGain * (1.0 / 32768.0);
+          v.volLevel *
+          trig.peakVolume *
+          v.volumeMultiplier *
+          lfoGain *
+          (1.0 / 32768.0);
       final gainL = amp * panL;
       final gainR = amp * panR;
 
@@ -528,7 +529,8 @@ int _generateSynthAudioChunk(
               : (i0 + 1);
           final frac = v.phase - i0;
           var sL = leftPcm[i0] + frac * (leftPcm[i1] - leftPcm[i0]);
-          var sR = rightPcm != null && i0 < rightPcm.length && i1 < rightPcm.length
+          var sR =
+              rightPcm != null && i0 < rightPcm.length && i1 < rightPcm.length
               ? (rightPcm[i0] + frac * (rightPcm[i1] - rightPcm[i0]))
               : sL;
 
@@ -738,10 +740,7 @@ class RealtimeSoundFontSynthesizer {
   int _nextVoiceId = 1;
 
   /// Creates a [RealtimeSoundFontSynthesizer] rendering at [sampleRate] onto [busId].
-  RealtimeSoundFontSynthesizer({
-    this.sampleRate = 44100,
-    this.busId = 0,
-  });
+  RealtimeSoundFontSynthesizer({this.sampleRate = 44100, this.busId = 0});
 
   /// Whether the background worker isolate feeder is currently running.
   bool get isRunning => _feeder != null && !_feeder!.isDisposed;
@@ -889,10 +888,7 @@ class RealtimeSoundFontSynthesizer {
       offByGroup: exc.offByGroup,
     );
 
-    _feeder?.sendMessage({
-      'type': 'noteOn',
-      'trigger': trig,
-    });
+    _feeder?.sendMessage({'type': 'noteOn', 'trigger': trig});
     return voiceId;
   }
 
@@ -909,10 +905,7 @@ class RealtimeSoundFontSynthesizer {
 
   /// Immediately stops a specific voice by [voiceId].
   void stopVoiceId(int voiceId) {
-    _feeder?.sendMessage({
-      'type': 'stopVoiceId',
-      'voiceId': voiceId,
-    });
+    _feeder?.sendMessage({'type': 'stopVoiceId', 'voiceId': voiceId});
   }
 
   /// Releases all voices matching [key].
@@ -938,18 +931,12 @@ class RealtimeSoundFontSynthesizer {
 
   /// Updates the pitch bend multiplier across all active voices.
   void setPitchBend(double multiplier) {
-    _feeder?.sendMessage({
-      'type': 'pitchBend',
-      'multiplier': multiplier,
-    });
+    _feeder?.sendMessage({'type': 'pitchBend', 'multiplier': multiplier});
   }
 
   /// Updates the Modulation Wheel (`CC 1`) vibrato depth in cents (`0..50` cents default).
   void setModWheelCents(int cents) {
-    _feeder?.sendMessage({
-      'type': 'modWheel',
-      'cents': cents,
-    });
+    _feeder?.sendMessage({'type': 'modWheel', 'cents': cents});
   }
 
   /// Stops and disposes the background isolate and stream.

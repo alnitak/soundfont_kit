@@ -746,8 +746,7 @@ class _DockedPianoPanelState extends State<DockedPianoPanel> {
                                 ),
                                 onPressed: () {
                                   loadedFx.openEditorWindow(
-                                    title:
-                                        'VST3 FX Slot ${slotIdx + 1}',
+                                    title: 'VST3 FX Slot ${slotIdx + 1}',
                                   );
                                 },
                               ),

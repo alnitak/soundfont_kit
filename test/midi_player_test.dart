@@ -9,45 +9,71 @@ void main() {
   final sf2Path = p.join(assetDir, 'RatAttack.sf2');
 
   group('MidiTimeline Tests', () {
-    test('Builds timeline from Moonlight Sonata and computes tempo map', () async {
-      final midi = await MidiReader.fromFile(File(midiPath));
-      final timeline = MidiTimeline.fromMidiFile(midi);
-
-      expect(timeline.events, isNotEmpty);
-      expect(timeline.duration.inSeconds, greaterThan(30),
-          reason: 'Moonlight Sonata movement should be at least several minutes long');
-
-      // Test state chasing
-      final (snapshots, nextIndex) = timeline.getSnapshotAt(const Duration(seconds: 10));
-      expect(snapshots.length, equals(16));
-      expect(nextIndex, greaterThan(0));
-    });
-    test('Calculates nextEventIndex accurately at exact timestamp boundary', () async {
-      final midi = await MidiReader.fromFile(File(midiPath));
-      final timeline = MidiTimeline.fromMidiFile(midi);
-
-      expect(timeline.events, isNotEmpty);
-      final sampleEvent = timeline.events[timeline.events.length ~/ 2];
-      final targetTimestamp = sampleEvent.timestamp;
-
-      final (snapshots, nextIndex) = timeline.getSnapshotAt(targetTimestamp);
-      expect(snapshots.length, equals(16));
-      expect(nextIndex, lessThanOrEqualTo(timeline.events.length));
-      if (nextIndex < timeline.events.length) {
-        expect(timeline.events[nextIndex].timestamp, greaterThanOrEqualTo(targetTimestamp));
-      }
-    });
-
-    test('Calculates clean timeline duration by ignoring trailing orphan NoteOffs and empty padding', () async {
-      final fcFile = File('/Volumes/NVME/workspace/tmp/midiArchive/Metal_Rock_rock.freemidis.net_MIDIRip/midi/e/europe/Final_Countdown.mid');
-      if (fcFile.existsSync()) {
-        final midi = await MidiReader.fromFile(fcFile);
+    test(
+      'Builds timeline from Moonlight Sonata and computes tempo map',
+      () async {
+        final midi = await MidiReader.fromFile(File(midiPath));
         final timeline = MidiTimeline.fromMidiFile(midi);
-        // Notes finish at ~3m20s-3m24s rather than corrupted 14m40s
-        expect(timeline.duration, equals(const Duration(minutes: 3, seconds: 24)));
-        expect(timeline.events.last.timestamp, lessThanOrEqualTo(timeline.duration));
-      }
-    });
+
+        expect(timeline.events, isNotEmpty);
+        expect(
+          timeline.duration.inSeconds,
+          greaterThan(30),
+          reason:
+              'Moonlight Sonata movement should be at least several minutes long',
+        );
+
+        // Test state chasing
+        final (snapshots, nextIndex) = timeline.getSnapshotAt(
+          const Duration(seconds: 10),
+        );
+        expect(snapshots.length, equals(16));
+        expect(nextIndex, greaterThan(0));
+      },
+    );
+    test(
+      'Calculates nextEventIndex accurately at exact timestamp boundary',
+      () async {
+        final midi = await MidiReader.fromFile(File(midiPath));
+        final timeline = MidiTimeline.fromMidiFile(midi);
+
+        expect(timeline.events, isNotEmpty);
+        final sampleEvent = timeline.events[timeline.events.length ~/ 2];
+        final targetTimestamp = sampleEvent.timestamp;
+
+        final (snapshots, nextIndex) = timeline.getSnapshotAt(targetTimestamp);
+        expect(snapshots.length, equals(16));
+        expect(nextIndex, lessThanOrEqualTo(timeline.events.length));
+        if (nextIndex < timeline.events.length) {
+          expect(
+            timeline.events[nextIndex].timestamp,
+            greaterThanOrEqualTo(targetTimestamp),
+          );
+        }
+      },
+    );
+
+    test(
+      'Calculates clean timeline duration by ignoring trailing orphan NoteOffs and empty padding',
+      () async {
+        final fcFile = File(
+          '/Volumes/NVME/workspace/tmp/midiArchive/Metal_Rock_rock.freemidis.net_MIDIRip/midi/e/europe/Final_Countdown.mid',
+        );
+        if (fcFile.existsSync()) {
+          final midi = await MidiReader.fromFile(fcFile);
+          final timeline = MidiTimeline.fromMidiFile(midi);
+          // Notes finish at ~3m20s-3m24s rather than corrupted 14m40s
+          expect(
+            timeline.duration,
+            equals(const Duration(minutes: 3, seconds: 24)),
+          );
+          expect(
+            timeline.events.last.timestamp,
+            lessThanOrEqualTo(timeline.duration),
+          );
+        }
+      },
+    );
   });
 
   group('MidiPlayer Load & Preload Tests', () {
@@ -83,7 +109,12 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(midiPlayer.position, equals(target));
-      expect(events.any((e) => e.type == MidiPlaybackEventType.seek && e.timestamp == target), isTrue);
+      expect(
+        events.any(
+          (e) => e.type == MidiPlaybackEventType.seek && e.timestamp == target,
+        ),
+        isTrue,
+      );
 
       await sub.cancel();
       await midiPlayer.dispose();
@@ -109,105 +140,129 @@ void main() {
       final posAfter = midiPlayer.position;
 
       // Position should be virtually unchanged immediately after setting speedMultiplier
-      expect((posAfter.inMilliseconds - posBefore.inMilliseconds).abs(), lessThan(50));
+      expect(
+        (posAfter.inMilliseconds - posBefore.inMilliseconds).abs(),
+        lessThan(50),
+      );
 
       await midiPlayer.stop();
       await midiPlayer.dispose();
       await player.dispose();
     });
 
-    test('Allows custom SoundFont player and preset routing per channel', () async {
-      final defaultSf = await SoundFontFile.fromFile(sf2Path);
-      final defaultPlayer = defaultSf.createPlayer();
-      final midiPlayer = MidiPlayer(player: defaultPlayer);
+    test(
+      'Allows custom SoundFont player and preset routing per channel',
+      () async {
+        final defaultSf = await SoundFontFile.fromFile(sf2Path);
+        final defaultPlayer = defaultSf.createPlayer();
+        final midiPlayer = MidiPlayer(player: defaultPlayer);
 
-      final customSfPath = p.join(assetDir, 'Celesta_minimal.sf3');
-      final customSf = await SoundFontFile.fromFile(customSfPath);
-      final customPlayer = customSf.createPlayer();
+        final customSfPath = p.join(assetDir, 'Celesta_minimal.sf3');
+        final customSf = await SoundFontFile.fromFile(customSfPath);
+        final customPlayer = customSf.createPlayer();
 
-      expect(customSf.presets, isNotEmpty);
-      final customPreset = customSf.presets.first;
+        expect(customSf.presets, isNotEmpty);
+        final customPreset = customSf.presets.first;
 
-      // Assign custom SoundFont & preset to channel 1 (index 0)
-      midiPlayer.setChannelSoundFont(
-        0,
-        customPlayer: customPlayer,
-        preset: customPreset,
-      );
+        // Assign custom SoundFont & preset to channel 1 (index 0)
+        midiPlayer.setChannelSoundFont(
+          0,
+          customPlayer: customPlayer,
+          preset: customPreset,
+        );
 
-      final ch0 = midiPlayer.channels[0];
-      expect(ch0.customPlayer, equals(customPlayer));
-      expect(ch0.presetOverride, equals(customPreset));
-      expect(midiPlayer.getSuggestedInstrumentName(0), equals(customPreset.name));
-      expect(midiPlayer.getSuggestedFamilyName(0), contains(customSf.name ?? ''));
+        final ch0 = midiPlayer.channels[0];
+        expect(ch0.customPlayer, equals(customPlayer));
+        expect(ch0.presetOverride, equals(customPreset));
+        expect(
+          midiPlayer.getSuggestedInstrumentName(0),
+          equals(customPreset.name),
+        );
+        expect(
+          midiPlayer.getSuggestedFamilyName(0),
+          contains(customSf.name ?? ''),
+        );
 
-      // Clear override
-      midiPlayer.clearChannelOverride(0);
-      expect(ch0.customPlayer, isNull);
-      expect(ch0.presetOverride, isNull);
+        // Clear override
+        midiPlayer.clearChannelOverride(0);
+        expect(ch0.customPlayer, isNull);
+        expect(ch0.presetOverride, isNull);
 
-      await defaultPlayer.dispose();
-      await customPlayer.dispose();
-      await midiPlayer.dispose();
-    });
+        await defaultPlayer.dispose();
+        await customPlayer.dispose();
+        await midiPlayer.dispose();
+      },
+    );
 
-    test('Verifies lookaheadMs is 35 and natural default release duration is 250ms', () async {
-      final defaultSf = await SoundFontFile.fromFile(sf2Path);
-      final defaultPlayer = defaultSf.createPlayer();
-      final midiPlayer = MidiPlayer(player: defaultPlayer);
+    test(
+      'Verifies lookaheadMs is 35 and natural default release duration is 250ms',
+      () async {
+        final defaultSf = await SoundFontFile.fromFile(sf2Path);
+        final defaultPlayer = defaultSf.createPlayer();
+        final midiPlayer = MidiPlayer(player: defaultPlayer);
 
-      expect(midiPlayer.lookaheadMs, equals(35));
-      expect(defaultPlayer.options.defaultReleaseDuration, equals(const Duration(milliseconds: 250)));
+        expect(midiPlayer.lookaheadMs, equals(35));
+        expect(
+          defaultPlayer.options.defaultReleaseDuration,
+          equals(const Duration(milliseconds: 250)),
+        );
 
-      // VoiceCalculator release calculation with default options gives 250ms at sustain 1.0
-      const noEnvZone = Zone();
-      expect(
-        VoiceCalculator.calculateReleaseDuration(zone: noEnvZone, sustain: 1.0),
-        equals(const Duration(milliseconds: 250)),
-      );
+        // VoiceCalculator release calculation with default options gives 250ms at sustain 1.0
+        const noEnvZone = Zone();
+        expect(
+          VoiceCalculator.calculateReleaseDuration(
+            zone: noEnvZone,
+            sustain: 1.0,
+          ),
+          equals(const Duration(milliseconds: 250)),
+        );
 
-      // When note is actively held, adding voice registers it as active and not released
-      final ch = midiPlayer.channels[0];
-      ch.markNoteOn(60);
-      final voice = SoundFontVoice(key: 60, velocity: 100, handles: []);
-      ch.addVoice(60, voice);
-      expect(voice.isReleased, isFalse);
-      expect(ch.activeVoices[60], contains(voice));
+        // When note is actively held, adding voice registers it as active and not released
+        final ch = midiPlayer.channels[0];
+        ch.markNoteOn(60);
+        final voice = SoundFontVoice(key: 60, velocity: 100, handles: []);
+        ch.addVoice(60, voice);
+        expect(voice.isReleased, isFalse);
+        expect(ch.activeVoices[60], contains(voice));
 
-      // NoteOff releases the voice smoothly
-      await ch.handleNoteOff(60);
-      expect(voice.isReleased, isTrue);
-      expect(ch.activeVoices[60], isNull);
+        // NoteOff releases the voice smoothly
+        await ch.handleNoteOff(60);
+        expect(voice.isReleased, isTrue);
+        expect(ch.activeVoices[60], isNull);
 
-      await defaultPlayer.dispose();
-      await midiPlayer.dispose();
-    });
+        await defaultPlayer.dispose();
+        await midiPlayer.dispose();
+      },
+    );
 
-    test('Loads SF3 soundfont, verifies non-negative loop bounds, and seeks safely', () async {
-      final sf3Path = p.join(assetDir, 'Celesta_minimal.sf3');
-      final sf3 = await SoundFontFile.fromFile(sf3Path);
-      final player = sf3.createPlayer();
-      final midiPlayer = MidiPlayer(player: player);
+    test(
+      'Loads SF3 soundfont, verifies non-negative loop bounds, and seeks safely',
+      () async {
+        final sf3Path = p.join(assetDir, 'Celesta_minimal.sf3');
+        final sf3 = await SoundFontFile.fromFile(sf3Path);
+        final player = sf3.createPlayer();
+        final midiPlayer = MidiPlayer(player: player);
 
-      for (final sample in sf3.samples) {
-        expect(sample.loopStart, greaterThanOrEqualTo(0));
-        expect(sample.loopEnd, greaterThanOrEqualTo(0));
-        final loopInfo = VoiceCalculator.calculateLoopRegion(sample: sample);
-        expect(loopInfo.startFrames, greaterThanOrEqualTo(0));
-      }
+        for (final sample in sf3.samples) {
+          expect(sample.loopStart, greaterThanOrEqualTo(0));
+          expect(sample.loopEnd, greaterThanOrEqualTo(0));
+          final loopInfo = VoiceCalculator.calculateLoopRegion(sample: sample);
+          expect(loopInfo.startFrames, greaterThanOrEqualTo(0));
+        }
 
-      final midi = await MidiReader.fromFile(File(midiPath));
-      await midiPlayer.load(midi, autoPreload: false);
+        final midi = await MidiReader.fromFile(File(midiPath));
+        await midiPlayer.load(midi, autoPreload: false);
 
-      // Seek to various timestamps across the song
-      await midiPlayer.seek(const Duration(seconds: 15));
-      expect(midiPlayer.position, equals(const Duration(seconds: 15)));
+        // Seek to various timestamps across the song
+        await midiPlayer.seek(const Duration(seconds: 15));
+        expect(midiPlayer.position, equals(const Duration(seconds: 15)));
 
-      await midiPlayer.seek(const Duration(seconds: 45));
-      expect(midiPlayer.position, equals(const Duration(seconds: 45)));
+        await midiPlayer.seek(const Duration(seconds: 45));
+        expect(midiPlayer.position, equals(const Duration(seconds: 45)));
 
-      await player.dispose();
-      await midiPlayer.dispose();
-    });
+        await player.dispose();
+        await midiPlayer.dispose();
+      },
+    );
   });
 }

@@ -35,10 +35,7 @@ enum SoundFontFilterType {
   ),
 
   /// Brickwall peak limiter and output ceiling protector.
-  limiter(
-    'Limiter',
-    'Brickwall peak limiting and output ceiling protection',
-  ),
+  limiter('Limiter', 'Brickwall peak limiting and output ceiling protection'),
 
   /// Multi-band Gaussian parametric equalizer.
   parametricEq(
@@ -455,7 +452,9 @@ class SoundFontGlobalFilters {
             defaultValue: 0.0,
             unit: '',
             resolveParam: () => b != null
-                ? b.filters.customFilter(slotIdx).param(pIdx, min: 0.0, max: 1.0)
+                ? b.filters
+                      .customFilter(slotIdx)
+                      .param(pIdx, min: 0.0, max: 1.0)
                 : g.customFilter(slotIdx).param(pIdx, min: 0.0, max: 1.0),
           ),
       ];
@@ -470,8 +469,9 @@ class SoundFontGlobalFilters {
           max: g.freeverbFilter.queryRoomSize.max,
           defaultValue: g.freeverbFilter.queryRoomSize.def,
           unit: '%',
-          resolveParam: () =>
-              b != null ? b.filters.freeverbFilter.roomSize() : g.freeverbFilter.roomSize,
+          resolveParam: () => b != null
+              ? b.filters.freeverbFilter.roomSize()
+              : g.freeverbFilter.roomSize,
         ),
         FilterParameterInfo.fromParam(
           id: 'damp',
@@ -480,8 +480,9 @@ class SoundFontGlobalFilters {
           max: g.freeverbFilter.queryDamp.max,
           defaultValue: g.freeverbFilter.queryDamp.def,
           unit: '%',
-          resolveParam: () =>
-              b != null ? b.filters.freeverbFilter.damp() : g.freeverbFilter.damp,
+          resolveParam: () => b != null
+              ? b.filters.freeverbFilter.damp()
+              : g.freeverbFilter.damp,
         ),
         FilterParameterInfo.fromParam(
           id: 'width',
@@ -490,8 +491,9 @@ class SoundFontGlobalFilters {
           max: g.freeverbFilter.queryWidth.max,
           defaultValue: g.freeverbFilter.queryWidth.def,
           unit: '%',
-          resolveParam: () =>
-              b != null ? b.filters.freeverbFilter.width() : g.freeverbFilter.width,
+          resolveParam: () => b != null
+              ? b.filters.freeverbFilter.width()
+              : g.freeverbFilter.width,
         ),
         FilterParameterInfo.fromParam(
           id: 'wet',
@@ -591,8 +593,9 @@ class SoundFontGlobalFilters {
           max: g.flangerFilter.queryDelay.max,
           defaultValue: g.flangerFilter.queryDelay.def,
           unit: 's',
-          resolveParam: () =>
-              b != null ? b.filters.flangerFilter.delay() : g.flangerFilter.delay,
+          resolveParam: () => b != null
+              ? b.filters.flangerFilter.delay()
+              : g.flangerFilter.delay,
         ),
         FilterParameterInfo.fromParam(
           id: 'freq',
@@ -634,8 +637,9 @@ class SoundFontGlobalFilters {
           max: g.bassBoostFilter.queryWet.max,
           defaultValue: g.bassBoostFilter.queryWet.def,
           unit: '%',
-          resolveParam: () =>
-              b != null ? b.filters.bassBoostFilter.wet() : g.bassBoostFilter.wet,
+          resolveParam: () => b != null
+              ? b.filters.bassBoostFilter.wet()
+              : g.bassBoostFilter.wet,
         ),
       ],
       SoundFontFilterType.lofi => [

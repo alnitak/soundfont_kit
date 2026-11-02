@@ -211,8 +211,7 @@ class VoiceCalculator {
   /// instrument and preset zones.
   static ({bool enabled, double cutoffHz, double resonanceQ})
   calculateFilterParams({Zone? zone, Zone? presetZone}) {
-    final cutoff =
-        zone?.initialFilterCutoff ?? presetZone?.initialFilterCutoff;
+    final cutoff = zone?.initialFilterCutoff ?? presetZone?.initialFilterCutoff;
     final qDb = zone?.initialFilterQ ?? presetZone?.initialFilterQ ?? 0.0;
 
     if (cutoff == null && qDb <= 0.0) {

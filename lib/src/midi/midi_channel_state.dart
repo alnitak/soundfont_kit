@@ -137,8 +137,7 @@ class MidiChannelState {
   }
 
   /// Effective SoLoud `busId` for voices played on this channel (`0` if no bus created yet).
-  int get effectiveBusId =>
-      (_bus != null && _bus!.isActive) ? _bus!.busId : 0;
+  int get effectiveBusId => (_bus != null && _bus!.isActive) ? _bus!.busId : 0;
 
   /// Per-channel [SoundFontFilterRack] (lazily initializes this channel's mixing [Bus]).
   SoundFontFilterRack get filterRack => SoundFontFilterRack.forBus(ensureBus());
@@ -265,7 +264,8 @@ class MidiChannelState {
     final inst = effectiveVst3Instrument;
     if (inst == null || inst.isDisposed) return;
 
-    final isPerChannelInst = vst3Instrument != null && !vst3Instrument!.isDisposed;
+    final isPerChannelInst =
+        vst3Instrument != null && !vst3Instrument!.isDisposed;
     if (isPerChannelInst) {
       // Ensure the per-channel VST3 instrument's custom audio source is playing on the channel bus
       if (SoLoud.instance.isInitialized &&
@@ -288,11 +288,7 @@ class MidiChannelState {
         ? rawVel
         : (rawVel * effectiveVolume).clamp(0.0, 1.0);
     try {
-      inst.noteOn(
-        pitch: key,
-        velocity: scaledVel,
-        channel: channel,
-      );
+      inst.noteOn(pitch: key, velocity: scaledVel, channel: channel);
     } catch (_) {}
   }
 

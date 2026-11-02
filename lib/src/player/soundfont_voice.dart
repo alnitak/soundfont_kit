@@ -166,7 +166,8 @@ class SoundFontVoice {
     for (final handle in handles) {
       if (!SoLoud.instance.getIsValidVoiceHandle(handle)) continue;
       try {
-        final at = effectiveAtTime ??
+        final at =
+            effectiveAtTime ??
             (SoLoud.instance.isInitialized
                 ? SoLoud.instance.getEngineTime()
                 : Duration.zero);
@@ -272,8 +273,9 @@ class SoundFontVoice {
     final nowEngine = SoLoud.instance.isInitialized
         ? SoLoud.instance.getEngineTime()
         : Duration.zero;
-    final effectiveAt =
-        (atTime != null && atTime > nowEngine) ? atTime : nowEngine;
+    final effectiveAt = (atTime != null && atTime > nowEngine)
+        ? atTime
+        : nowEngine;
     for (int i = 0; i < handles.length; i++) {
       final handle = handles[i];
       if (!SoLoud.instance.getIsValidVoiceHandle(handle)) continue;

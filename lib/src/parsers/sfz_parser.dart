@@ -186,17 +186,20 @@ class SfzParser {
       final double? modEnvRelease = double.tryParse(
         merged['fileg_release'] ?? merged['pitcheg_release'] ?? '',
       );
-      final int? modEnvToFilterFc =
-          double.tryParse(merged['fileg_depth'] ?? '')?.round();
-      final int? modEnvToPitch =
-          double.tryParse(merged['pitcheg_depth'] ?? '')?.round();
+      final int? modEnvToFilterFc = double.tryParse(
+        merged['fileg_depth'] ?? '',
+      )?.round();
+      final int? modEnvToPitch = double.tryParse(
+        merged['pitcheg_depth'] ?? '',
+      )?.round();
 
       final double? vibLfoDelay = double.tryParse(
         merged['pitchlfo_delay'] ?? '',
       );
       final double? vibLfoFreq = double.tryParse(merged['pitchlfo_freq'] ?? '');
-      final int? vibLfoToPitch =
-          double.tryParse(merged['pitchlfo_depth'] ?? '')?.round();
+      final int? vibLfoToPitch = double.tryParse(
+        merged['pitchlfo_depth'] ?? '',
+      )?.round();
 
       final double? reverbPct = double.tryParse(merged['effect1'] ?? '');
       final double? chorusPct = double.tryParse(merged['effect2'] ?? '');

@@ -401,9 +401,7 @@ class SoundFontPlayer {
           realtimeSynth: synth,
         );
         if (duration != null) {
-          voice.addEnvelopeTimer(
-            Timer(duration, () => voice.release()),
-          );
+          voice.addEnvelopeTimer(Timer(duration, () => voice.release()));
         }
         if (trackVoice) {
           _trackVoice(effectiveKey, voice);
@@ -432,7 +430,11 @@ class SoundFontPlayer {
     final initialVol = hasAttack ? 0.01 : vol;
     final targetBusId = busId ?? effectiveBusId;
 
-    _activatePerVoiceFilterOnSourceIfNeeded(audio, zone: zone, presetZone: presetZone);
+    _activatePerVoiceFilterOnSourceIfNeeded(
+      audio,
+      zone: zone,
+      presetZone: presetZone,
+    );
 
     final handle = SoLoud.instance.playScheduled(
       audio,
@@ -447,7 +449,12 @@ class SoundFontPlayer {
       busId: targetBusId,
     );
 
-    _applyPerVoiceFilterIfNeeded(audio, handle, zone: zone, presetZone: presetZone);
+    _applyPerVoiceFilterIfNeeded(
+      audio,
+      handle,
+      zone: zone,
+      presetZone: presetZone,
+    );
 
     final voice = SoundFontVoice(
       key: effectiveKey,
@@ -1420,9 +1427,7 @@ class SoundFontPlayer {
           realtimeSynth: synth,
         );
         if (duration != null) {
-          voice.addEnvelopeTimer(
-            Timer(duration, () => voice.release()),
-          );
+          voice.addEnvelopeTimer(Timer(duration, () => voice.release()));
         }
         return voice;
       }
@@ -1448,7 +1453,11 @@ class SoundFontPlayer {
     final initialVol = hasAttack ? 0.01 : vol;
     final targetBusId = busId ?? effectiveBusId;
 
-    _activatePerVoiceFilterOnSourceIfNeeded(audio, zone: zone, presetZone: presetZone);
+    _activatePerVoiceFilterOnSourceIfNeeded(
+      audio,
+      zone: zone,
+      presetZone: presetZone,
+    );
 
     // joinTwoSources resamples both channels to the engine sample rate, so
     // scale loop frame offsets from leftSample.sampleRate to engineSampleRate.
@@ -1479,7 +1488,12 @@ class SoundFontPlayer {
       busId: targetBusId,
     );
 
-    _applyPerVoiceFilterIfNeeded(audio, handle, zone: zone, presetZone: presetZone);
+    _applyPerVoiceFilterIfNeeded(
+      audio,
+      handle,
+      zone: zone,
+      presetZone: presetZone,
+    );
 
     final voice = SoundFontVoice(
       key: key,

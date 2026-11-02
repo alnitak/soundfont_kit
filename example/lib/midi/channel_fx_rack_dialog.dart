@@ -152,7 +152,11 @@ class _ChannelFxRackDialogState extends State<ChannelFxRackDialog> {
             // Header
             Row(
               children: [
-                const Icon(Icons.graphic_eq, color: Color(0xFF00E5FF), size: 20),
+                const Icon(
+                  Icons.graphic_eq,
+                  color: Color(0xFF00E5FF),
+                  size: 20,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(

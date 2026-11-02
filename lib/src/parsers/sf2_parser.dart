@@ -649,9 +649,7 @@ class Sf2Parser {
       exclusiveClass: gens.containsKey(57)
           ? gens[57]
           : globalZone?.exclusiveClass,
-      offByGroup: gens.containsKey(57)
-          ? gens[57]
-          : globalZone?.offByGroup,
+      offByGroup: gens.containsKey(57) ? gens[57] : globalZone?.offByGroup,
       chorusSend: gens.containsKey(15)
           ? (gens[15]! / 1000.0).clamp(0.0, 1.0)
           : globalZone?.chorusSend,

@@ -32,7 +32,7 @@ class ChannelVst3InstrumentDialog extends StatefulWidget {
 }
 
 class _ChannelVst3InstrumentDialogState
-     extends State<ChannelVst3InstrumentDialog> {
+    extends State<ChannelVst3InstrumentDialog> {
   final TextEditingController _searchController = TextEditingController();
   List<DiscoveredVst3Plugin> _discoveredSynths = const [];
   bool _isLoading = false;
@@ -90,16 +90,12 @@ class _ChannelVst3InstrumentDialogState
     });
 
     if (inst != null) {
-      final resolvedName = displayName ?? p.basenameWithoutExtension(bundlePath);
+      final resolvedName =
+          displayName ?? p.basenameWithoutExtension(bundlePath);
       if (_isGlobal) {
-        widget.midiPlayer.setGlobalVst3Instrument(
-          inst,
-          name: resolvedName,
-        );
+        widget.midiPlayer.setGlobalVst3Instrument(inst, name: resolvedName);
         if (inst.hasEditor) {
-          inst.openEditorWindow(
-            title: 'All 16 Channels — $resolvedName',
-          );
+          inst.openEditorWindow(title: 'All 16 Channels — $resolvedName');
         }
       } else {
         widget.midiPlayer.setChannelVst3Instrument(
@@ -190,11 +186,7 @@ class _ChannelVst3InstrumentDialogState
             // Header
             Row(
               children: [
-                const Icon(
-                  Icons.extension,
-                  color: Color(0xFF69F0AE),
-                  size: 20,
-                ),
+                const Icon(Icons.extension, color: Color(0xFF69F0AE), size: 20),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -271,8 +263,7 @@ class _ChannelVst3InstrumentDialogState
                         children: [
                           Text(
                             activeVst3 != null
-                                ? (activeVst3Name ??
-                                      'VST3 Instrument Active')
+                                ? (activeVst3Name ?? 'VST3 Instrument Active')
                                 : (_isGlobal
                                       ? 'No Global Multi-Timbral VST3 Instrument Assigned'
                                       : 'No VST3 Instrument Assigned (Using SoundFont)'),
@@ -541,4 +532,3 @@ class _ChannelVst3InstrumentDialogState
     );
   }
 }
-

@@ -200,10 +200,8 @@ class MidiPlayer {
   String? _lastEmittedChord;
 
   /// Creates a [MidiPlayer] backed by [player] and an optional [vst3Manager].
-  MidiPlayer({
-    required this.player,
-    SoundFontVst3Manager? vst3Manager,
-  }) : vst3Manager = vst3Manager ?? SoundFontVst3Manager();
+  MidiPlayer({required this.player, SoundFontVst3Manager? vst3Manager})
+    : vst3Manager = vst3Manager ?? SoundFontVst3Manager();
 
   /// Returns the current effective tempo in BPM at the active playback position.
   double get currentBpm {
@@ -683,6 +681,7 @@ class MidiPlayer {
             ),
           );
         }
+
         if (delay > Duration.zero) {
           final currentEpoch = _playEpoch;
           Timer(delay, () {
@@ -755,6 +754,7 @@ class MidiPlayer {
             ),
           );
         }
+
         if (delay > Duration.zero) {
           final currentEpoch = _playEpoch;
           Timer(delay, () {
@@ -796,6 +796,7 @@ class MidiPlayer {
           ),
         );
       }
+
       if (delay > Duration.zero) {
         final currentEpoch = _playEpoch;
         Timer(delay, () {
@@ -818,6 +819,7 @@ class MidiPlayer {
           ),
         );
       }
+
       if (delay > Duration.zero) {
         final currentEpoch = _playEpoch;
         Timer(delay, () {
@@ -885,6 +887,7 @@ class MidiPlayer {
           ),
         );
       }
+
       if (delay > Duration.zero) {
         final currentEpoch = _playEpoch;
         Timer(delay, () {
@@ -907,6 +910,7 @@ class MidiPlayer {
           ),
         );
       }
+
       if (delay > Duration.zero) {
         final currentEpoch = _playEpoch;
         Timer(delay, () {
@@ -1118,10 +1122,11 @@ class MidiPlayer {
     final targetPlayer = ch.customPlayer ?? player;
     final preset = _resolvePresetForChannel(ch);
     if (preset != null) {
-      final volumeScale = (ch.isMuted
-              ? (ch.volume > 0 ? ch.volume * ch.expression : 1.0)
-              : ch.effectiveVolume)
-          .clamp(0.0, 1.0);
+      final volumeScale =
+          (ch.isMuted
+                  ? (ch.volume > 0 ? ch.volume * ch.expression : 1.0)
+                  : ch.effectiveVolume)
+              .clamp(0.0, 1.0);
       final voice = await targetPlayer.playPreset(
         preset,
         key: effectiveNote,
@@ -1163,25 +1168,24 @@ class MidiPlayer {
 
     // Channel 9 (MIDI Channel 10) is dedicated to drums / percussion
     if (ch.channel == 9) {
-      final drumPreset = sf.findPreset(bank: 128, program: ch.program) ??
+      final drumPreset =
+          sf.findPreset(bank: 128, program: ch.program) ??
           sf.findPreset(bank: 128, program: 0) ??
-          sf.presets.where((p) => p.bank == 128 || p.name.toLowerCase().contains('drum')).firstOrNull;
+          sf.presets
+              .where(
+                (p) => p.bank == 128 || p.name.toLowerCase().contains('drum'),
+              )
+              .firstOrNull;
       if (drumPreset != null) return drumPreset;
     }
 
     // Exact match on bank & program
-    final preset = sf.findPreset(
-      bank: ch.bank,
-      program: ch.program,
-    );
+    final preset = sf.findPreset(bank: ch.bank, program: ch.program);
     if (preset != null) return preset;
 
     // Fallback: search Bank 0 if requested bank was not found
     if (ch.bank != 0) {
-      final fallbackBank0 = sf.findPreset(
-        bank: 0,
-        program: ch.program,
-      );
+      final fallbackBank0 = sf.findPreset(bank: 0, program: ch.program);
       if (fallbackBank0 != null) return fallbackBank0;
     }
 

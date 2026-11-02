@@ -43,7 +43,9 @@ class MidiTrackLane extends StatelessWidget {
         width: timelineWidth,
         decoration: BoxDecoration(
           color: isSelected ? const Color(0xFF171A24) : const Color(0xFF13151B),
-          border: const Border(bottom: BorderSide(color: Colors.white10, width: 1)),
+          border: const Border(
+            bottom: BorderSide(color: Colors.white10, width: 1),
+          ),
         ),
         child: Stack(
           children: [

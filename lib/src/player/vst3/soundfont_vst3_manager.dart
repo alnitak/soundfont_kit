@@ -67,9 +67,7 @@ class SoundFontVst3Manager {
     if (!isSupported) return const [];
     final classes = host.scanBundle(bundlePath);
     return classes
-        .map(
-          (c) => DiscoveredVst3Plugin(bundlePath: bundlePath, classInfo: c),
-        )
+        .map((c) => DiscoveredVst3Plugin(bundlePath: bundlePath, classInfo: c))
         .toList(growable: false);
   }
 
@@ -107,12 +105,7 @@ class SoundFontVst3Manager {
             } catch (_) {}
           }
         } else if (entity is Directory) {
-          _scanDirectoryRecursive(
-            entity,
-            depthRemaining - 1,
-            out,
-            seenBundles,
-          );
+          _scanDirectoryRecursive(entity, depthRemaining - 1, out, seenBundles);
         }
       }
     } catch (_) {}
