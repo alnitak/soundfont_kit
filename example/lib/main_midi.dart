@@ -268,7 +268,7 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
 
     try {
       // 1. Load default multi-instrument SoundFont (RatAttack has 24 GM instruments + Drum Kit)
-      await _loadSoundFontFromAsset('assets/RatAttack.sf2');
+      await _loadSoundFontFromAsset('assets/Celesta_minimal.sf3');
 
       // 2. Load bundled Moonlight Sonata MIDI
       await _loadMidiFromAsset('assets/Piano Sonata n14 op27 - Moonlight.mid');
