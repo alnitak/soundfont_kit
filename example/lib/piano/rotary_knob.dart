@@ -1,5 +1,5 @@
 import 'dart:math' as math;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// A rotary knob widget for adjusting audio filter parameters with smooth drag interaction.
 class RotaryKnob extends StatefulWidget {

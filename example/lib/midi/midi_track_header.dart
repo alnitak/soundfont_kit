@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:soundfont_kit/soundfont_kit.dart';
 
 /// Fixed-width column header corner showing track count, global VST3 & FX buttons, toggle button, and global volume slider.

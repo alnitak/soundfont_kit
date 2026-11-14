@@ -31,11 +31,11 @@ dependencies:
   archive: ^4.3.0
   path: ^1.9.0
   http: ^1.2.0
-  flutter_soloud:
+  flutter_soloud: ^5.3.0
     # git:
     #   url: https://github.com/alnitak/flutter_soloud
     #   ref: rtAudioMixer
-    path: ../flutter_soloud
+    # path: ../flutter_soloud
 
 dev_dependencies:
   flutter_test:

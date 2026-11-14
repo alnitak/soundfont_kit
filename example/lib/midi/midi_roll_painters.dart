@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:soundfont_kit/soundfont_kit.dart';
 
 /// A shared [CustomPainter] that renders MIDI notes as horizontal bars inside a track lane clip.
