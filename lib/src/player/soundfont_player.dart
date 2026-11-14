@@ -5,9 +5,12 @@ import 'package:flutter_soloud/flutter_soloud.dart';
 import '../models/instrument.dart';
 import '../models/preset.dart';
 import '../models/sample_info.dart';
+import '../models/soundfont_format.dart';
 import '../models/zone.dart';
 import '../soundfont_file.dart';
+import 'filters/soundfont_filter.dart';
 import 'player_options.dart';
+import 'realtime_synthesizer.dart';
 import 'sample_streamer.dart';
 import 'stereo_joiner.dart';
 import 'soundfont_voice.dart';
@@ -24,6 +27,9 @@ class SoundFontPlayer {
 
   /// Active voices keyed by MIDI key for polyphonic voice lifecycle management.
   final Map<int, List<SoundFontVoice>> _activeVoices = {};
+
+  /// Voices currently fading out during release, keyed by MIDI key.
+  final Map<int, List<SoundFontVoice>> _releasingVoices = {};
 
   /// In-memory cache for raw or interleaved sample bytes.
   final Map<int, Uint8List> _sampleBytesCache = {};
@@ -43,10 +49,60 @@ class SoundFontPlayer {
   static int _instanceCounter = 0;
   final int _playerId = ++_instanceCounter;
 
+  Bus? _mixingBus;
+  bool _ownsMixingBus = false;
+  RealtimeSoundFontSynthesizer? _realtimeSynth;
+
+  /// Optional dedicated SoLoud mixing [Bus] for this player.
+  Bus? get mixingBus => _mixingBus;
+
+  /// Filter rack scoped to this player's [mixingBus] (or global if no bus is attached).
+  SoundFontFilterRack get busFilters => _mixingBus != null
+      ? SoundFontFilterRack.forBus(_mixingBus!)
+      : const SoundFontFilterRack.global();
+
+  /// Effective bus ID used when playing voices (`mixingBus?.busId ?? options.defaultBusId`).
+  int get effectiveBusId => _mixingBus?.busId ?? options.defaultBusId;
+
+  /// Attaches an existing [bus] or creates a dedicated SoLoud mixing [Bus]
+  /// for this player so per-player filters, VST3 effects, and volume/pan apply
+  /// independently.
+  Bus enableMixingBus({Bus? bus, String? name}) {
+    if (bus != null) {
+      _mixingBus = bus;
+      _ownsMixingBus = false;
+      if (!bus.isActive && SoLoud.instance.isInitialized) {
+        bus.playOnEngine();
+      }
+      return bus;
+    }
+    if (_mixingBus != null) return _mixingBus!;
+    final created = SoLoud.instance.createMixingBus(
+      name: name ?? 'SoundFontPlayer $_playerId',
+    );
+    if (SoLoud.instance.isInitialized) {
+      created.playOnEngine();
+    }
+    _mixingBus = created;
+    _ownsMixingBus = true;
+    return created;
+  }
+
+  /// Lazily initializes and returns the worker-isolate [RealtimeSoundFontSynthesizer].
+  Future<RealtimeSoundFontSynthesizer> ensureRealtimeSynthesizer() async {
+    final synth = _realtimeSynth ??= RealtimeSoundFontSynthesizer(
+      sampleRate: 44100,
+      busId: effectiveBusId,
+    );
+    await synth.ensureStarted();
+    return synth;
+  }
+
   String _sampleCacheKey(int sampleId) => 'sf_${_playerId}_s_$sampleId';
   String _stereoCacheKey(int leftId, int rightId) =>
       'sf_${_playerId}_st_${leftId}_$rightId';
 
+  /// Creates a [SoundFontPlayer] for [soundFont] with optional [options].
   SoundFontPlayer({
     required this.soundFont,
     this.options = const SoundFontPlayerOptions(),
@@ -216,7 +272,9 @@ class SoundFontPlayer {
     int velocity = 100,
     double? volume,
     double? baseVolume,
+    double volumeScale = 1.0,
     double? pan,
+    double panOffset = 0.0,
     double? pitchRatio,
     bool? looping,
     int? loopingStartOffsetAt,
@@ -226,6 +284,7 @@ class SoundFontPlayer {
     Zone? zone,
     Zone? presetZone,
     bool trackVoice = true,
+    int? busId,
   }) async {
     final effectiveKey =
         key ?? (sample.originalPitch > 0 ? sample.originalPitch : 60);
@@ -235,6 +294,16 @@ class SoundFontPlayer {
     if (trackVoice) {
       _heldKeys.add(effectiveKey);
     }
+
+    // Exclusive Class / Choke Group handling (SF2 Gen 57 / SFZ group & off_by)
+    final exc = VoiceCalculator.resolveExclusiveClass(
+      zone: zone,
+      presetZone: presetZone,
+    );
+    if (exc.offByGroup != null) {
+      await _chokeExclusiveClassVoices(exc.offByGroup!, atTime: atTime);
+    }
+
     final speed =
         pitchRatio ??
         VoiceCalculator.calculatePitchRatio(
@@ -244,7 +313,7 @@ class SoundFontPlayer {
           presetZone: presetZone,
         );
 
-    final vol =
+    final rawVol =
         volume ??
         VoiceCalculator.calculateVolume(
           velocity: velocity,
@@ -252,14 +321,16 @@ class SoundFontPlayer {
           presetZone: presetZone,
           masterVolume: options.masterVolume,
         );
+    final vol = (rawVol * volumeScale).clamp(0.0, 2.0);
 
-    final p =
+    final rawPan =
         pan ??
         VoiceCalculator.calculatePan(
           zone: zone,
           presetZone: presetZone,
           sample: sample,
         );
+    final p = (rawPan + panOffset).clamp(-1.0, 1.0);
 
     final loopInfo = VoiceCalculator.calculateLoopRegion(
       sample: sample,
@@ -278,68 +349,112 @@ class SoundFontPlayer {
       sustain: _sustain,
     );
 
-    final audio = await _getOrLoadSampleAudioSource(sample);
-    if (audio == null) {
-      return SoundFontVoice(key: effectiveKey, velocity: velocity, handles: []);
-    }
-
     final validLoop =
         shouldLoop &&
         startOffset >= 0 &&
         endOffset != null &&
         endOffset > startOffset;
-    final scheduledAt = atTime ?? Duration.zero;
 
-    final attackSec = zone?.volEnvAttack ?? presetZone?.volEnvAttack;
-    final hasAttack = attackSec != null && attackSec > 0.005;
+    // Mode B: Worker-Isolate Real-Time Synthesizer (16-bit PCM samples)
+    if (options.synthMode == SoundFontSynthMode.realtimeIsolateSynth &&
+        sample.compression == SampleCompression.pcm16) {
+      final synth = await ensureRealtimeSynthesizer();
+      Uint8List? preloaded = _sampleBytesCache[sample.id];
+      if (preloaded == null) {
+        final bytes = await soundFont.getSampleBytes(sample);
+        if (bytes.isNotEmpty) {
+          _sampleBytesCache[sample.id] = bytes;
+          preloaded = bytes;
+        }
+      }
+      if (preloaded != null && preloaded.isNotEmpty) {
+        synth.registerSamplePcm(sample.id, preloaded);
+        final vId = synth.triggerVoice(
+          key: effectiveKey,
+          velocity: velocity,
+          leftSample: sample,
+          zone: zone,
+          presetZone: presetZone,
+          basePitchRatio: speed,
+          peakVolume: vol,
+          pan: p,
+          isLooping: validLoop,
+          loopStart: validLoop ? startOffset : 0,
+          loopEnd: validLoop ? endOffset : 0,
+          releaseDuration: releaseDuration,
+        );
+        final voice = SoundFontVoice(
+          key: effectiveKey,
+          velocity: velocity,
+          handles: const [],
+          releaseDuration: releaseDuration,
+          sampleId: sample.id,
+          baseSpeeds: [speed],
+          baseVolumes: [baseVolume ?? rawVol],
+          basePans: [rawPan],
+          initialVolumeMultiplier: volumeScale,
+          initialPanOffset: panOffset,
+          exclusiveClasses: exc.exclusiveClass != null
+              ? {exc.exclusiveClass!}
+              : const {},
+          realtimeVoiceIds: [vId],
+          realtimeSynth: synth,
+        );
+        if (duration != null) {
+          voice.addEnvelopeTimer(Timer(duration, () => voice.release()));
+        }
+        if (trackVoice) {
+          _trackVoice(effectiveKey, voice);
+        }
+        return voice;
+      }
+    }
+
+    final audio = await _getOrLoadSampleAudioSource(sample);
+    if (audio == null) {
+      return SoundFontVoice(key: effectiveKey, velocity: velocity, handles: []);
+    }
+
+    final volStages = VoiceCalculator.calculateVolEnvStages(
+      zone: zone,
+      presetZone: presetZone,
+      peakVolume: vol,
+    );
+    final nowEngine = SoLoud.instance.getEngineTime();
+    final effectiveAt = atTime ?? nowEngine;
+    final scheduledAt = (atTime ?? Duration.zero) + volStages.delay;
+    final decayStartEngine =
+        effectiveAt + volStages.delay + volStages.attack + volStages.hold;
+    final sustainRatio = vol > 0 ? (volStages.sustainVolume / vol) : 1.0;
+    final hasAttack = volStages.attack > const Duration(milliseconds: 5);
+    final initialVol = hasAttack ? 0.01 : vol;
+    final targetBusId = busId ?? effectiveBusId;
+
+    _activatePerVoiceFilterOnSourceIfNeeded(
+      audio,
+      zone: zone,
+      presetZone: presetZone,
+    );
 
     final handle = SoLoud.instance.playScheduled(
       audio,
       scheduledAt,
       duration: duration,
-      volume: vol,
+      volume: initialVol,
       pan: p,
       scale: speed,
       looping: validLoop,
       loopingStartOffsetAt: validLoop ? startOffset : null,
       loopingEndOffsetAt: validLoop ? endOffset : null,
-      busId: options.defaultBusId,
+      busId: targetBusId,
     );
 
-    if (hasAttack) {
-      final attackDuration = Duration(
-        microseconds: (attackSec * 1000000).round(),
-      );
-      if (atTime != null) {
-        SoLoud.instance.fadeScheduled(handle, scheduledAt, vol, attackDuration);
-      } else {
-        SoLoud.instance.fadeVolume(handle, vol, attackDuration);
-      }
-    }
-
-    if (duration != null) {
-      if (atTime != null) {
-        final noteOffTime = scheduledAt + duration;
-        if (releaseDuration > Duration.zero) {
-          SoLoud.instance.fadeScheduled(
-            handle,
-            noteOffTime,
-            0.0,
-            releaseDuration,
-            thenStop: true,
-          );
-        } else {
-          SoLoud.instance.stopScheduled(handle, noteOffTime);
-        }
-      } else {
-        if (releaseDuration > Duration.zero) {
-          SoLoud.instance.fadeVolume(handle, 0.0, releaseDuration);
-          SoLoud.instance.scheduleStop(handle, duration + releaseDuration);
-        } else {
-          SoLoud.instance.scheduleStop(handle, duration);
-        }
-      }
-    }
+    _applyPerVoiceFilterIfNeeded(
+      audio,
+      handle,
+      zone: zone,
+      presetZone: presetZone,
+    );
 
     final voice = SoundFontVoice(
       key: effectiveKey,
@@ -349,8 +464,27 @@ class SoundFontPlayer {
       releaseDuration: releaseDuration,
       sampleId: sample.id,
       baseSpeeds: [speed],
-      baseVolumes: [baseVolume ?? vol],
-      basePans: [p],
+      baseVolumes: [baseVolume ?? rawVol],
+      basePans: [rawPan],
+      sustainRatios: [sustainRatio],
+      decayDurations: [volStages.decay],
+      decayStartEngineTimes: [decayStartEngine],
+      initialVolumeMultiplier: volumeScale,
+      initialPanOffset: panOffset,
+      exclusiveClasses: exc.exclusiveClass != null
+          ? {exc.exclusiveClass!}
+          : const {},
+    );
+
+    _scheduleDahdsrStages(
+      voice: voice,
+      handle: handle,
+      peakVolume: vol,
+      volStages: volStages,
+      atTime: atTime,
+      scheduledStart: scheduledAt,
+      duration: duration,
+      releaseDuration: releaseDuration,
     );
 
     if (trackVoice) {
@@ -367,12 +501,15 @@ class SoundFontPlayer {
     int velocity = 100,
     double? customVolume,
     double? baseVolume,
+    double volumeScale = 1.0,
     double? customPan,
+    double panOffset = 0.0,
     Duration? atTime,
     Duration? duration,
     Zone? presetZone,
     bool trackVoice = true,
     Set<int>? handledSampleIds,
+    int? busId,
   }) async {
     if (trackVoice) {
       _heldKeys.add(key);
@@ -404,6 +541,12 @@ class SoundFontPlayer {
     final allBaseSpeeds = <double>[];
     final allBaseVolumes = <double>[];
     final allBasePans = <double>[];
+    final allSustainRatios = <double>[];
+    final allDecayDurations = <Duration>[];
+    final allDecayStartTimes = <Duration>[];
+    final allExclusiveClasses = <int>{};
+    final allRealtimeVoiceIds = <int>[];
+    RealtimeSoundFontSynthesizer? activeRealtimeSynth;
     Duration maxRelease = options.defaultReleaseDuration;
 
     // Check for stereo sample pairs among matching zones
@@ -441,9 +584,12 @@ class SoundFontPlayer {
             presetZone: presetZone,
             customVolume: customVolume,
             baseVolume: baseVolume,
+            volumeScale: volumeScale,
             customPan: customPan,
+            panOffset: panOffset,
             atTime: atTime,
             duration: duration,
+            busId: busId,
           );
 
           allHandles.addAll(stereoVoice.handles);
@@ -451,6 +597,12 @@ class SoundFontPlayer {
           allBaseSpeeds.addAll(stereoVoice.baseSpeeds);
           allBaseVolumes.addAll(stereoVoice.baseVolumes);
           allBasePans.addAll(stereoVoice.basePans);
+          allSustainRatios.addAll(stereoVoice.sustainRatios);
+          allDecayDurations.addAll(stereoVoice.decayDurations);
+          allDecayStartTimes.addAll(stereoVoice.decayStartEngineTimes);
+          allExclusiveClasses.addAll(stereoVoice.exclusiveClasses);
+          allRealtimeVoiceIds.addAll(stereoVoice.realtimeVoiceIds);
+          activeRealtimeSynth ??= stereoVoice.realtimeSynth;
           if (stereoVoice.releaseDuration > maxRelease) {
             maxRelease = stereoVoice.releaseDuration;
           }
@@ -465,12 +617,15 @@ class SoundFontPlayer {
         velocity: velocity,
         volume: customVolume,
         baseVolume: baseVolume,
+        volumeScale: volumeScale,
         pan: customPan,
+        panOffset: panOffset,
         atTime: atTime,
         duration: duration,
         zone: zone,
         presetZone: presetZone,
         trackVoice: false,
+        busId: busId,
       );
 
       allHandles.addAll(voice.handles);
@@ -478,6 +633,12 @@ class SoundFontPlayer {
       allBaseSpeeds.addAll(voice.baseSpeeds);
       allBaseVolumes.addAll(voice.baseVolumes);
       allBasePans.addAll(voice.basePans);
+      allSustainRatios.addAll(voice.sustainRatios);
+      allDecayDurations.addAll(voice.decayDurations);
+      allDecayStartTimes.addAll(voice.decayStartEngineTimes);
+      allExclusiveClasses.addAll(voice.exclusiveClasses);
+      allRealtimeVoiceIds.addAll(voice.realtimeVoiceIds);
+      activeRealtimeSynth ??= voice.realtimeSynth;
       if (voice.releaseDuration > maxRelease) {
         maxRelease = voice.releaseDuration;
       }
@@ -492,6 +653,14 @@ class SoundFontPlayer {
       baseSpeeds: allBaseSpeeds,
       baseVolumes: allBaseVolumes,
       basePans: allBasePans,
+      sustainRatios: allSustainRatios,
+      decayDurations: allDecayDurations,
+      decayStartEngineTimes: allDecayStartTimes,
+      initialVolumeMultiplier: volumeScale,
+      initialPanOffset: panOffset,
+      exclusiveClasses: allExclusiveClasses,
+      realtimeVoiceIds: allRealtimeVoiceIds,
+      realtimeSynth: activeRealtimeSynth,
     );
 
     if (trackVoice) {
@@ -508,10 +677,13 @@ class SoundFontPlayer {
     int velocity = 100,
     double? customVolume,
     double? baseVolume,
+    double volumeScale = 1.0,
     double? customPan,
+    double panOffset = 0.0,
     Duration? atTime,
     Duration? duration,
     bool trackVoice = true,
+    int? busId,
   }) async {
     if (trackVoice) {
       _heldKeys.add(key);
@@ -533,6 +705,12 @@ class SoundFontPlayer {
     final allBaseSpeeds = <double>[];
     final allBaseVolumes = <double>[];
     final allBasePans = <double>[];
+    final allSustainRatios = <double>[];
+    final allDecayDurations = <Duration>[];
+    final allDecayStartTimes = <Duration>[];
+    final allExclusiveClasses = <int>{};
+    final allRealtimeVoiceIds = <int>[];
+    RealtimeSoundFontSynthesizer? activeRealtimeSynth;
     Duration maxRelease = options.defaultReleaseDuration;
     final handledSampleIds = <int>{};
 
@@ -550,18 +728,27 @@ class SoundFontPlayer {
           velocity: velocity,
           customVolume: customVolume,
           baseVolume: baseVolume,
+          volumeScale: volumeScale,
           customPan: customPan,
+          panOffset: panOffset,
           atTime: atTime,
           duration: duration,
           presetZone: pz,
           trackVoice: false,
           handledSampleIds: handledSampleIds,
+          busId: busId,
         );
         allHandles.addAll(voice.handles);
         allSources.addAll(voice.sources);
         allBaseSpeeds.addAll(voice.baseSpeeds);
         allBaseVolumes.addAll(voice.baseVolumes);
         allBasePans.addAll(voice.basePans);
+        allSustainRatios.addAll(voice.sustainRatios);
+        allDecayDurations.addAll(voice.decayDurations);
+        allDecayStartTimes.addAll(voice.decayStartEngineTimes);
+        allExclusiveClasses.addAll(voice.exclusiveClasses);
+        allRealtimeVoiceIds.addAll(voice.realtimeVoiceIds);
+        activeRealtimeSynth ??= voice.realtimeSynth;
         if (voice.releaseDuration > maxRelease) {
           maxRelease = voice.releaseDuration;
         }
@@ -592,9 +779,12 @@ class SoundFontPlayer {
                 presetZone: pz,
                 customVolume: customVolume,
                 baseVolume: baseVolume,
+                volumeScale: volumeScale,
                 customPan: customPan,
+                panOffset: panOffset,
                 atTime: atTime,
                 duration: duration,
+                busId: busId,
               );
 
               allHandles.addAll(stereoVoice.handles);
@@ -602,6 +792,12 @@ class SoundFontPlayer {
               allBaseSpeeds.addAll(stereoVoice.baseSpeeds);
               allBaseVolumes.addAll(stereoVoice.baseVolumes);
               allBasePans.addAll(stereoVoice.basePans);
+              allSustainRatios.addAll(stereoVoice.sustainRatios);
+              allDecayDurations.addAll(stereoVoice.decayDurations);
+              allDecayStartTimes.addAll(stereoVoice.decayStartEngineTimes);
+              allExclusiveClasses.addAll(stereoVoice.exclusiveClasses);
+              allRealtimeVoiceIds.addAll(stereoVoice.realtimeVoiceIds);
+              activeRealtimeSynth ??= stereoVoice.realtimeSynth;
               if (stereoVoice.releaseDuration > maxRelease) {
                 maxRelease = stereoVoice.releaseDuration;
               }
@@ -616,17 +812,26 @@ class SoundFontPlayer {
             velocity: velocity,
             volume: customVolume,
             baseVolume: baseVolume,
+            volumeScale: volumeScale,
             pan: customPan,
+            panOffset: panOffset,
             atTime: atTime,
             duration: duration,
             presetZone: pz,
             trackVoice: false,
+            busId: busId,
           );
           allHandles.addAll(voice.handles);
           allSources.addAll(voice.sources);
           allBaseSpeeds.addAll(voice.baseSpeeds);
           allBaseVolumes.addAll(voice.baseVolumes);
           allBasePans.addAll(voice.basePans);
+          allSustainRatios.addAll(voice.sustainRatios);
+          allDecayDurations.addAll(voice.decayDurations);
+          allDecayStartTimes.addAll(voice.decayStartEngineTimes);
+          allExclusiveClasses.addAll(voice.exclusiveClasses);
+          allRealtimeVoiceIds.addAll(voice.realtimeVoiceIds);
+          activeRealtimeSynth ??= voice.realtimeSynth;
           if (voice.releaseDuration > maxRelease) {
             maxRelease = voice.releaseDuration;
           }
@@ -643,6 +848,14 @@ class SoundFontPlayer {
       baseSpeeds: allBaseSpeeds,
       baseVolumes: allBaseVolumes,
       basePans: allBasePans,
+      sustainRatios: allSustainRatios,
+      decayDurations: allDecayDurations,
+      decayStartEngineTimes: allDecayStartTimes,
+      initialVolumeMultiplier: volumeScale,
+      initialPanOffset: panOffset,
+      exclusiveClasses: allExclusiveClasses,
+      realtimeVoiceIds: allRealtimeVoiceIds,
+      realtimeSynth: activeRealtimeSynth,
     );
 
     if (trackVoice) {
@@ -798,7 +1011,13 @@ class SoundFontPlayer {
     final voices = _activeVoices.remove(key);
     if (voices == null || voices.isEmpty) return;
 
+    final releasingList = _releasingVoices.putIfAbsent(key, () => []);
     for (final voice in voices) {
+      releasingList.add(voice);
+      final fade = releaseDuration ?? voice.releaseDuration;
+      Timer(fade + const Duration(milliseconds: 50), () {
+        releasingList.remove(voice);
+      });
       await voice.release(customRelease: releaseDuration);
     }
   }
@@ -811,6 +1030,15 @@ class SoundFontPlayer {
       await noteOff(key, releaseDuration: releaseDuration);
     }
     _activeVoices.clear();
+    final releasing = <SoundFontVoice>[];
+    for (final list in _releasingVoices.values) {
+      releasing.addAll(list);
+    }
+    _releasingVoices.clear();
+    for (final voice in releasing) {
+      await voice.release(customRelease: releaseDuration);
+    }
+    _realtimeSynth?.allNotesOff(releaseDuration: releaseDuration);
   }
 
   /// Immediately terminates all sounds in the SoLoud mixer output and clears active voices.
@@ -1081,10 +1309,21 @@ class SoundFontPlayer {
     Zone? presetZone,
     double? customVolume,
     double? baseVolume,
+    double volumeScale = 1.0,
     double? customPan,
+    double panOffset = 0.0,
     Duration? atTime,
     Duration? duration,
+    int? busId,
   }) async {
+    final exc = VoiceCalculator.resolveExclusiveClass(
+      zone: zone,
+      presetZone: presetZone,
+    );
+    if (exc.offByGroup != null) {
+      await _chokeExclusiveClassVoices(exc.offByGroup!, atTime: atTime);
+    }
+
     final speed = VoiceCalculator.calculatePitchRatio(
       key: key,
       sample: leftSample,
@@ -1092,7 +1331,7 @@ class SoundFontPlayer {
       presetZone: presetZone,
     );
 
-    final vol =
+    final rawVol =
         customVolume ??
         VoiceCalculator.calculateVolume(
           velocity: velocity,
@@ -1100,12 +1339,15 @@ class SoundFontPlayer {
           presetZone: presetZone,
           masterVolume: options.masterVolume,
         );
+    final vol = (rawVol * volumeScale).clamp(0.0, 2.0);
 
     if (!SoLoud.instance.isInitialized) {
       return SoundFontVoice(key: key, velocity: velocity, handles: []);
     }
 
-    final p = customPan ?? VoiceCalculator.calculatePan(presetZone: presetZone);
+    final rawPan =
+        customPan ?? VoiceCalculator.calculatePan(presetZone: presetZone);
+    final p = (rawPan + panOffset).clamp(-1.0, 1.0);
 
     final loopInfo = VoiceCalculator.calculateLoopRegion(
       sample: leftSample,
@@ -1120,70 +1362,140 @@ class SoundFontPlayer {
       sustain: _sustain,
     );
 
-    final audio = await _getOrLoadStereoAudioSource(leftSample, rightSample);
-    if (audio == null) {
-      return SoundFontVoice(key: key, velocity: velocity, handles: []);
-    }
-
     final validLoop =
         loopInfo.isLooping &&
         loopInfo.startFrames >= 0 &&
         loopInfo.endFrames != null &&
         loopInfo.endFrames! > loopInfo.startFrames;
-    final scheduledAt = atTime ?? Duration.zero;
 
-    final attackSec = zone?.volEnvAttack ?? presetZone?.volEnvAttack;
-    final hasAttack = attackSec != null && attackSec > 0.005;
+    // Mode B: Worker-Isolate Real-Time Synthesizer (16-bit PCM samples)
+    if (options.synthMode == SoundFontSynthMode.realtimeIsolateSynth &&
+        leftSample.compression == SampleCompression.pcm16 &&
+        rightSample.compression == SampleCompression.pcm16) {
+      final synth = await ensureRealtimeSynthesizer();
+      Uint8List? leftBytes = _sampleBytesCache[leftSample.id];
+      if (leftBytes == null) {
+        final b = await soundFont.getSampleBytes(leftSample);
+        if (b.isNotEmpty) {
+          _sampleBytesCache[leftSample.id] = b;
+          leftBytes = b;
+        }
+      }
+      Uint8List? rightBytes = _sampleBytesCache[rightSample.id];
+      if (rightBytes == null) {
+        final b = await soundFont.getSampleBytes(rightSample);
+        if (b.isNotEmpty) {
+          _sampleBytesCache[rightSample.id] = b;
+          rightBytes = b;
+        }
+      }
+      if (leftBytes != null && leftBytes.isNotEmpty) {
+        synth.registerSamplePcm(leftSample.id, leftBytes);
+        if (rightBytes != null && rightBytes.isNotEmpty) {
+          synth.registerSamplePcm(rightSample.id, rightBytes);
+        }
+        final vId = synth.triggerVoice(
+          key: key,
+          velocity: velocity,
+          leftSample: leftSample,
+          rightSample: rightBytes != null ? rightSample : null,
+          zone: zone,
+          presetZone: presetZone,
+          basePitchRatio: speed,
+          peakVolume: vol,
+          pan: p,
+          isLooping: validLoop,
+          loopStart: validLoop ? loopInfo.startFrames : 0,
+          loopEnd: validLoop ? (loopInfo.endFrames ?? 0) : 0,
+          releaseDuration: releaseDuration,
+        );
+        final voice = SoundFontVoice(
+          key: key,
+          velocity: velocity,
+          handles: const [],
+          releaseDuration: releaseDuration,
+          sampleId: leftSample.id,
+          baseSpeeds: [speed],
+          baseVolumes: [baseVolume ?? rawVol],
+          basePans: [rawPan],
+          initialVolumeMultiplier: volumeScale,
+          initialPanOffset: panOffset,
+          exclusiveClasses: exc.exclusiveClass != null
+              ? {exc.exclusiveClass!}
+              : const {},
+          realtimeVoiceIds: [vId],
+          realtimeSynth: synth,
+        );
+        if (duration != null) {
+          voice.addEnvelopeTimer(Timer(duration, () => voice.release()));
+        }
+        return voice;
+      }
+    }
+
+    final audio = await _getOrLoadStereoAudioSource(leftSample, rightSample);
+    if (audio == null) {
+      return SoundFontVoice(key: key, velocity: velocity, handles: []);
+    }
+
+    final volStages = VoiceCalculator.calculateVolEnvStages(
+      zone: zone,
+      presetZone: presetZone,
+      peakVolume: vol,
+    );
+    final nowEngine = SoLoud.instance.getEngineTime();
+    final effectiveAt = atTime ?? nowEngine;
+    final scheduledAt = (atTime ?? Duration.zero) + volStages.delay;
+    final decayStartEngine =
+        effectiveAt + volStages.delay + volStages.attack + volStages.hold;
+    final sustainRatio = vol > 0 ? (volStages.sustainVolume / vol) : 1.0;
+    final hasAttack = volStages.attack > const Duration(milliseconds: 5);
+    final initialVol = hasAttack ? 0.01 : vol;
+    final targetBusId = busId ?? effectiveBusId;
+
+    _activatePerVoiceFilterOnSourceIfNeeded(
+      audio,
+      zone: zone,
+      presetZone: presetZone,
+    );
+
+    // joinTwoSources resamples both channels to the engine sample rate, so
+    // scale loop frame offsets from leftSample.sampleRate to engineSampleRate.
+    final engineRate = SoLoud.instance.sampleRate;
+    final sampleRateScale =
+        (engineRate > 0 &&
+            leftSample.sampleRate > 0 &&
+            engineRate != leftSample.sampleRate)
+        ? (engineRate / leftSample.sampleRate)
+        : 1.0;
+    final scaledLoopStart = validLoop
+        ? (loopInfo.startFrames * sampleRateScale).round()
+        : null;
+    final scaledLoopEnd = (validLoop && loopInfo.endFrames != null)
+        ? (loopInfo.endFrames! * sampleRateScale).round()
+        : null;
 
     final handle = SoLoud.instance.playScheduled(
       audio,
       scheduledAt,
       duration: duration,
-      volume: vol,
+      volume: initialVol,
       pan: p,
       scale: speed,
       looping: validLoop,
-      loopingStartOffsetAt: validLoop ? loopInfo.startFrames : null,
-      loopingEndOffsetAt: validLoop ? loopInfo.endFrames : null,
-      busId: options.defaultBusId,
+      loopingStartOffsetAt: scaledLoopStart,
+      loopingEndOffsetAt: scaledLoopEnd,
+      busId: targetBusId,
     );
 
-    if (hasAttack) {
-      final attackDuration = Duration(
-        microseconds: (attackSec * 1000000).round(),
-      );
-      if (atTime != null) {
-        SoLoud.instance.fadeScheduled(handle, scheduledAt, vol, attackDuration);
-      } else {
-        SoLoud.instance.fadeVolume(handle, vol, attackDuration);
-      }
-    }
+    _applyPerVoiceFilterIfNeeded(
+      audio,
+      handle,
+      zone: zone,
+      presetZone: presetZone,
+    );
 
-    if (duration != null) {
-      if (atTime != null) {
-        final noteOffTime = scheduledAt + duration;
-        if (releaseDuration > Duration.zero) {
-          SoLoud.instance.fadeScheduled(
-            handle,
-            noteOffTime,
-            0.0,
-            releaseDuration,
-            thenStop: true,
-          );
-        } else {
-          SoLoud.instance.stopScheduled(handle, noteOffTime);
-        }
-      } else {
-        if (releaseDuration > Duration.zero) {
-          SoLoud.instance.fadeVolume(handle, 0.0, releaseDuration);
-          SoLoud.instance.scheduleStop(handle, duration + releaseDuration);
-        } else {
-          SoLoud.instance.scheduleStop(handle, duration);
-        }
-      }
-    }
-
-    return SoundFontVoice(
+    final voice = SoundFontVoice(
       key: key,
       velocity: velocity,
       handles: [handle],
@@ -1191,9 +1503,251 @@ class SoundFontPlayer {
       releaseDuration: releaseDuration,
       sampleId: leftSample.id,
       baseSpeeds: [speed],
-      baseVolumes: [baseVolume ?? vol],
-      basePans: [p],
+      baseVolumes: [baseVolume ?? rawVol],
+      basePans: [rawPan],
+      sustainRatios: [sustainRatio],
+      decayDurations: [volStages.decay],
+      decayStartEngineTimes: [decayStartEngine],
+      initialVolumeMultiplier: volumeScale,
+      initialPanOffset: panOffset,
+      exclusiveClasses: exc.exclusiveClass != null
+          ? {exc.exclusiveClass!}
+          : const {},
     );
+
+    _scheduleDahdsrStages(
+      voice: voice,
+      handle: handle,
+      peakVolume: vol,
+      volStages: volStages,
+      atTime: atTime,
+      scheduledStart: scheduledAt,
+      duration: duration,
+      releaseDuration: releaseDuration,
+    );
+
+    return voice;
+  }
+
+  Future<void> _chokeExclusiveClassVoices(
+    int chokeGroup, {
+    Duration? atTime,
+  }) async {
+    for (final voiceList in _activeVoices.values) {
+      for (final v in voiceList) {
+        if (!v.isReleased && v.exclusiveClasses.contains(chokeGroup)) {
+          await v.choke(atTime: atTime);
+        }
+      }
+    }
+  }
+
+  void _activatePerVoiceFilterOnSourceIfNeeded(
+    AudioSource audio, {
+    Zone? zone,
+    Zone? presetZone,
+  }) {
+    if (!options.enablePerVoiceFilter) return;
+    final filter = VoiceCalculator.calculateFilterParams(
+      zone: zone,
+      presetZone: presetZone,
+    );
+    if (!filter.enabled) return;
+
+    try {
+      final biquad = audio.filters.biquadFilter;
+      if (!biquad.isActive) {
+        biquad.activate();
+      }
+    } catch (_) {
+      // Gracefully ignore if single-source filter is unsupported on current target
+    }
+  }
+
+  void _applyPerVoiceFilterIfNeeded(
+    AudioSource audio,
+    SoundHandle handle, {
+    Zone? zone,
+    Zone? presetZone,
+  }) {
+    if (!options.enablePerVoiceFilter) return;
+    final filter = VoiceCalculator.calculateFilterParams(
+      zone: zone,
+      presetZone: presetZone,
+    );
+    if (!filter.enabled) return;
+
+    try {
+      final biquad = audio.filters.biquadFilter;
+      if (!biquad.isActive) {
+        biquad.activate();
+      }
+      biquad.frequency(soundHandle: handle).value = filter.cutoffHz;
+      biquad.resonance(soundHandle: handle).value = filter.resonanceQ;
+      biquad.wet(soundHandle: handle).value = 1.0;
+    } catch (_) {
+      // Gracefully ignore if single-source filter is unsupported on current target
+    }
+  }
+
+  void _scheduleDahdsrStages({
+    required SoundFontVoice voice,
+    required SoundHandle handle,
+    required double peakVolume,
+    required ({
+      Duration delay,
+      Duration attack,
+      Duration hold,
+      Duration decay,
+      double sustainVolume,
+    })
+    volStages,
+    required Duration? atTime,
+    required Duration scheduledStart,
+    required Duration? duration,
+    required Duration releaseDuration,
+  }) {
+    final hasAttack = volStages.attack > const Duration(milliseconds: 5);
+    final hasDecay =
+        volStages.decay > const Duration(milliseconds: 5) &&
+        (peakVolume - volStages.sustainVolume).abs() > 0.005;
+
+    if (atTime != null) {
+      if (hasAttack) {
+        SoLoud.instance.fadeScheduled(
+          handle,
+          scheduledStart,
+          peakVolume,
+          volStages.attack,
+        );
+      }
+      if (hasDecay) {
+        final decayStart = scheduledStart + volStages.attack + volStages.hold;
+        if (duration == null || decayStart < scheduledStart + duration) {
+          if (!hasAttack && duration == null) {
+            SoLoud.instance.fadeScheduled(
+              handle,
+              decayStart,
+              volStages.sustainVolume,
+              volStages.decay,
+              thenStop: volStages.sustainVolume <= 0.0005,
+            );
+          } else {
+            final timeToDecay =
+                volStages.delay + volStages.attack + volStages.hold;
+            voice.addEnvelopeTimer(
+              Timer(timeToDecay, () {
+                if (!voice.isReleased &&
+                    SoLoud.instance.getIsValidVoiceHandle(handle)) {
+                  SoLoud.instance.fadeScheduled(
+                    handle,
+                    decayStart,
+                    volStages.sustainVolume,
+                    volStages.decay,
+                    thenStop: volStages.sustainVolume <= 0.0005,
+                  );
+                }
+              }),
+            );
+          }
+        }
+      }
+      if (duration != null) {
+        final noteOffTime = scheduledStart + duration;
+        if (!hasAttack && !hasDecay) {
+          if (releaseDuration > Duration.zero) {
+            SoLoud.instance.fadeScheduled(
+              handle,
+              noteOffTime,
+              0.0,
+              releaseDuration,
+              thenStop: true,
+            );
+          } else {
+            SoLoud.instance.stopScheduled(handle, noteOffTime);
+          }
+        } else {
+          voice.addEnvelopeTimer(
+            Timer(volStages.delay + duration, () {
+              if (!voice.isReleased &&
+                  SoLoud.instance.getIsValidVoiceHandle(handle)) {
+                if (releaseDuration > Duration.zero) {
+                  SoLoud.instance.fadeScheduled(
+                    handle,
+                    noteOffTime,
+                    0.0,
+                    releaseDuration,
+                    thenStop: true,
+                  );
+                } else {
+                  SoLoud.instance.stopScheduled(handle, noteOffTime);
+                }
+              }
+            }),
+          );
+        }
+      }
+      return;
+    }
+
+    // Immediate real-time playback (atTime == null)
+    if (hasAttack) {
+      if (volStages.delay > Duration.zero) {
+        voice.addEnvelopeTimer(
+          Timer(volStages.delay, () {
+            if (!voice.isReleased &&
+                SoLoud.instance.getIsValidVoiceHandle(handle)) {
+              SoLoud.instance.fadeVolume(handle, peakVolume, volStages.attack);
+            }
+          }),
+        );
+      } else {
+        SoLoud.instance.fadeVolume(handle, peakVolume, volStages.attack);
+      }
+    }
+
+    if (hasDecay) {
+      final timeToDecay = volStages.delay + volStages.attack + volStages.hold;
+      if (timeToDecay > Duration.zero) {
+        voice.addEnvelopeTimer(
+          Timer(timeToDecay, () {
+            if (!voice.isReleased &&
+                SoLoud.instance.getIsValidVoiceHandle(handle)) {
+              final now = SoLoud.instance.isInitialized
+                  ? SoLoud.instance.getEngineTime()
+                  : Duration.zero;
+              SoLoud.instance.fadeScheduled(
+                handle,
+                now,
+                volStages.sustainVolume,
+                volStages.decay,
+                thenStop: volStages.sustainVolume <= 0.0005,
+              );
+            }
+          }),
+        );
+      } else {
+        final now = SoLoud.instance.isInitialized
+            ? SoLoud.instance.getEngineTime()
+            : Duration.zero;
+        SoLoud.instance.fadeScheduled(
+          handle,
+          now,
+          volStages.sustainVolume,
+          volStages.decay,
+          thenStop: volStages.sustainVolume <= 0.0005,
+        );
+      }
+    }
+
+    if (duration != null) {
+      final totalNoteHold = volStages.delay + duration;
+      voice.addEnvelopeTimer(
+        Timer(totalNoteHold, () {
+          voice.release(customRelease: releaseDuration);
+        }),
+      );
+    }
   }
 
   /// Returns all active sound handles playing the given [sample].
@@ -1222,8 +1776,28 @@ class SoundFontPlayer {
   }
 
   void _trackVoice(int key, SoundFontVoice voice) {
+    // Dampen existing active or releasing voices for the same key to avoid voice pile-up and phase artifacts
+    final existing = _activeVoices[key];
+    if (existing != null && existing.isNotEmpty) {
+      for (final v in existing) {
+        v.release(customRelease: const Duration(milliseconds: 15));
+      }
+      existing.clear();
+    }
+    final releasing = _releasingVoices.remove(key);
+    if (releasing != null && releasing.isNotEmpty) {
+      for (final v in releasing) {
+        v.release(customRelease: const Duration(milliseconds: 15));
+      }
+    }
     if (!_heldKeys.contains(key)) {
       // Key was already released while this voice was being prepared asynchronously
+      final fade = voice.releaseDuration;
+      final releasingList = _releasingVoices.putIfAbsent(key, () => []);
+      releasingList.add(voice);
+      Timer(fade + const Duration(milliseconds: 50), () {
+        releasingList.remove(voice);
+      });
       voice.release();
       return;
     }
@@ -1233,6 +1807,17 @@ class SoundFontPlayer {
   /// Releases all player resources and stops all playing handles.
   Future<void> dispose() async {
     await allNotesOff();
+    if (_realtimeSynth != null) {
+      await _realtimeSynth!.dispose();
+      _realtimeSynth = null;
+    }
+    if (_ownsMixingBus && _mixingBus != null) {
+      try {
+        _mixingBus!.dispose();
+      } catch (_) {}
+      _mixingBus = null;
+      _ownsMixingBus = false;
+    }
     _loadingAudioSources.clear();
     for (final audio in _audioSourceCache.values) {
       try {

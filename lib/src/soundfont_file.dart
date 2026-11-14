@@ -33,7 +33,8 @@ abstract class SoundFontFile {
   /// All audio sample definitions in this SoundFont.
   List<SampleInfo> get samples;
 
-  /// Look up a preset by bank and program number.
+  /// Looks up a [Preset] matching the given MIDI [bank] and [program] numbers,
+  /// or returns `null` if no matching preset exists.
   Preset? findPreset({required int bank, required int program}) {
     for (final p in presets) {
       if (p.bank == bank && p.program == program) return p;
@@ -41,16 +42,17 @@ abstract class SoundFontFile {
     return null;
   }
 
-  /// Retrieves the raw compressed or uncompressed audio bytes for a specific [SampleInfo].
+  /// Retrieves the raw compressed or uncompressed audio bytes for [sample].
   Future<Uint8List> getSampleBytes(SampleInfo sample);
 
-  /// Retrieves a stream of audio byte chunks for a specific [SampleInfo].
+  /// Retrieves a stream of audio byte chunks of size [chunkSize] for [sample].
   Stream<Uint8List> getSampleByteStream(
     SampleInfo sample, {
     int chunkSize = 16384,
   });
 
-  /// Creates a [SoundFontPlayer] instance for audio playback of this SoundFont.
+  /// Creates a [SoundFontPlayer] instance for audio playback of this SoundFont
+  /// with optional configuration [options].
   SoundFontPlayer createPlayer({SoundFontPlayerOptions? options}) {
     final player = SoundFontPlayer(
       soundFont: this,
@@ -62,7 +64,8 @@ abstract class SoundFontFile {
     return player;
   }
 
-  /// Load a SoundFont from an in-memory byte buffer.
+  /// Loads a [SoundFontFile] from an in-memory [bytes] buffer, optionally using
+  /// [formatHint] to specify the format or [basePath] to resolve external SFZ samples.
   static Future<SoundFontFile> fromBytes(
     Uint8List bytes, {
     SoundFontFormat? formatHint,
@@ -72,25 +75,27 @@ abstract class SoundFontFile {
     return fromSource(source, formatHint: formatHint);
   }
 
-  /// Load a SoundFont from a file on disk.
+  /// Loads a [SoundFontFile] from a file at [filePath] on disk.
   static Future<SoundFontFile> fromFile(String filePath) async {
     final source = FileSource(filePath);
     return fromSource(source, pathHint: filePath);
   }
 
-  /// Load a SoundFont from a Flutter asset key.
+  /// Loads a [SoundFontFile] from a Flutter asset bundle key at [assetPath].
   static Future<SoundFontFile> fromAsset(String assetPath) async {
     final source = AssetSource(assetPath);
     return fromSource(source, pathHint: assetPath);
   }
 
-  /// Load a SoundFont from a remote HTTP URL.
+  /// Loads a [SoundFontFile] from a remote HTTP [url].
   static Future<SoundFontFile> fromUrl(String url) async {
     final source = UrlSource(url);
     return fromSource(source, pathHint: url);
   }
 
-  /// Load a SoundFont from any custom [SoundFontSource].
+  /// Loads a [SoundFontFile] from a [SoundFontSource], automatically unpacking
+  /// compressed archives (`.zip`, `.gz`, `.bz2`, `.tar`) and detecting the format
+  /// via [formatHint] or [pathHint].
   static Future<SoundFontFile> fromSource(
     SoundFontSource source, {
     SoundFontFormat? formatHint,

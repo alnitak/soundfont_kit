@@ -8,15 +8,27 @@ import '../models/soundfont_format.dart';
 import '../models/zone.dart';
 import '../sources/soundfont_source.dart';
 
-/// Result container for parsed SFZ files.
+/// Result container for parsed SFZ instrument definition files.
 class SfzData {
+  /// Name of the SFZ instrument bank.
   final String name;
+
+  /// Optional comment or serialized `<control>` header metadata.
   final String? comment;
+
+  /// Synthesized presets wrapping the parsed SFZ instrument.
   final List<Preset> presets;
+
+  /// Parsed instruments containing the SFZ `<region>` zones.
   final List<Instrument> instruments;
+
+  /// Sample descriptors referenced by the SFZ `<region>` opcodes.
   final List<SampleInfo> samples;
+
+  /// Active [SoundFontSource] used to load external sample audio files.
   final SoundFontSource activeSource;
 
+  /// Creates an [SfzData] container with parsed SFZ presets, instruments, and samples.
   SfzData({
     required this.name,
     this.comment,
@@ -29,10 +41,13 @@ class SfzData {
 
 /// Parser for SFZ text-based instrument definitions and zipped SFZ packages.
 class SfzParser {
+  /// The input [SoundFontSource] providing the `.sfz` text or `.zip` archive.
   final SoundFontSource source;
 
+  /// Creates an [SfzParser] reading from [source].
   SfzParser(this.source);
 
+  /// Parses the SFZ definition from [source] and returns the resulting [SfzData].
   Future<SfzData> parse() async {
     SoundFontSource currentSource = source;
     final initialBytes = await source.getBytes();
@@ -121,11 +136,73 @@ class SfzParser {
         }
       }
 
+      double? delay = double.tryParse(merged['ampeg_delay'] ?? '');
       double? attack = double.tryParse(merged['ampeg_attack'] ?? '');
+      double? hold = double.tryParse(merged['ampeg_hold'] ?? '');
       double? decay = double.tryParse(merged['ampeg_decay'] ?? '');
       double? sustain = double.tryParse(merged['ampeg_sustain'] ?? '');
       double? release = double.tryParse(merged['ampeg_release'] ?? '');
       int? tune = int.tryParse(merged['tune'] ?? '');
+      final int transpose = int.tryParse(merged['transpose'] ?? '') ?? 0;
+      if (transpose != 0) {
+        tune = (tune ?? 0) + transpose * 100;
+      }
+
+      double? pan;
+      final panRaw = double.tryParse(merged['pan'] ?? '');
+      if (panRaw != null) {
+        pan = (panRaw / 100.0).clamp(-1.0, 1.0);
+      }
+
+      double? attenuation;
+      final volDb = double.tryParse(merged['volume'] ?? '');
+      if (volDb != null && volDb < 0) {
+        attenuation = -volDb;
+      }
+
+      final double? cutoff = double.tryParse(merged['cutoff'] ?? '');
+      final double? resonance = double.tryParse(merged['resonance'] ?? '');
+      final int? group = int.tryParse(merged['group'] ?? '');
+      final int? offBy = int.tryParse(merged['off_by'] ?? '');
+
+      final double? modEnvDelay = double.tryParse(
+        merged['fileg_delay'] ?? merged['pitcheg_delay'] ?? '',
+      );
+      final double? modEnvAttack = double.tryParse(
+        merged['fileg_attack'] ?? merged['pitcheg_attack'] ?? '',
+      );
+      final double? modEnvHold = double.tryParse(
+        merged['fileg_hold'] ?? merged['pitcheg_hold'] ?? '',
+      );
+      final double? modEnvDecay = double.tryParse(
+        merged['fileg_decay'] ?? merged['pitcheg_decay'] ?? '',
+      );
+      final double? modEnvSustainPct = double.tryParse(
+        merged['fileg_sustain'] ?? merged['pitcheg_sustain'] ?? '',
+      );
+      final double? modEnvSustain = modEnvSustainPct != null
+          ? (modEnvSustainPct / 100.0).clamp(0.0, 1.0)
+          : null;
+      final double? modEnvRelease = double.tryParse(
+        merged['fileg_release'] ?? merged['pitcheg_release'] ?? '',
+      );
+      final int? modEnvToFilterFc = double.tryParse(
+        merged['fileg_depth'] ?? '',
+      )?.round();
+      final int? modEnvToPitch = double.tryParse(
+        merged['pitcheg_depth'] ?? '',
+      )?.round();
+
+      final double? vibLfoDelay = double.tryParse(
+        merged['pitchlfo_delay'] ?? '',
+      );
+      final double? vibLfoFreq = double.tryParse(merged['pitchlfo_freq'] ?? '');
+      final int? vibLfoToPitch = double.tryParse(
+        merged['pitchlfo_depth'] ?? '',
+      )?.round();
+
+      final double? reverbPct = double.tryParse(merged['effect1'] ?? '');
+      final double? chorusPct = double.tryParse(merged['effect2'] ?? '');
 
       final sampleInfo = SampleInfo(
         id: samples.length,
@@ -147,15 +224,40 @@ class SfzParser {
         velRangeMax: hiVel,
         rootKey: rootKey,
         pitchCorrection: tune,
+        attenuation: attenuation,
+        pan: pan,
         sampleID: sampleInfo.id,
         sampleRef: sampleInfo,
         loopMode: loopMode,
         loopStart: loopStart,
         loopEnd: loopEnd,
+        volEnvDelay: delay,
         volEnvAttack: attack,
+        volEnvHold: hold,
         volEnvDecay: decay,
         volEnvSustain: sustain,
         volEnvRelease: release,
+        modEnvDelay: modEnvDelay,
+        modEnvAttack: modEnvAttack,
+        modEnvHold: modEnvHold,
+        modEnvDecay: modEnvDecay,
+        modEnvSustain: modEnvSustain,
+        modEnvRelease: modEnvRelease,
+        modEnvToPitch: modEnvToPitch,
+        modEnvToFilterFc: modEnvToFilterFc,
+        initialFilterCutoff: cutoff,
+        initialFilterQ: resonance,
+        vibLfoDelay: vibLfoDelay,
+        vibLfoFreq: vibLfoFreq,
+        vibLfoToPitch: vibLfoToPitch,
+        exclusiveClass: group,
+        offByGroup: offBy ?? group,
+        reverbSend: reverbPct != null
+            ? (reverbPct / 100.0).clamp(0.0, 1.0)
+            : null,
+        chorusSend: chorusPct != null
+            ? (chorusPct / 100.0).clamp(0.0, 1.0)
+            : null,
         opcodes: Map.unmodifiable(merged),
       );
 

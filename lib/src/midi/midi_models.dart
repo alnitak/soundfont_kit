@@ -17,6 +17,7 @@ class MidiHeader {
   /// If negative (bit 15 is 1), it represents SMPTE timecode format.
   final int timeDivision;
 
+  /// Creates a [MidiHeader] with the given SMF [format], [numTracks], and [timeDivision].
   const MidiHeader({
     required this.format,
     required this.numTracks,
@@ -47,6 +48,7 @@ class MidiFile {
   /// The list of tracks contained in this MIDI file.
   final List<MidiTrack> tracks;
 
+  /// Creates a [MidiFile] containing the parsed [header] and [tracks].
   const MidiFile({required this.header, required this.tracks});
 
   /// The format type (0, 1, or 2).
@@ -102,6 +104,7 @@ class MidiTrack {
   /// Optional track name parsed from a [TrackNameEvent].
   final String? name;
 
+  /// Creates a [MidiTrack] at [trackNumber] containing [events] and an optional [name].
   const MidiTrack({required this.trackNumber, required this.events, this.name});
 
   /// The set of 0-based MIDI channels (0-15) actively used by note events in this track.
@@ -128,6 +131,7 @@ abstract class MidiEvent {
   /// Cumulative absolute tick position from the start of the track.
   final int absoluteTick;
 
+  /// Creates a [MidiEvent] at [deltaTime] and [absoluteTick].
   const MidiEvent({required this.deltaTime, required this.absoluteTick});
 }
 
@@ -140,6 +144,7 @@ abstract class MidiChannelEvent extends MidiEvent {
   /// MIDI channel (0-15, where channel 9 / index 9 corresponds to MIDI Channel 10).
   final int channel;
 
+  /// Creates a [MidiChannelEvent] targeting [channel] at [deltaTime] and [absoluteTick].
   const MidiChannelEvent({
     required this.channel,
     required super.deltaTime,
@@ -155,6 +160,7 @@ class NoteOnEvent extends MidiChannelEvent {
   /// Note strike velocity (0-127). A velocity of 0 is treated as a NoteOff.
   final int velocity;
 
+  /// Creates a [NoteOnEvent] for [note] and [velocity] on [channel].
   const NoteOnEvent({
     required super.channel,
     required this.note,
@@ -179,6 +185,7 @@ class NoteOffEvent extends MidiChannelEvent {
   /// Release velocity (0-127).
   final int velocity;
 
+  /// Creates a [NoteOffEvent] for [note] on [channel].
   const NoteOffEvent({
     required super.channel,
     required this.note,
@@ -194,9 +201,13 @@ class NoteOffEvent extends MidiChannelEvent {
 
 /// Polyphonic key pressure (aftertouch) applied to an individual held note.
 class PolyphonicKeyPressureEvent extends MidiChannelEvent {
+  /// MIDI key number (`0..127`) receiving polyphonic aftertouch.
   final int note;
+
+  /// Polyphonic aftertouch pressure value (`0..127`).
   final int pressure;
 
+  /// Creates a [PolyphonicKeyPressureEvent] for [note] and [pressure] on [channel].
   const PolyphonicKeyPressureEvent({
     required super.channel,
     required this.note,
@@ -229,6 +240,7 @@ class ControlChangeEvent extends MidiChannelEvent {
   /// Controller value (0-127).
   final int value;
 
+  /// Creates a [ControlChangeEvent] for [controller] and [value] on [channel].
   const ControlChangeEvent({
     required super.channel,
     required this.controller,
@@ -256,6 +268,7 @@ class ProgramChangeEvent extends MidiChannelEvent {
   /// Program number (0-127) corresponding to General MIDI preset number.
   final int program;
 
+  /// Creates a [ProgramChangeEvent] selecting [program] on [channel].
   const ProgramChangeEvent({
     required super.channel,
     required this.program,
@@ -270,8 +283,10 @@ class ProgramChangeEvent extends MidiChannelEvent {
 
 /// Channel Pressure (Monophonic Aftertouch) affecting all notes sounding on a channel.
 class ChannelPressureEvent extends MidiChannelEvent {
+  /// Channel-wide aftertouch pressure value (`0..127`).
   final int pressure;
 
+  /// Creates a [ChannelPressureEvent] with [pressure] on [channel].
   const ChannelPressureEvent({
     required super.channel,
     required this.pressure,
@@ -289,6 +304,7 @@ class PitchBendEvent extends MidiChannelEvent {
   /// Raw 14-bit unsigned pitch bend value (0 to 16383, where 8192 is center / no pitch bend).
   final int value;
 
+  /// Creates a [PitchBendEvent] with 14-bit [value] on [channel].
   const PitchBendEvent({
     required super.channel,
     required this.value,
@@ -313,6 +329,7 @@ class PitchBendEvent extends MidiChannelEvent {
 
 /// Base class for all non-channel MIDI Meta Events (`0xFF`).
 abstract class MetaEvent extends MidiEvent {
+  /// Creates a [MetaEvent] at [deltaTime] and [absoluteTick].
   const MetaEvent({required super.deltaTime, required super.absoluteTick});
 }
 
@@ -321,6 +338,7 @@ class SetTempoEvent extends MetaEvent {
   /// Microseconds per quarter note (e.g. 500,000 corresponds to 120.0 BPM).
   final int microsecondsPerQuarterNote;
 
+  /// Creates a [SetTempoEvent] with [microsecondsPerQuarterNote].
   const SetTempoEvent({
     required this.microsecondsPerQuarterNote,
     required super.deltaTime,
@@ -337,11 +355,19 @@ class SetTempoEvent extends MetaEvent {
 
 /// Time Signature meta event (e.g. 4/4, 3/4, 6/8).
 class TimeSignatureEvent extends MetaEvent {
+  /// Time signature numerator (beats per measure, e.g., `4` in 4/4).
   final int numerator;
+
+  /// Time signature denominator as a note value (e.g., `4` for quarter notes, `8` for eighth notes).
   final int denominator;
+
+  /// Number of MIDI clock ticks per metronome click.
   final int clocksPerClick;
+
+  /// Number of notated 32nd notes per 24 MIDI clock ticks (`8` is standard).
   final int thirtySecondsPer24Clocks;
 
+  /// Creates a [TimeSignatureEvent].
   const TimeSignatureEvent({
     required this.numerator,
     required this.denominator,
@@ -364,6 +390,7 @@ class KeySignatureEvent extends MetaEvent {
   /// 0 = major, 1 = minor.
   final int mi;
 
+  /// Creates a [KeySignatureEvent] with sharps/flats [sf] and mode [mi].
   const KeySignatureEvent({
     required this.sf,
     required this.mi,
@@ -378,8 +405,10 @@ class KeySignatureEvent extends MetaEvent {
 
 /// Name of the track or sequence.
 class TrackNameEvent extends MetaEvent {
+  /// Track or sequence title text.
   final String text;
 
+  /// Creates a [TrackNameEvent] with [text].
   const TrackNameEvent({
     required this.text,
     required super.deltaTime,
@@ -392,8 +421,10 @@ class TrackNameEvent extends MetaEvent {
 
 /// Generic text event.
 class TextEvent extends MetaEvent {
+  /// Free-form descriptive text content.
   final String text;
 
+  /// Creates a [TextEvent] with [text].
   const TextEvent({
     required this.text,
     required super.deltaTime,
@@ -406,8 +437,10 @@ class TextEvent extends MetaEvent {
 
 /// Copyright notice event.
 class CopyrightEvent extends MetaEvent {
+  /// Copyright notice string.
   final String text;
 
+  /// Creates a [CopyrightEvent] with [text].
   const CopyrightEvent({
     required this.text,
     required super.deltaTime,
@@ -420,8 +453,10 @@ class CopyrightEvent extends MetaEvent {
 
 /// Instrument name text event.
 class InstrumentNameEvent extends MetaEvent {
+  /// Name of the instrument assigned to this track.
   final String text;
 
+  /// Creates an [InstrumentNameEvent] with [text].
   const InstrumentNameEvent({
     required this.text,
     required super.deltaTime,
@@ -434,8 +469,10 @@ class InstrumentNameEvent extends MetaEvent {
 
 /// Lyric text event for karaoke or vocal tracks.
 class LyricEvent extends MetaEvent {
+  /// Synchronized lyric syllable or line text.
   final String text;
 
+  /// Creates a [LyricEvent] with [text].
   const LyricEvent({
     required this.text,
     required super.deltaTime,
@@ -448,8 +485,10 @@ class LyricEvent extends MetaEvent {
 
 /// Marker event (e.g. "Verse 1", "Chorus").
 class MarkerEvent extends MetaEvent {
+  /// Rehearsal or structural section marker label.
   final String text;
 
+  /// Creates a [MarkerEvent] with [text].
   const MarkerEvent({
     required this.text,
     required super.deltaTime,
@@ -462,8 +501,10 @@ class MarkerEvent extends MetaEvent {
 
 /// Cue point event.
 class CuePointEvent extends MetaEvent {
+  /// Stage or visual cue point description.
   final String text;
 
+  /// Creates a [CuePointEvent] with [text].
   const CuePointEvent({
     required this.text,
     required super.deltaTime,
@@ -476,8 +517,10 @@ class CuePointEvent extends MetaEvent {
 
 /// Channel prefix event assigning subsequent meta events to a specific channel.
 class ChannelPrefixEvent extends MetaEvent {
+  /// 0-based MIDI channel (`0..15`) associated with subsequent meta events.
   final int channel;
 
+  /// Creates a [ChannelPrefixEvent] for [channel].
   const ChannelPrefixEvent({
     required this.channel,
     required super.deltaTime,
@@ -490,6 +533,7 @@ class ChannelPrefixEvent extends MetaEvent {
 
 /// End of track meta event (`0xFF 0x2F 0x00`).
 class EndOfTrackEvent extends MetaEvent {
+  /// Creates an [EndOfTrackEvent].
   const EndOfTrackEvent({
     required super.deltaTime,
     required super.absoluteTick,
@@ -501,8 +545,10 @@ class EndOfTrackEvent extends MetaEvent {
 
 /// Sequencer-specific proprietary meta event.
 class SequencerSpecificEvent extends MetaEvent {
+  /// Raw manufacturer-specific payload bytes.
   final List<int> data;
 
+  /// Creates a [SequencerSpecificEvent] with raw [data].
   const SequencerSpecificEvent({
     required this.data,
     required super.deltaTime,
@@ -516,9 +562,13 @@ class SequencerSpecificEvent extends MetaEvent {
 
 /// Unhandled or custom meta event.
 class UnknownMetaEvent extends MetaEvent {
+  /// Raw MIDI meta event type byte (`0x00..0x7F`).
   final int metaType;
+
+  /// Raw payload bytes of the meta event.
   final List<int> data;
 
+  /// Creates an [UnknownMetaEvent] with [metaType] and raw [data].
   const UnknownMetaEvent({
     required this.metaType,
     required this.data,
@@ -537,8 +587,10 @@ class UnknownMetaEvent extends MetaEvent {
 
 /// System Exclusive (SysEx) event.
 class SysExEvent extends MidiEvent {
+  /// Raw System Exclusive message payload bytes.
   final List<int> data;
 
+  /// Creates a [SysExEvent] with raw [data].
   const SysExEvent({
     required this.data,
     required super.deltaTime,

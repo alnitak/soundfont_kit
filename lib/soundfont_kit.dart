@@ -1,3 +1,7 @@
+/// SoundFont (`.sf2`, `.sf3`, `.sfz`) and Standard MIDI File (`.mid`) parser,
+/// synthesizer, and sequencer powered by `flutter_soloud`.
+library;
+
 export 'src/models/instrument.dart';
 export 'src/models/modulator_info.dart';
 export 'src/models/preset.dart';
@@ -13,8 +17,10 @@ export 'src/player/sample_streamer.dart';
 export 'src/player/stereo_joiner.dart';
 export 'src/player/soundfont_voice.dart';
 export 'src/player/voice_calculator.dart';
+export 'src/player/realtime_synthesizer.dart';
 export 'src/player/soundfont_player.dart';
 export 'src/player/filters/soundfont_filter.dart';
+export 'src/player/vst3/soundfont_vst3_manager.dart';
 
 export 'src/midi/midi_models.dart';
 export 'src/midi/midi_reader.dart';

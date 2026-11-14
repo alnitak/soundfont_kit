@@ -1,27 +1,52 @@
-/// Configuration options for [SoundFontPlayer].
+/// Synthesis engine architecture used by `SoundFontPlayer`.
+enum SoundFontSynthMode {
+  /// Default mode: Uses SoLoud `AudioSource` voice handles with scheduled
+  /// 6-stage DAHDSR volume fades, retroactive render-ahead splicing,
+  /// Exclusive Class (`exclusiveClass` / `off_by`) voice choking, and
+  /// per-voice biquad resonant filter support.
+  soloudVoices,
+
+  /// Real-time worker-isolate DSP synthesizer powered by `SoLoudIsolate`
+  /// and `RealtimeStreamFeeder` (`RealtimeNativeBuffer`).
+  ///
+  /// Computes sample-accurate 6-stage DAHDSR Volume & Modulation envelopes,
+  /// per-voice resonant State-Variable Filters (SVF) with dynamic modulation,
+  /// ModLFO & VibLFO, and zero-jitter audio-clock sequencing across all
+  /// platforms (including Web).
+  realtimeIsolateSynth,
+}
+
+/// Configuration options for `SoundFontPlayer`.
 class SoundFontPlayerOptions {
+  /// Synthesis engine mode (defaults to [SoundFontSynthMode.soloudVoices]).
+  final SoundFontSynthMode synthMode;
+
+  /// Whether to apply per-voice low-pass resonant filters (`initialFilterCutoff`
+  /// and `initialFilterQ`) when specified by SF2/SFZ zones.
+  final bool enablePerVoiceFilter;
+
   /// Whether to automatically interleave and join paired Left and Right
   /// 16-bit PCM channels into a single stereo audio source.
   final bool joinStereoChannels;
 
-  /// Whether to cache created [AudioSource] instances in memory for fast
+  /// Whether to cache created `AudioSource` instances in memory for fast
   /// repeated note playback (e.g. real-time keyboard).
   final bool cacheAudioSources;
 
   /// Chunk size in bytes when streaming sample bytes into SoLoud.
   final int streamChunkSize;
 
-  /// Default mixing bus ID to route audio to (0 = main engine output).
+  /// Default mixing bus ID to route audio to (`0` = main engine output).
   final int defaultBusId;
 
   /// Default release duration applied when stopping or releasing a note if
   /// the zone does not specify a volume envelope release time.
   final Duration defaultReleaseDuration;
 
-  /// Master volume scale (0.0 to 1.0+).
+  /// Master volume scale (`0.0` to `1.0`+).
   final double masterVolume;
 
-  /// Whether to use SoLoud's sample-accurate [playScheduled] and [fadeScheduled]
+  /// Whether to use SoLoud's sample-accurate `playScheduled` and `fadeScheduled`
   /// engine clock by default for unlooped voice playback.
   final bool useScheduledPlayback;
 
@@ -29,12 +54,12 @@ class SoundFontPlayerOptions {
   /// upon player creation.
   final bool preloadAllSamples;
 
-  /// Optional fallback sustain/release duration in seconds (e.g. 0.05 to 5.0).
+  /// Optional fallback sustain/release duration in seconds (e.g. `0.05` to `5.0`).
   /// Used when an instrument or zone has no native release envelope.
   /// If provided, this base duration is multiplied by [sustain].
   final double? sustainTime;
 
-  /// Global master sustain factor (e.g. 0.0 to 10.0, default 1.0).
+  /// Global master sustain factor (e.g. `0.0` to `10.0`, default `1.0`).
   ///
   /// Works across all SoundFonts:
   /// - Scales authentic release envelopes for instruments with native release.
@@ -47,7 +72,10 @@ class SoundFontPlayerOptions {
   /// Deprecated alias for [sustain].
   double get sustainMultiplier => sustain;
 
+  /// Creates a [SoundFontPlayerOptions] configuration.
   const SoundFontPlayerOptions({
+    this.synthMode = SoundFontSynthMode.soloudVoices,
+    this.enablePerVoiceFilter = true,
     this.joinStereoChannels = true,
     this.cacheAudioSources = true,
     this.streamChunkSize = 16384,
@@ -61,7 +89,10 @@ class SoundFontPlayerOptions {
     this.sustainTime,
   }) : sustain = sustainMultiplier ?? sustain;
 
+  /// Returns a copy of this [SoundFontPlayerOptions] with the specified fields replaced.
   SoundFontPlayerOptions copyWith({
+    SoundFontSynthMode? synthMode,
+    bool? enablePerVoiceFilter,
     bool? joinStereoChannels,
     bool? cacheAudioSources,
     int? streamChunkSize,
@@ -75,6 +106,8 @@ class SoundFontPlayerOptions {
     double? sustainTime,
   }) {
     return SoundFontPlayerOptions(
+      synthMode: synthMode ?? this.synthMode,
+      enablePerVoiceFilter: enablePerVoiceFilter ?? this.enablePerVoiceFilter,
       joinStereoChannels: joinStereoChannels ?? this.joinStereoChannels,
       cacheAudioSources: cacheAudioSources ?? this.cacheAudioSources,
       streamChunkSize: streamChunkSize ?? this.streamChunkSize,

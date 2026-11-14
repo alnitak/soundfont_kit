@@ -9,19 +9,39 @@ import '../models/zone.dart';
 import '../sources/soundfont_source.dart';
 import 'riff_reader.dart';
 
-/// Parsed SoundFont 2 container holding presets, instruments, and samples.
+/// Parsed SoundFont 2 / SoundFont 3 container holding presets, instruments, and samples.
 class Sf2Data {
+  /// Bank name parsed from the `INAM` info sub-chunk.
   final String? name;
+
+  /// Bank comment metadata parsed from the `ICMT` info sub-chunk.
   final String? comment;
+
+  /// All parsed presets (`phdr`/`pbag`/`pgen`).
   final List<Preset> presets;
+
+  /// All parsed instruments (`inst`/`ibag`/`igen`).
   final List<Instrument> instruments;
+
+  /// All parsed sample headers (`shdr`).
   final List<SampleInfo> samples;
+
+  /// Complete raw binary buffer of the SoundFont file.
   final Uint8List rawBytes;
+
+  /// Byte offset of the primary 16-bit PCM `smpl` sub-chunk in [rawBytes].
   final int smplOffset;
+
+  /// Byte length of the primary 16-bit PCM `smpl` sub-chunk.
   final int smplLength;
+
+  /// Byte offset of the optional 24-bit LSB `sm24` sub-chunk in [rawBytes].
   final int sm24Offset;
+
+  /// Byte length of the optional 24-bit LSB `sm24` sub-chunk.
   final int sm24Length;
 
+  /// Creates an [Sf2Data] container with parsed SoundFont structures and `sdta` offsets.
   Sf2Data({
     this.name,
     this.comment,
@@ -36,12 +56,18 @@ class Sf2Data {
   });
 }
 
-/// Parser for SF2 (SoundFont 2.0 / 2.04) binary files.
+/// Parser for SF2 (SoundFont 2.0 / 2.04) and SF3 binary RIFF files.
 class Sf2Parser {
+  /// The input [SoundFontSource] providing the binary SoundFont data.
   final SoundFontSource source;
 
+  /// Creates an [Sf2Parser] reading from [source].
   Sf2Parser(this.source);
 
+  /// Parses the SoundFont binary stream into an [Sf2Data] instance.
+  ///
+  /// When [isSf3] is `true`, sample offsets are interpreted using SoundFont 3
+  /// byte-offset conventions for compressed Ogg Vorbis streams.
   Future<Sf2Data> parse({bool isSf3 = false}) async {
     final bytes = await source.getBytes();
     final reader = RiffReader(bytes);
@@ -511,6 +537,28 @@ class Sf2Parser {
       }
     }
 
+    int? loopStart = globalZone?.loopStart;
+    if (gens.containsKey(2) || gens.containsKey(45)) {
+      final fine = gens.containsKey(2) ? _toSigned16(gens[2]!) : 0;
+      final coarse = gens.containsKey(45) ? _toSigned16(gens[45]!) * 32768 : 0;
+      final baseStart = sampleRef?.loopStart ?? globalZone?.loopStart ?? 0;
+      loopStart = (baseStart + fine + coarse).clamp(
+        0,
+        sampleRef?.sampleCount ?? 0x7FFFFFFF,
+      );
+    }
+
+    int? loopEnd = globalZone?.loopEnd;
+    if (gens.containsKey(3) || gens.containsKey(50)) {
+      final fine = gens.containsKey(3) ? _toSigned16(gens[3]!) : 0;
+      final coarse = gens.containsKey(50) ? _toSigned16(gens[50]!) * 32768 : 0;
+      final baseEnd = sampleRef?.loopEnd ?? globalZone?.loopEnd ?? 0;
+      loopEnd = (baseEnd + fine + coarse).clamp(
+        0,
+        sampleRef?.sampleCount ?? 0x7FFFFFFF,
+      );
+    }
+
     return Zone(
       keyRangeMin: keyMin,
       keyRangeMax: keyMax,
@@ -524,21 +572,90 @@ class Sf2Parser {
       sampleRef: sampleRef,
       instrumentID: instID,
       loopMode: loopMode,
-      volEnvAttack: _timecentsToSeconds(
-        gens[34] ?? _toRaw16(globalZone?.volEnvAttack),
-      ),
-      volEnvHold: _timecentsToSeconds(
-        gens[35] ?? _toRaw16(globalZone?.volEnvHold),
-      ),
-      volEnvDecay: _timecentsToSeconds(
-        gens[36] ?? _toRaw16(globalZone?.volEnvDecay),
-      ),
+      loopStart: loopStart,
+      loopEnd: loopEnd,
+      volEnvDelay: gens.containsKey(33)
+          ? _timecentsToSeconds(gens[33])
+          : globalZone?.volEnvDelay,
+      volEnvAttack: gens.containsKey(34)
+          ? _timecentsToSeconds(gens[34])
+          : globalZone?.volEnvAttack,
+      volEnvHold: gens.containsKey(35)
+          ? _timecentsToSeconds(gens[35])
+          : globalZone?.volEnvHold,
+      volEnvDecay: gens.containsKey(36)
+          ? _timecentsToSeconds(gens[36])
+          : globalZone?.volEnvDecay,
       volEnvSustain: gens.containsKey(37)
           ? (gens[37]! / 1000.0)
           : globalZone?.volEnvSustain,
-      volEnvRelease: _timecentsToSeconds(
-        gens[38] ?? _toRaw16(globalZone?.volEnvRelease),
-      ),
+      volEnvRelease: gens.containsKey(38)
+          ? _timecentsToSeconds(gens[38])
+          : globalZone?.volEnvRelease,
+      modEnvDelay: gens.containsKey(25)
+          ? _timecentsToSeconds(gens[25])
+          : globalZone?.modEnvDelay,
+      modEnvAttack: gens.containsKey(26)
+          ? _timecentsToSeconds(gens[26])
+          : globalZone?.modEnvAttack,
+      modEnvHold: gens.containsKey(27)
+          ? _timecentsToSeconds(gens[27])
+          : globalZone?.modEnvHold,
+      modEnvDecay: gens.containsKey(28)
+          ? _timecentsToSeconds(gens[28])
+          : globalZone?.modEnvDecay,
+      modEnvSustain: gens.containsKey(29)
+          ? (1.0 - (gens[29]! / 1000.0).clamp(0.0, 1.0))
+          : globalZone?.modEnvSustain,
+      modEnvRelease: gens.containsKey(30)
+          ? _timecentsToSeconds(gens[30])
+          : globalZone?.modEnvRelease,
+      modEnvToPitch: gens.containsKey(7)
+          ? _toSigned16(gens[7]!)
+          : globalZone?.modEnvToPitch,
+      modEnvToFilterFc: gens.containsKey(11)
+          ? _toSigned16(gens[11]!)
+          : globalZone?.modEnvToFilterFc,
+      initialFilterCutoff: gens.containsKey(8)
+          ? _absCentsToHz(gens[8]!)
+          : globalZone?.initialFilterCutoff,
+      initialFilterQ: gens.containsKey(9)
+          ? (gens[9]! / 10.0)
+          : globalZone?.initialFilterQ,
+      modLfoDelay: gens.containsKey(21)
+          ? _timecentsToSeconds(gens[21])
+          : globalZone?.modLfoDelay,
+      modLfoFreq: gens.containsKey(22)
+          ? _absCentsToHz(gens[22]!)
+          : globalZone?.modLfoFreq,
+      modLfoToPitch: gens.containsKey(5)
+          ? _toSigned16(gens[5]!)
+          : globalZone?.modLfoToPitch,
+      modLfoToFilterFc: gens.containsKey(10)
+          ? _toSigned16(gens[10]!)
+          : globalZone?.modLfoToFilterFc,
+      modLfoToVolume: gens.containsKey(13)
+          ? (_toSigned16(gens[13]!) / 10.0)
+          : globalZone?.modLfoToVolume,
+      vibLfoDelay: gens.containsKey(23)
+          ? _timecentsToSeconds(gens[23])
+          : globalZone?.vibLfoDelay,
+      vibLfoFreq: gens.containsKey(24)
+          ? _absCentsToHz(gens[24]!)
+          : globalZone?.vibLfoFreq,
+      vibLfoToPitch: gens.containsKey(6)
+          ? _toSigned16(gens[6]!)
+          : globalZone?.vibLfoToPitch,
+      exclusiveClass: gens.containsKey(57)
+          ? gens[57]
+          : globalZone?.exclusiveClass,
+      offByGroup: gens.containsKey(57) ? gens[57] : globalZone?.offByGroup,
+      chorusSend: gens.containsKey(15)
+          ? (gens[15]! / 1000.0).clamp(0.0, 1.0)
+          : globalZone?.chorusSend,
+      reverbSend: gens.containsKey(16)
+          ? (gens[16]! / 1000.0).clamp(0.0, 1.0)
+          : globalZone?.reverbSend,
       generators: Map.unmodifiable(gens),
     );
   }
@@ -547,12 +664,16 @@ class Sf2Parser {
     return val >= 0x8000 ? val - 0x10000 : val;
   }
 
-  int? _toRaw16(double? sec) => null;
-
   double? _timecentsToSeconds(int? timecents) {
     if (timecents == null || timecents == -32768) return null;
     final signedTC = _toSigned16(timecents);
+    if (signedTC <= -32768) return null;
     return math.pow(2.0, signedTC / 1200.0).toDouble();
+  }
+
+  double _absCentsToHz(int absCents) {
+    final signedCents = _toSigned16(absCents);
+    return 8.176 * math.pow(2.0, signedCents / 1200.0).toDouble();
   }
 }
 

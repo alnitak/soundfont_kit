@@ -1,5 +1,19 @@
-### 1.1.X
-- Fixed negative loop boundary offset calculation in SF3 soundfonts (`isOgg`) causing `Invalid argument (loopingStartOffsetAt)` during seek and playback.
+### 1.2.0
+- **Dual Synthesis Engine (`SoundFontSynthMode`)**:
+  - `soloudVoices` (default): added full 6-stage DAHDSR volume envelopes, exclusive class voice choking (e.g., hi-hats), and optional per-voice low-pass filtering (`enablePerVoiceFilter`).
+  - `realtimeIsolateSynth` (new): sample-accurate background isolate synthesizer with Volume & Modulation envelopes, resonant State-Variable Filters (SVF), and LFOs across all platforms (including Web).
+- **Global & Per-Bus Filter Rack (`SoundFontFilterRack`)**:
+  - Support for both global master (`SoundFontFilterRack.global()`) and per-bus (`SoundFontFilterRack.forBus()`) effect chains.
+  - Added `compressor`, `limiter`, `parametricEq`, `pitchShift`, `amplitudeModulator`, and 8 custom DSP/VST3 slots (`customSlot0`..`customSlot7`), plus parameter automation (`fadeParameter`, `oscillateParameter`).
+- **Per-Channel Mixing Buses in `MidiPlayer`**:
+  - Each MIDI channel now routes through its own `Bus` with an independent `filterRack`, isolated `CC 1` (Modulation Wheel), `CC 91` (Reverb Send), and `CC 93` (Chorus Send).
+- **Desktop VST3 Plugin Hosting (`SoundFontVst3Manager`)**:
+  - Scan and load `.vst3` audio effects and virtual instruments on macOS, Windows, and Linux, with native plugin GUI editor support and hybrid SoundFont + VST3 playback in `MidiPlayer`.
+- **Low-Latency `SampleStreamer`**:
+  - Added `openRealtimeSampleStream` and `openRealtimeStereoPcmStream` for low-latency real-time PCM streaming.
+- **Fixes & Skills**:
+  - Fixed SF3 loop offset calculation during seek and playback.
+  - Added `soundfont-kit-vst3` agent skill and updated existing skills.
 
 ### 1.1.1
 - fix web: now it compiles and runs on web

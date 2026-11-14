@@ -97,15 +97,24 @@ void main() {
       // Native release envelope zone
       const nativeZone = Zone(volEnvRelease: 0.4);
       expect(
-        VoiceCalculator.calculateReleaseDuration(zone: nativeZone, sustain: 1.0),
+        VoiceCalculator.calculateReleaseDuration(
+          zone: nativeZone,
+          sustain: 1.0,
+        ),
         equals(const Duration(milliseconds: 400)),
       );
       expect(
-        VoiceCalculator.calculateReleaseDuration(zone: nativeZone, sustain: 2.5),
+        VoiceCalculator.calculateReleaseDuration(
+          zone: nativeZone,
+          sustain: 2.5,
+        ),
         equals(const Duration(milliseconds: 1000)),
       );
       expect(
-        VoiceCalculator.calculateReleaseDuration(zone: nativeZone, sustain: 0.0),
+        VoiceCalculator.calculateReleaseDuration(
+          zone: nativeZone,
+          sustain: 0.0,
+        ),
         equals(Duration.zero),
       );
       // Backward compatibility with sustainMultiplier parameter
@@ -184,7 +193,7 @@ void main() {
 
     test('SoundFontGlobalFilters exposes all useful global filter types', () {
       const filters = SoundFontGlobalFilters();
-      expect(SoundFontFilterType.values.length, equals(7));
+      expect(SoundFontFilterType.values.length, equals(20));
       for (final type in SoundFontFilterType.values) {
         expect(type.label.isNotEmpty, isTrue);
         expect(type.description.isNotEmpty, isTrue);

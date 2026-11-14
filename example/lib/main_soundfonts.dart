@@ -6,7 +6,7 @@ import 'package:cross_file/cross_file.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:soundfont_kit/soundfont_kit.dart';
@@ -31,13 +31,13 @@ void main() async {
 
   WidgetsFlutterBinding.ensureInitialized();
 
-  /// Initialize the player.
+  /// Initialize the player with retroactive render-ahead ring buffer.
   await SoLoud.instance.init(
     bufferSize: 1024,
+    renderAheadFrames: 1024,
     devicePeriodFrames: 128,
-    renderAheadFrames: 0,
   );
-  SoLoud.instance.setMaxActiveVoiceCount(256);
+  SoLoud.instance.setMaxActiveVoiceCount(1023);
   SoLoud.instance.setAudioDeviceIdleTimeout(null);
 
   runApp(const SoundFontReaderDemoApp());

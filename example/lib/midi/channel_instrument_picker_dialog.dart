@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 import 'package:soundfont_kit/soundfont_kit.dart';
 
@@ -155,7 +155,7 @@ class _ChannelInstrumentPickerDialogState
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Container(
         width: 580,
-        height: 600,
+        height: 560,
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -170,7 +170,7 @@ class _ChannelInstrumentPickerDialogState
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  'Select SoundFont & Instrument for Channel ${widget.channel + 1}',
+                  'Select SoundFont & Preset for Channel ${widget.channel + 1}',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -442,7 +442,7 @@ class _ChannelInstrumentPickerDialogState
                 const SizedBox(width: 8),
                 ElevatedButton.icon(
                   icon: const Icon(Icons.check, size: 16),
-                  label: const Text('Apply Instrument'),
+                  label: const Text('Apply Preset'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF6C63FF),
                     foregroundColor: Colors.white,

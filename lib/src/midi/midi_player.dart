@@ -1,7 +1,10 @@
+// ignore_for_file: experimental_member_use
+
 import 'dart:async';
 import 'package:flutter_soloud/flutter_soloud.dart';
 import '../models/preset.dart';
 import '../player/soundfont_player.dart';
+import '../player/vst3/soundfont_vst3_manager.dart';
 import 'chord_detector.dart';
 import 'midi_channel_state.dart';
 import 'midi_lyrics.dart';
@@ -10,31 +13,70 @@ import 'midi_timeline.dart';
 
 /// Event type emitted during live MIDI playback.
 enum MidiPlaybackEventType {
+  /// A MIDI note-on event was triggered.
   noteOn,
+
+  /// A MIDI note-off event was triggered.
   noteOff,
+
+  /// A MIDI program (patch) change occurred on a channel.
   programChange,
+
+  /// A MIDI control change (CC) message was processed on a channel.
   controlChange,
+
+  /// A MIDI pitch bend message was processed on a channel.
   pitchBend,
+
+  /// A tempo change (`SetTempoEvent`) occurred in the timeline.
   tempoChange,
+
+  /// A synchronized lyric syllable (`LyricEvent`) was reached.
   lyric,
+
+  /// A new musical chord was detected from the active melodic notes.
   chord,
+
+  /// Playback state changed (play, pause, or stop).
   stateChange,
+
+  /// The playback position was seeked to a new timestamp.
   seek,
 }
 
 /// Information packet emitted when an event occurs during MIDI playback.
 class MidiPlaybackEvent {
+  /// The category of playback event.
   final MidiPlaybackEventType type;
+
+  /// The 0-based MIDI channel (`0..15`) associated with this event.
   final int channel;
+
+  /// The MIDI key number (`0..127`) for note events.
   final int note;
+
+  /// The MIDI velocity (`0..127`) for note events.
   final int velocity;
+
+  /// The new program number (`0..127`) for [MidiPlaybackEventType.programChange] events.
   final int? program;
+
+  /// The MIDI CC controller number (`0..127`) for [MidiPlaybackEventType.controlChange] events.
   final int? controller;
+
+  /// The controller or pitch-bend value for CC and pitch-bend events.
   final int? value;
+
+  /// The new tempo in Beats Per Minute for [MidiPlaybackEventType.tempoChange] events.
   final double? bpm;
+
+  /// Lyric syllable or detected chord name for [MidiPlaybackEventType.lyric] and [MidiPlaybackEventType.chord] events.
   final String? text;
+
+  /// The timeline position at which this event occurred.
   final Duration timestamp;
 
+  /// Creates a [MidiPlaybackEvent].
   const MidiPlaybackEvent({
     required this.type,
     this.channel = 0,
@@ -58,6 +100,9 @@ class MidiPlayer {
   /// The underlying [SoundFontPlayer] responsible for audio synthesis.
   final SoundFontPlayer player;
 
+  /// Optional [SoundFontVst3Manager] for desktop VST3 Effects and Instruments.
+  final SoundFontVst3Manager vst3Manager;
+
   /// The active parsed MIDI timeline.
   MidiTimeline? _timeline;
 
@@ -69,6 +114,15 @@ class MidiPlayer {
 
   /// Global preset override. When set, all MIDI channels play through this preset.
   Preset? forcedPresetOverride;
+
+  /// Optional global multi-timbral VST3 Virtual Instrument (such as HALion Sonic)
+  /// shared across all 16 MIDI channels (unless a channel has its own override).
+  Vst3InstrumentPlugin? globalVst3Instrument;
+
+  /// Display name of the assigned [globalVst3Instrument], if any.
+  String? globalVst3InstrumentName;
+
+  SoundHandle? _globalVst3PlayHandle;
 
   /// Global semitone transposition offset applied to all non-percussion channels (default 0).
   int transpose = 0;
@@ -115,8 +169,11 @@ class MidiPlayer {
   bool looping = false;
 
   /// Lookahead window duration in milliseconds for sample-accurate scheduling.
-  /// Defaults to 0 for real-time sample accuracy and synchronized NoteOff/CC handling.
-  int lookaheadMs = 0;
+  /// Pre-scheduling notes ahead of the audio engine write head (>= 25-35 ms)
+  /// allows SoLoud to insert voices with sample-accurate hardware countdowns,
+  /// completely avoiding retroactive re-mixing and eliminating audio thread
+  /// contention during dense polyphony.
+  int lookaheadMs = 35;
 
   /// Scheduling timer interval in milliseconds.
   int scheduleIntervalMs = 15;
@@ -142,7 +199,46 @@ class MidiPlayer {
 
   String? _lastEmittedChord;
 
-  MidiPlayer({required this.player});
+  /// Creates a [MidiPlayer] backed by [player] and an optional [vst3Manager].
+  MidiPlayer({required this.player, SoundFontVst3Manager? vst3Manager})
+    : vst3Manager = vst3Manager ?? SoundFontVst3Manager();
+
+  /// Returns the current effective tempo in BPM at the active playback position.
+  double get currentBpm {
+    if (overrideBpm != null && overrideBpm! > 0) {
+      return overrideBpm! * _speedMultiplier;
+    }
+    if (_timeline == null) return 120.0 * _speedMultiplier;
+    final tick = _timeline!.tempoMap.durationToTick(_position);
+    final baseBpm = _timeline!.tempoMap.getBpmAtTick(tick);
+    return (baseBpm > 0 ? baseBpm : 120.0) * _speedMultiplier;
+  }
+
+  void _syncVst3Transport() {
+    if (!vst3Manager.isSupported) return;
+    final bpm = currentBpm;
+    vst3Manager.updateTransport(bpm: bpm, isPlaying: _isPlaying);
+    if (globalVst3Instrument != null && !globalVst3Instrument!.isDisposed) {
+      globalVst3Instrument!.setTransport(bpm: bpm, isPlaying: _isPlaying);
+    }
+    for (final ch in channels) {
+      final inst = ch.vst3Instrument;
+      if (inst != null && !inst.isDisposed) {
+        inst.setTransport(bpm: bpm, isPlaying: _isPlaying);
+      }
+    }
+  }
+
+  void _ensureGlobalVst3Playing() {
+    final inst = globalVst3Instrument;
+    if (inst == null || inst.isDisposed || !SoLoud.instance.isInitialized) {
+      return;
+    }
+    if (_globalVst3PlayHandle == null ||
+        !SoLoud.instance.getIsValidVoiceHandle(_globalVst3PlayHandle!)) {
+      _globalVst3PlayHandle = SoLoud.instance.play(inst.audioSource);
+    }
+  }
 
   /// The currently loaded [MidiFile] (or null if none).
   MidiFile? get midiFile => _timeline?.file;
@@ -289,6 +385,7 @@ class MidiPlayer {
     _playEpoch++;
     _playbackWallStart = DateTime.now();
     _playbackPosStart = _position;
+    _syncVst3Transport();
 
     _scheduleTimer?.cancel();
     _scheduleTimer = Timer.periodic(
@@ -313,6 +410,7 @@ class MidiPlayer {
     _isPlaying = false;
     _isPaused = true;
     _playEpoch++;
+    _syncVst3Transport();
 
     // Immediately stop and release all sounding voices
     await _releaseAllChannelVoices();
@@ -334,6 +432,7 @@ class MidiPlayer {
     _playEpoch++;
     _position = Duration.zero;
     _nextEventIndex = 0;
+    _syncVst3Transport();
 
     await _releaseAllChannelVoices();
     _applySnapshotAt(Duration.zero);
@@ -557,54 +656,139 @@ class MidiPlayer {
           : (event.note + transpose + ch.transpose).clamp(0, 127);
 
       if (event.isNoteOff) {
-        ch.handleNoteOff(effectiveNote);
-        _notifyChordChanged();
-        _eventController.add(
-          MidiPlaybackEvent(
-            type: MidiPlaybackEventType.noteOff,
-            channel: event.channel,
-            note: effectiveNote,
-            velocity: 0,
-            timestamp: timed.timestamp,
-          ),
-        );
+        final scheduledAt = SoLoud.instance.isInitialized
+            ? SoLoud.instance.getEngineTime() + delay
+            : null;
+        if (ch.effectiveVst3Instrument != null && delay > Duration.zero) {
+          final currentEpoch = _playEpoch;
+          Timer(delay, () {
+            if (_isPlaying && _playEpoch == currentEpoch) {
+              ch.handleNoteOff(effectiveNote);
+            }
+          });
+        } else {
+          ch.handleNoteOff(effectiveNote, atTime: scheduledAt);
+        }
+        void emitNoteOff() {
+          _notifyChordChanged();
+          _eventController.add(
+            MidiPlaybackEvent(
+              type: MidiPlaybackEventType.noteOff,
+              channel: event.channel,
+              note: effectiveNote,
+              velocity: 0,
+              timestamp: timed.timestamp,
+            ),
+          );
+        }
+
+        if (delay > Duration.zero) {
+          final currentEpoch = _playEpoch;
+          Timer(delay, () {
+            if (_isPlaying && _playEpoch == currentEpoch) {
+              emitNoteOff();
+            }
+          });
+        } else {
+          emitNoteOff();
+        }
       } else {
         ch.markNoteOn(effectiveNote);
         final shouldPlay = !ch.isMuted && (!anySolo || ch.isSolo);
         if (shouldPlay) {
-          final targetPlayer = ch.customPlayer ?? player;
-          final preset = _resolvePresetForChannel(ch);
-          if (preset != null) {
-            final noteVol = (event.velocity / 127.0).clamp(0.0, 1.0);
-            final playVol = (noteVol * ch.effectiveVolume).clamp(0.0, 1.0);
-            final currentEpoch = _playEpoch;
-            final scheduledAt = SoLoud.instance.isInitialized
-                ? SoLoud.instance.getEngineTime() + delay
-                : delay;
-            targetPlayer
-                .playPresetScheduled(
-                  preset,
-                  atTime: scheduledAt,
-                  key: effectiveNote,
-                  velocity: event.velocity,
-                  customVolume: playVol,
-                  baseVolume: noteVol,
-                  customPan: ch.pan,
-                )
-                .then((voice) {
-                  if (!_isPlaying || _playEpoch != currentEpoch) {
-                    voice.release(customRelease: Duration.zero);
-                  } else {
-                    ch.addVoice(effectiveNote, voice);
-                  }
-                });
+          if (ch.effectiveVst3Instrument != null) {
+            if (ch.vst3Instrument == null && globalVst3Instrument != null) {
+              _ensureGlobalVst3Playing();
+            }
+            if (delay > Duration.zero) {
+              final currentEpoch = _playEpoch;
+              Timer(delay, () {
+                if (_isPlaying && _playEpoch == currentEpoch) {
+                  ch.triggerVst3NoteOn(effectiveNote, event.velocity);
+                }
+              });
+            } else {
+              ch.triggerVst3NoteOn(effectiveNote, event.velocity);
+            }
+          } else {
+            final targetPlayer = ch.customPlayer ?? player;
+            final preset = _resolvePresetForChannel(ch);
+            if (preset != null) {
+              final currentEpoch = _playEpoch;
+              final scheduledAt = SoLoud.instance.isInitialized
+                  ? SoLoud.instance.getEngineTime() + delay
+                  : delay;
+              targetPlayer
+                  .playPreset(
+                    preset,
+                    atTime: scheduledAt,
+                    key: effectiveNote,
+                    velocity: event.velocity,
+                    volumeScale: ch.effectiveVolume,
+                    panOffset: ch.pan,
+                    trackVoice: false,
+                    busId: ch.effectiveBusId != 0 ? ch.effectiveBusId : null,
+                  )
+                  .then((voice) {
+                    if (!_isPlaying || _playEpoch != currentEpoch) {
+                      voice.release(
+                        customRelease: const Duration(milliseconds: 15),
+                      );
+                    } else {
+                      ch.addVoice(effectiveNote, voice);
+                    }
+                  });
+            }
           }
         }
 
+        void emitNoteOn() {
+          _notifyChordChanged();
+          _eventController.add(
+            MidiPlaybackEvent(
+              type: MidiPlaybackEventType.noteOn,
+              channel: event.channel,
+              note: effectiveNote,
+              velocity: event.velocity,
+              timestamp: timed.timestamp,
+            ),
+          );
+        }
+
+        if (delay > Duration.zero) {
+          final currentEpoch = _playEpoch;
+          Timer(delay, () {
+            if (_isPlaying && _playEpoch == currentEpoch) {
+              emitNoteOn();
+            }
+          });
+        } else {
+          emitNoteOn();
+        }
+      }
+    } else if (event is NoteOffEvent) {
+      final ch = channels[event.channel];
+      final effectiveNote = event.channel == 9
+          ? event.note
+          : (event.note + transpose + ch.transpose).clamp(0, 127);
+      final scheduledAt = SoLoud.instance.isInitialized
+          ? SoLoud.instance.getEngineTime() + delay
+          : null;
+      if (ch.effectiveVst3Instrument != null && delay > Duration.zero) {
+        final currentEpoch = _playEpoch;
+        Timer(delay, () {
+          if (_isPlaying && _playEpoch == currentEpoch) {
+            ch.handleNoteOff(effectiveNote);
+          }
+        });
+      } else {
+        ch.handleNoteOff(effectiveNote, atTime: scheduledAt);
+      }
+      void emitNoteOff() {
         _notifyChordChanged();
         _eventController.add(
           MidiPlaybackEvent(
-            type: MidiPlaybackEventType.noteOn,
+            type: MidiPlaybackEventType.noteOff,
             channel: event.channel,
             note: effectiveNote,
             velocity: event.velocity,
@@ -612,34 +796,45 @@ class MidiPlayer {
           ),
         );
       }
-    } else if (event is NoteOffEvent) {
-      final ch = channels[event.channel];
-      final effectiveNote = event.channel == 9
-          ? event.note
-          : (event.note + transpose + ch.transpose).clamp(0, 127);
-      ch.handleNoteOff(effectiveNote);
-      _notifyChordChanged();
-      _eventController.add(
-        MidiPlaybackEvent(
-          type: MidiPlaybackEventType.noteOff,
-          channel: event.channel,
-          note: effectiveNote,
-          velocity: event.velocity,
-          timestamp: timed.timestamp,
-        ),
-      );
+
+      if (delay > Duration.zero) {
+        final currentEpoch = _playEpoch;
+        Timer(delay, () {
+          if (_isPlaying && _playEpoch == currentEpoch) {
+            emitNoteOff();
+          }
+        });
+      } else {
+        emitNoteOff();
+      }
     } else if (event is ProgramChangeEvent) {
       channels[event.channel].program = event.program;
-      _eventController.add(
-        MidiPlaybackEvent(
-          type: MidiPlaybackEventType.programChange,
-          channel: event.channel,
-          program: event.program,
-          timestamp: timed.timestamp,
-        ),
-      );
+      void emitProgramChange() {
+        _eventController.add(
+          MidiPlaybackEvent(
+            type: MidiPlaybackEventType.programChange,
+            channel: event.channel,
+            program: event.program,
+            timestamp: timed.timestamp,
+          ),
+        );
+      }
+
+      if (delay > Duration.zero) {
+        final currentEpoch = _playEpoch;
+        Timer(delay, () {
+          if (_isPlaying && _playEpoch == currentEpoch) {
+            emitProgramChange();
+          }
+        });
+      } else {
+        emitProgramChange();
+      }
     } else if (event is ControlChangeEvent) {
       final ch = channels[event.channel];
+      final scheduledAt = SoLoud.instance.isInitialized
+          ? SoLoud.instance.getEngineTime() + delay
+          : null;
       if (event.controller == 0) {
         // Bank Select MSB
         ch.bankMsb = event.value;
@@ -649,33 +844,28 @@ class MidiPlayer {
         ch.bankLsb = event.value;
         if (event.channel != 9) ch.bank = (ch.bankMsb << 7) | ch.bankLsb;
       } else if (event.controller == 1) {
-        // Modulation Wheel (CC 1) -> use amplitudeModulatorFilter
-        ch.modulation = event.value / 127.0;
-        if (SoLoud.instance.isInitialized) {
-          final ampMod = SoLoud.instance.filters.amplitudeModulatorFilter;
-          if (ch.modulation > 0.01) {
-            if (!ampMod.isActive) ampMod.activate();
-            ampMod.frequency.value = 5.5; // musical tremolo / vibrato LFO
-            ampMod.wet.value = (ch.modulation * 0.7).clamp(0.0, 1.0);
-          } else if (ampMod.isActive) {
-            ampMod.wet.value = 0.0;
-            ampMod.deactivate();
-          }
-        }
+        // Modulation Wheel (CC 1) -> scoped strictly to this channel's mixing Bus!
+        ch.applyModulation(event.value / 127.0);
+      } else if (event.controller == 91) {
+        // Reverb Send (CC 91) -> scoped to this channel's mixing Bus Freeverb!
+        ch.applyReverbSend(event.value / 127.0);
+      } else if (event.controller == 93) {
+        // Chorus Send (CC 93) -> scoped to this channel's mixing Bus Flanger!
+        ch.applyChorusSend(event.value / 127.0);
       } else if (event.isSustainPedal) {
-        ch.setSustainPedal(event.isSustainOn);
+        ch.setSustainPedal(event.isSustainOn, atTime: scheduledAt);
       } else if (event.controller == 66) {
         // Sostenuto Pedal (CC 66)
-        ch.setSostenutoPedal(event.value >= 64);
+        ch.setSostenutoPedal(event.value >= 64, atTime: scheduledAt);
       } else if (event.controller == 67) {
         // Soft Pedal / Una Corda (CC 67)
-        ch.setSoftPedal(event.value >= 64);
+        ch.setSoftPedal(event.value >= 64, atTime: scheduledAt);
       } else if (event.controller == 7) {
-        ch.applyVolume(event.value / 127.0);
+        ch.applyVolume(event.value / 127.0, atTime: scheduledAt);
       } else if (event.controller == 10) {
         ch.applyPan((event.value - 64) / 64.0);
       } else if (event.controller == 11) {
-        ch.applyExpression(event.value / 127.0);
+        ch.applyExpression(event.value / 127.0, atTime: scheduledAt);
       } else if (event.controller == 120) {
         // All Sound Off
         ch.stopAllVoicesImmediate();
@@ -683,29 +873,56 @@ class MidiPlayer {
         // Reset All Controllers
         ch.resetControllers();
       } else if (event.isAllNotesOff) {
-        ch.releaseAllVoices();
+        ch.releaseAllVoices(atTime: scheduledAt);
       }
 
-      _eventController.add(
-        MidiPlaybackEvent(
-          type: MidiPlaybackEventType.controlChange,
-          channel: event.channel,
-          controller: event.controller,
-          value: event.value,
-          timestamp: timed.timestamp,
-        ),
-      );
+      void emitCc() {
+        _eventController.add(
+          MidiPlaybackEvent(
+            type: MidiPlaybackEventType.controlChange,
+            channel: event.channel,
+            controller: event.controller,
+            value: event.value,
+            timestamp: timed.timestamp,
+          ),
+        );
+      }
+
+      if (delay > Duration.zero) {
+        final currentEpoch = _playEpoch;
+        Timer(delay, () {
+          if (_isPlaying && _playEpoch == currentEpoch) {
+            emitCc();
+          }
+        });
+      } else {
+        emitCc();
+      }
     } else if (event is PitchBendEvent) {
       channels[event.channel].applyPitchBend(event.normalized);
-      _eventController.add(
-        MidiPlaybackEvent(
-          type: MidiPlaybackEventType.pitchBend,
-          channel: event.channel,
-          value: event.value,
-          timestamp: timed.timestamp,
-        ),
-      );
+      void emitPitchBend() {
+        _eventController.add(
+          MidiPlaybackEvent(
+            type: MidiPlaybackEventType.pitchBend,
+            channel: event.channel,
+            value: event.value,
+            timestamp: timed.timestamp,
+          ),
+        );
+      }
+
+      if (delay > Duration.zero) {
+        final currentEpoch = _playEpoch;
+        Timer(delay, () {
+          if (_isPlaying && _playEpoch == currentEpoch) {
+            emitPitchBend();
+          }
+        });
+      } else {
+        emitPitchBend();
+      }
     } else if (event is SetTempoEvent) {
+      _syncVst3Transport();
       _eventController.add(
         MidiPlaybackEvent(
           type: MidiPlaybackEventType.tempoChange,
@@ -774,17 +991,168 @@ class MidiPlayer {
     Preset? preset,
   }) {
     if (channel < 0 || channel >= channels.length) return;
-    channels[channel].releaseAllVoices(releaseDuration: Duration.zero);
+    setChannelVst3Instrument(channel, null);
     channels[channel].customPlayer = customPlayer;
     channels[channel].presetOverride = preset;
   }
 
-  /// Clears any custom SoundFont or preset overrides for a specific MIDI channel (0-15).
+  /// Assigns (or clears) a desktop [Vst3InstrumentPlugin] for a specific MIDI [channel] (`0..15`).
+  ///
+  /// When assigned, MIDI notes on [channel] are synthesized by the VST3 Virtual
+  /// Instrument routed through [channel]'s dedicated SoLoud mixing [Bus] alongside
+  /// the other SoundFont channels!
+  void setChannelVst3Instrument(
+    int channel,
+    Vst3InstrumentPlugin? instrument, {
+    String? name,
+  }) {
+    if (channel < 0 || channel >= channels.length) return;
+    final ch = channels[channel];
+    ch.releaseAllVoices(releaseDuration: Duration.zero);
+    if (ch.vst3PlayHandle != null &&
+        SoLoud.instance.isInitialized &&
+        SoLoud.instance.getIsValidVoiceHandle(ch.vst3PlayHandle!)) {
+      try {
+        SoLoud.instance.stop(ch.vst3PlayHandle!);
+      } catch (_) {}
+      ch.vst3PlayHandle = null;
+    }
+    final oldInst = ch.vst3Instrument;
+    if (oldInst != null && !identical(oldInst, instrument)) {
+      try {
+        oldInst.closeEditorWindow();
+      } catch (_) {}
+      SoundFontVst3Manager.instance.unloadInstrument(oldInst);
+    }
+    ch.vst3Instrument = instrument;
+    ch.vst3InstrumentName = name;
+    if (instrument != null && !instrument.isDisposed) {
+      instrument.setTransport(bpm: currentBpm, isPlaying: _isPlaying);
+      if (SoLoud.instance.isInitialized) {
+        final bus = ch.ensureBus();
+        ch.vst3PlayHandle = SoLoud.instance.play(
+          instrument.audioSource,
+          volume: ch.effectiveVolume,
+          pan: ch.pan,
+          busId: bus.busId,
+        );
+      }
+    }
+  }
+
+  /// Assigns (or clears) a multi-timbral desktop [Vst3InstrumentPlugin] (e.g.
+  /// Steinberg HALion Sonic) shared across all 16 MIDI channels (`0..15`).
+  ///
+  /// The VST3 instrument's audio source is played once on the engine while each
+  /// MIDI channel (`0..15`) dispatches its events tagged with `channel: ch.channel`
+  /// into the shared plugin instance.
+  void setGlobalVst3Instrument(
+    Vst3InstrumentPlugin? instrument, {
+    String? name,
+  }) {
+    for (final ch in channels) {
+      ch.releaseAllVoices(releaseDuration: Duration.zero);
+    }
+    if (_globalVst3PlayHandle != null &&
+        SoLoud.instance.isInitialized &&
+        SoLoud.instance.getIsValidVoiceHandle(_globalVst3PlayHandle!)) {
+      try {
+        SoLoud.instance.stop(_globalVst3PlayHandle!);
+      } catch (_) {}
+      _globalVst3PlayHandle = null;
+    }
+    final oldInst = globalVst3Instrument;
+    if (oldInst != null && !identical(oldInst, instrument)) {
+      try {
+        oldInst.closeEditorWindow();
+      } catch (_) {}
+      SoundFontVst3Manager.instance.unloadInstrument(oldInst);
+    }
+    globalVst3Instrument = instrument;
+    globalVst3InstrumentName = name;
+    for (final ch in channels) {
+      ch.sharedVst3Instrument = instrument;
+      ch.sharedVst3InstrumentName = name;
+    }
+    if (instrument != null && !instrument.isDisposed) {
+      instrument.setTransport(bpm: currentBpm, isPlaying: _isPlaying);
+      _ensureGlobalVst3Playing();
+    }
+  }
+
+  /// Clears any custom SoundFont, preset, or VST3 instrument overrides for a specific MIDI channel (0-15).
   void clearChannelOverride(int channel) {
     if (channel < 0 || channel >= channels.length) return;
-    channels[channel].releaseAllVoices(releaseDuration: Duration.zero);
+    setChannelVst3Instrument(channel, null);
     channels[channel].customPlayer = null;
     channels[channel].presetOverride = null;
+  }
+
+  /// Resolves the effective [Preset] configured or assigned for the given [channel] (0-15).
+  Preset? resolvePresetForChannel(int channel) {
+    if (channel < 0 || channel >= channels.length) return null;
+    return _resolvePresetForChannel(channels[channel]);
+  }
+
+  /// Triggers a Note-On on [channel] (0-15) using the channel's assigned instrument
+  /// (routing to a VST3 Virtual Instrument if assigned, or synthesizing via the channel's SoundFont preset).
+  Future<void> noteOn(
+    int note,
+    int velocity, {
+    int channel = 0,
+    bool applyTranspose = false,
+  }) async {
+    if (channel < 0 || channel >= channels.length) return;
+    final ch = channels[channel];
+    final effectiveNote = (channel == 9 || !applyTranspose)
+        ? note
+        : (note + transpose + ch.transpose).clamp(0, 127);
+
+    ch.markNoteOn(effectiveNote);
+
+    final inst = ch.effectiveVst3Instrument ?? globalVst3Instrument;
+    if (inst != null && !inst.isDisposed) {
+      if (ch.vst3Instrument == null && globalVst3Instrument != null) {
+        _ensureGlobalVst3Playing();
+      }
+      ch.triggerVst3NoteOn(effectiveNote, velocity);
+      return;
+    }
+
+    final targetPlayer = ch.customPlayer ?? player;
+    final preset = _resolvePresetForChannel(ch);
+    if (preset != null) {
+      final volumeScale =
+          (ch.isMuted
+                  ? (ch.volume > 0 ? ch.volume * ch.expression : 1.0)
+                  : ch.effectiveVolume)
+              .clamp(0.0, 1.0);
+      final voice = await targetPlayer.playPreset(
+        preset,
+        key: effectiveNote,
+        velocity: velocity,
+        volumeScale: volumeScale,
+        panOffset: ch.pan,
+        trackVoice: false,
+        busId: ch.effectiveBusId != 0 ? ch.effectiveBusId : null,
+      );
+      ch.addVoice(effectiveNote, voice);
+    }
+  }
+
+  /// Triggers a Note-Off for [note] on [channel] (0-15).
+  Future<void> noteOff(
+    int note, {
+    int channel = 0,
+    bool applyTranspose = false,
+    Duration? releaseDuration,
+  }) async {
+    if (channel < 0 || channel >= channels.length) return;
+    final ch = channels[channel];
+    final effectiveNote = (channel == 9 || !applyTranspose)
+        ? note
+        : (note + transpose + ch.transpose).clamp(0, 127);
+    await ch.handleNoteOff(effectiveNote, releaseDuration: releaseDuration);
   }
 
   Preset? _resolvePresetForChannel(MidiChannelState ch) {
@@ -795,25 +1163,40 @@ class MidiPlayer {
       return ch.presetOverride;
     }
     final targetPlayer = ch.customPlayer ?? player;
-    final preset = targetPlayer.soundFont.findPreset(
-      bank: ch.bank,
-      program: ch.program,
-    );
+    final sf = targetPlayer.soundFont;
+    if (sf.presets.isEmpty) return null;
+
+    // Channel 9 (MIDI Channel 10) is dedicated to drums / percussion
+    if (ch.channel == 9) {
+      final drumPreset =
+          sf.findPreset(bank: 128, program: ch.program) ??
+          sf.findPreset(bank: 128, program: 0) ??
+          sf.presets
+              .where(
+                (p) => p.bank == 128 || p.name.toLowerCase().contains('drum'),
+              )
+              .firstOrNull;
+      if (drumPreset != null) return drumPreset;
+    }
+
+    // Exact match on bank & program
+    final preset = sf.findPreset(bank: ch.bank, program: ch.program);
     if (preset != null) return preset;
 
     // Fallback: search Bank 0 if requested bank was not found
     if (ch.bank != 0) {
-      final fallbackBank0 = targetPlayer.soundFont.findPreset(
-        bank: 0,
-        program: ch.program,
-      );
+      final fallbackBank0 = sf.findPreset(bank: 0, program: ch.program);
       if (fallbackBank0 != null) return fallbackBank0;
     }
 
+    // Fallback: if multiple melodic presets are available, map channel index to distinct presets
+    final melodicPresets = sf.presets.where((p) => p.bank != 128).toList();
+    if (melodicPresets.isNotEmpty) {
+      return melodicPresets[ch.channel % melodicPresets.length];
+    }
+
     // Default fallback: first preset in soundfont
-    return targetPlayer.soundFont.presets.isNotEmpty
-        ? targetPlayer.soundFont.presets.first
-        : null;
+    return sf.presets.first;
   }
 
   void _applySnapshotAt(Duration timestamp) {
@@ -824,6 +1207,8 @@ class MidiPlayer {
     for (final entry in snapshots.entries) {
       final ch = channels[entry.key];
       final snap = entry.value;
+      ch.bankMsb = snap.bankMsb;
+      ch.bankLsb = snap.bankLsb;
       ch.bank = snap.bank;
       ch.program = snap.program;
       ch.volume = snap.volume / 127.0;
@@ -831,29 +1216,26 @@ class MidiPlayer {
       ch.pan = (snap.pan - 64) / 64.0;
       ch.pitchBend = (snap.pitchBend - 8192) / 8192.0;
       ch.isSustainPedalOn = snap.isSustainPedalOn;
+      ch.isSostenutoPedalOn = snap.isSostenutoPedalOn;
+      ch.isSoftPedalOn = snap.isSoftPedalOn;
+      ch.applyModulation(snap.modulation / 127.0);
+      ch.applyReverbSend(snap.reverbSend / 127.0);
+      ch.applyChorusSend(snap.chorusSend / 127.0);
     }
   }
 
-  Future<void> _releaseAllChannelVoices() async {
+  Future<void> _releaseAllChannelVoices({
+    Duration releaseDuration = const Duration(milliseconds: 15),
+  }) async {
     _lastEmittedChord = null;
     _chordController.add(null);
-    if (SoLoud.instance.isInitialized) {
-      try {
-        final ampMod = SoLoud.instance.filters.amplitudeModulatorFilter;
-        if (ampMod.isActive) {
-          ampMod.wet.value = 0.0;
-          ampMod.deactivate();
-        }
-        SoLoud.instance.stopAll();
-      } catch (_) {}
-    }
     for (final ch in channels) {
-      await ch.releaseAllVoices(releaseDuration: Duration.zero);
+      await ch.releaseAllVoices(releaseDuration: releaseDuration);
     }
-    await player.allNotesOff(releaseDuration: Duration.zero);
+    await player.allNotesOff(releaseDuration: releaseDuration);
     for (final ch in channels) {
       if (ch.customPlayer != null) {
-        await ch.customPlayer!.allNotesOff(releaseDuration: Duration.zero);
+        await ch.customPlayer!.allNotesOff(releaseDuration: releaseDuration);
       }
     }
   }
@@ -861,6 +1243,18 @@ class MidiPlayer {
   /// Disposes of the player, stopping active playback and closing streams.
   Future<void> dispose() async {
     await stop();
+    if (_globalVst3PlayHandle != null &&
+        SoLoud.instance.isInitialized &&
+        SoLoud.instance.getIsValidVoiceHandle(_globalVst3PlayHandle!)) {
+      try {
+        SoLoud.instance.stop(_globalVst3PlayHandle!);
+      } catch (_) {}
+      _globalVst3PlayHandle = null;
+    }
+    for (final ch in channels) {
+      ch.disposeBus();
+    }
+    vst3Manager.disposeAll();
     _positionController.close();
     _eventController.close();
     _lyricController.close();

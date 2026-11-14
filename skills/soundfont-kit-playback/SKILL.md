@@ -1,29 +1,40 @@
 ---
 name: soundfont-kit-playback
-version: 1
-description: Polyphonic playback, interactive keyboard note-on/note-off, chords, velocity sensitivity, and voice lifecycle management with soundfont_kit and flutter_soloud. Use when the user asks how to play notes, implement a piano keyboard, handle MIDI input, play chords, or stop sounding voices.
+version: 2
+description: Polyphonic playback, synthesis modes (SoLoud Voices vs. Worker-Isolate Realtime Synthesizer), 6-stage DAHDSR envelopes, Exclusive Class voice choking, per-voice resonant filter, and interactive keyboard note-on/note-off with soundfont_kit. Use when the user asks how to play notes, choose a synthesis mode, configure hi-hat choking, implement a piano keyboard, or play chords.
 ---
 
-# soundfont_kit playback & polyphony
+# soundfont_kit playback, synthesis modes & polyphony
 
-`soundfont_kit` pairs parsed SoundFont assets with `flutter_soloud` to provide polyphonic playback with velocity scaling, automatic stereo channel joining, and voice lifecycle management.
+`soundfont_kit` pairs parsed SoundFont (`.sf2`, `.sf3`, `.sfz`) assets with `flutter_soloud` to provide polyphonic playback with two selectable synthesis modes, full 6-stage DAHDSR volume envelopes, Exclusive Class voice choking, and automatic stereo channel joining.
 
 ---
 
-## 1. Creating a `SoundFontPlayer`
+## 1. Creating a `SoundFontPlayer` & Choosing a Synthesis Mode
 
-Create a player from an existing `SoundFontFile`:
+`SoundFontPlayerOptions` offers two synthesis modes via `SoundFontSynthMode`:
+
+1. **`SoundFontSynthMode.soloudVoices`** *(Default)*: Plays each zone as an individual SoLoud `AudioSource` voice with scheduled 6-stage DAHDSR volume fades (`Delay -> Attack -> Hold -> Decay -> Sustain -> Release`), Exclusive Class (`exclusiveClass` / `off_by`) voice choking, and optional per-voice Biquad resonant low-pass filtering (`enablePerVoiceFilter: true`).
+2. **`SoundFontSynthMode.realtimeIsolateSynth`**: Synthesizes all polyphonic voices inside a dedicated high-priority Dart worker isolate (`RealtimeSoundFontSynthesizer` via `SoLoudIsolate` + `RealtimeStreamFeeder`) and pushes mixed stereo `Float32` blocks into a single zero-latency SoLoud `RealtimeStreamHandle`. Includes per-sample 6-stage Volume & Modulation DAHDSR envelopes, Cytomic TPT resonant State-Variable Filter (SVF) with dynamic envelope/LFO cutoff modulation, ModLFO, VibLFO, and zero voice-stealing limits.
 
 ```dart
 final player = sf.createPlayer(
   options: const SoundFontPlayerOptions(
-    joinStereoChannels: true,       // Join paired L/R mono samples to stereo
-    cacheAudioSources: true,        // Preserve audio buffers in RAM for zero lag
-    defaultReleaseDuration: Duration(milliseconds: 150), // Fallback release
-    masterVolume: 1.0,              // Master volume scale
-    sustain: 1.0,                   // Master sustain factor across all SoundFonts
+    synthMode: SoundFontSynthMode.soloudVoices, // or SoundFontSynthMode.realtimeIsolateSynth
+    enablePerVoiceFilter: true,                 // Apply SF2/SFZ resonant filter per voice
+    enableMixingBus: false,                     // Set true to route player through its own Bus
+    joinStereoChannels: true,                   // Join paired L/R mono samples to stereo
+    cacheAudioSources: true,                    // Preserve audio buffers in RAM for zero lag
+    defaultReleaseDuration: Duration(milliseconds: 150),
+    masterVolume: 1.0,
+    sustain: 1.0,
   ),
 );
+```
+
+You can also switch modes dynamically at runtime:
+```dart
+player.synthMode = SoundFontSynthMode.realtimeIsolateSynth;
 ```
 
 ---
@@ -35,7 +46,7 @@ For virtual piano keyboards, touch interfaces, or MIDI controller events, use `n
 ```dart
 // Note ON: MIDI key 60 (Middle C), velocity 100 (1..127)
 final voice = await player.noteOn(
-  preset: preset, // or pass instrument: myInstrument
+  preset: preset,
   key: 60,
   velocity: 100,
 );
@@ -47,14 +58,12 @@ await player.noteOff(60);
 await player.allNotesOff();
 ```
 
-### Held-Key Safety
-`SoundFontPlayer` tracks held keys internally: if a user taps a key and releases it so quickly that `noteOff` fires *before* the asynchronous `noteOn` sample loading finishes, `SoundFontPlayer` recognizes that the key was already released and immediately fades out the voice without leaving an orphaned ringing note.
+### Exclusive Class / Hi-Hat Choking (`exclusiveClass` / `off_by`)
+Both `soloudVoices` and `realtimeIsolateSynth` automatically honor SF2 Generator 57 (`exclusiveClass`) and SFZ `group` / `off_by` opcodes. Triggering a closed hi-hat immediately chokes any open hi-hat in the same exclusive group with a fast 5 ms click-free fade.
 
 ---
 
 ## 3. Playing Chords & Polyphony
-
-To play chords or polyphonic phrases, trigger multiple `noteOn` calls concurrently:
 
 ```dart
 // Play a C Major Triad (C4, E4, G4)
@@ -70,33 +79,9 @@ for (final key in chordKeys) {
 }
 ```
 
-> [!IMPORTANT]
-> Always ensure `SoLoud.instance.setMaxActiveVoiceCount(128)` was configured during audio initialization. Playing polyphonic chords with long release tails will quickly exceed the default 16 voices, causing SoLoud to steal or drop notes.
-
 ---
 
-## 4. One-Shot Auditioning & Direct Playback
-
-To play a note without tracking it for manual `noteOff` (e.g. for auditioning or sound effects):
-
-```dart
-// 1. Play a Preset:
-final voice = await player.playPreset(preset, key: 60, velocity: 100);
-
-// 2. Play an Instrument directly:
-final voice = await player.playInstrument(sf.instruments.first, key: 60);
-
-// 3. Play a specific raw SampleInfo directly:
-final voice = await player.playSample(sf.samples.first, key: 60);
-
-// Release after custom delay:
-await Future.delayed(const Duration(seconds: 1));
-await voice.release();
-```
-
----
-
-## 5. Controlling Active Voices (`SoundFontVoice`)
+## 4. Controlling Active Voices (`SoundFontVoice`)
 
 Each note trigger returns a `SoundFontVoice` controlling that specific playing instance:
 
@@ -107,28 +92,11 @@ await voice.release(customRelease: const Duration(milliseconds: 300));
 // Immediate abrupt stop:
 await voice.stop();
 
-// Inspect voice properties:
-print('Key: ${voice.key}, Velocity: ${voice.velocity}');
-print('Is released: ${voice.isReleased}');
+// Real-time modulation on sounding voices:
+voice.applyPitchBend(1.059463); // +1 semitone
+voice.applyVolumeMultiplier(0.8);
+voice.applyPan(-0.5);
 ```
-
----
-
-## 6. Automatic Stereo Channel Joining
-
-SoundFonts often store stereo instruments as two separate mono samples (one tagged `Left`, one tagged `Right`).
-
-With `joinStereoChannels: true` (default):
-- `StereoJoiner` matches linked left and right samples via `sampleLink` or channel naming (`Piano_L` <-> `Piano_R`).
-- 16-bit PCM samples are interleaved into a true 2-channel stereo audio stream.
-- The voice plays through a single `flutter_soloud` handle with centered balance, halving engine voice consumption and eliminating stereo phase drift.
-
----
-
-## Traps & Common Gotchas
-
-- **Mismatched Note-Off Key**: `player.noteOff(key)` must match the exact integer MIDI key number passed to `noteOn(..., key: key)`.
-- **Preload for Real-Time Performance**: For zero-latency keyboard responses without audio hiccups, call `await player.preloadPreset(preset)` or `await player.preloadAll()` before starting performance.
 
 ---
 

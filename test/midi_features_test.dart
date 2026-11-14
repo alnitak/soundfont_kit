@@ -53,15 +53,18 @@ void main() {
   });
 
   group('MidiTimeline Lyrics & Markers Tests', () {
-    test('Reads lyrics from timeline if present or provides empty list', () async {
-      final midi = await MidiReader.fromFile(File(midiPath));
-      final timeline = MidiTimeline.fromMidiFile(midi);
+    test(
+      'Reads lyrics from timeline if present or provides empty list',
+      () async {
+        final midi = await MidiReader.fromFile(File(midiPath));
+        final timeline = MidiTimeline.fromMidiFile(midi);
 
-      // Moonlight sonata has no lyrics but timeline should initialize clean structures
-      expect(timeline.lyrics, isNotNull);
-      expect(timeline.hasLyrics, equals(timeline.lyrics.isNotEmpty));
-      expect(timeline.fullLyricsText, isA<String>());
-    });
+        // Moonlight sonata has no lyrics but timeline should initialize clean structures
+        expect(timeline.lyrics, isNotNull);
+        expect(timeline.hasLyrics, equals(timeline.lyrics.isNotEmpty));
+        expect(timeline.fullLyricsText, isA<String>());
+      },
+    );
 
     test('MidiLyricSpan properties and formatting', () {
       final span = MidiLyricSpan(

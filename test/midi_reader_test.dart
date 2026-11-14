@@ -58,7 +58,10 @@ void main() {
       // Check events
       final events = track.events;
       expect(events.any((e) => e is SetTempoEvent && e.bpm == 120.0), isTrue);
-      expect(events.any((e) => e is ProgramChangeEvent && e.program == 0), isTrue);
+      expect(
+        events.any((e) => e is ProgramChangeEvent && e.program == 0),
+        isTrue,
+      );
 
       final noteOns = events.whereType<NoteOnEvent>().toList();
       expect(noteOns.length, equals(2));
@@ -132,10 +135,17 @@ void main() {
   group('MidiReader Real Asset Tests', () {
     test('Successfully parses Moonlight Sonata MIDI file', () async {
       final assetDir = p.join(Directory.current.path, 'example', 'assets');
-      final midiPath = p.join(assetDir, 'Piano Sonata n14 op27 - Moonlight.mid');
+      final midiPath = p.join(
+        assetDir,
+        'Piano Sonata n14 op27 - Moonlight.mid',
+      );
       final midiFile = File(midiPath);
 
-      expect(midiFile.existsSync(), isTrue, reason: 'Moonlight Sonata MIDI file must exist');
+      expect(
+        midiFile.existsSync(),
+        isTrue,
+        reason: 'Moonlight Sonata MIDI file must exist',
+      );
 
       final midi = await MidiReader.fromFile(midiFile);
 
@@ -160,9 +170,17 @@ void main() {
         }
       }
 
-      expect(totalNoteOns, greaterThan(100), reason: 'Moonlight Sonata should have hundreds of notes');
+      expect(
+        totalNoteOns,
+        greaterThan(100),
+        reason: 'Moonlight Sonata should have hundreds of notes',
+      );
       expect(totalSustainEvents, greaterThanOrEqualTo(0));
-      expect(tempoChanges, greaterThan(0), reason: 'Should have at least initial tempo');
+      expect(
+        tempoChanges,
+        greaterThan(0),
+        reason: 'Should have at least initial tempo',
+      );
 
       // Check usedChannels (Moonlight Sonata uses Channels 1, 2, 4)
       expect(midi.usedChannels, equals({1, 2, 4}));

@@ -77,7 +77,6 @@ void main() {
       await Future.delayed(const Duration(milliseconds: 100));
 
       final framesBeforePlay = capturedFloats.length ~/ 2;
-      final playTimestamp = DateTime.now();
 
       // Trigger the tic sound with playScheduled at the playhead
       final handle = SoLoud.instance.playScheduled(
