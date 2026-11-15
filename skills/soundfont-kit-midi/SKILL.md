@@ -1,7 +1,7 @@
 ---
 name: soundfont-kit-midi
-version: 1
-description: Standard MIDI File (SMF format 0 & 1) parsing, multi-track timeline analysis, and multi-channel playback with MidiReader and MidiPlayer in soundfont_kit. Use when the user asks how to read MIDI files, play .mid/.midi songs, analyze MIDI events or tempo maps, inspect note spans, mute/solo channels, change playback speed, seek, loop, or render piano rolls and MIDI visualizers.
+version: 2
+description: Standard MIDI File (SMF format 0 & 1) parsing, multi-track timeline analysis, multi-channel playback, and external 0xF8 MIDI Clock Slave synchronization with MidiReader, MidiPlayer, MidiClockSlave, and MidiClockSimulator in soundfont_kit. Use when the user asks how to read MIDI files, play .mid/.midi songs, analyze MIDI events or tempo maps, inspect note spans, mute/solo channels, change playback speed, seek, loop, sync to external 0xF8 MIDI clock, or render piano rolls and MIDI visualizers.
 ---
 
 # soundfont_kit MIDI playback & analysis
@@ -246,6 +246,47 @@ final category = GeneralMidi.categoryOf(0); // "Piano"
 
 // Resolve GM percussion note number for Channel 10:
 final drum = GeneralMidi.percussionNameOf(36); // "Bass Drum 1"
+```
+
+---
+
+## 11. External MIDI Clock Slave Sync (`0xF8` / `0xFA` / `0xFB` / `0xFC` / `0xF2`)
+
+Synchronize `MidiPlayer` and hosted VST3 plugins to an external MIDI master clock (`0xF8` Timing Clock at 24 PPQ, `0xFA` Start, `0xFB` Continue, `0xFC` Stop, and `0xF2` Song Position Pointer) using `MidiPlayer.feedMidiClockByte` / `feedMidiClockBytes` or a standalone `MidiClockSlave`:
+
+```dart
+// Forward raw bytes from any MIDI-in plugin (e.g. flutter_midi_command or WebMIDI):
+midiInputStream.listen((Uint8List packet) {
+  midiPlayer.feedMidiClockBytes(packet);
+});
+
+// Or feed single bytes with optional hardware timestamps in microseconds:
+midiPlayer.feedMidiClockByte(0xFA, timestampUs: 0);
+midiPlayer.feedMidiClockByte(0xF8, timestampUs: 20833); // 120 BPM
+
+// Inspect clock state or disable external sync:
+print('Synced BPM: ${midiPlayer.midiClock.bpm}');
+print('PPQ Beat: ${midiPlayer.midiClock.ppqPosition}');
+midiPlayer.externalClockSync = false;
+```
+
+### Testing Without Hardware (`MidiClockSimulator`)
+Use `MidiClockSimulator` to generate real 24-PPQ `0xF8`, `0xFA`, `0xFB`, `0xFC`, and `0xF2` bytes in software (with optional simulated timing jitter):
+
+```dart
+final sim = MidiClockSimulator(
+  bpm: 128.0,
+  jitterMs: 1.0,
+  onSendByte: (byte, timestampUs) {
+    midiPlayer.feedMidiClockByte(byte, timestampUs: timestampUs);
+  },
+);
+sim.start();                 // Sends 0xFA + continuous 0xF8 pulses
+sim.bpm = 140.0;             // Smoothly shifts tempo without jumping position
+sim.stop();                  // Sends 0xFC (pauses MidiPlayer)
+sim.continuePlayback();      // Sends 0xFB (resumes MidiPlayer)
+sim.sendSongPosition(16);    // Sends 0xF2 (seeks to 16 sixteenth notes = 4 beats)
+sim.dispose();
 ```
 
 ---

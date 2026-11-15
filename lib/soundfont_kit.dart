@@ -23,6 +23,7 @@ export 'src/player/filters/soundfont_filter.dart';
 export 'src/player/vst3/soundfont_vst3_manager.dart';
 
 export 'src/midi/midi_models.dart';
+export 'src/midi/midi_clock_slave.dart';
 export 'src/midi/midi_reader.dart';
 export 'src/midi/midi_timeline.dart';
 export 'src/midi/midi_channel_state.dart';

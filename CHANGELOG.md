@@ -1,3 +1,6 @@
+### 1.2.1 (XX Xxx 2026)
+- Added real-time `0xF8` MIDI Clock Slave synchronization (`MidiClockSlave` and `MidiClockSimulator`) in `MidiPlayer`.
+
 ### 1.2.0
 - **Dual Synthesis Engine (`SoundFontSynthMode`)**:
   - `soloudVoices` (default): added full 6-stage DAHDSR volume envelopes, exclusive class voice choking (e.g., hi-hats), and optional per-voice low-pass filtering (`enablePerVoiceFilter`).

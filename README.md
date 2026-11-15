@@ -32,7 +32,7 @@ A high-performance, pure Dart reader, synthesizer, and playback engine for Sound
 - **Global & Per-Bus Audio DSP Filter Racks (`SoundFontFilterRack`)**:
   - Unified filter controller (`SoundFontFilterRack.global()` and `SoundFontFilterRack.forBus(Bus)`) supporting **Freeverb**, **Echo/Delay**, **Biquad Resonant Filter**, **Flanger**, **Bass Boost**, **Lo-Fi**, **Wave Shaper**, **Compressor**, **Limiter**, **Parametric EQ**, **Pitch Shift**, **Amplitude Modulator**, and **8 Custom C++/Web/VST3 Filter Slots (`customSlot0`..`customSlot7`)** with C++ parameter fades (`fadeParameter`) and LFO oscillation (`oscillateParameter`).
 - **Multi-Channel MIDI Sequencer & Desktop VST3 Hosting (`MidiPlayer` & `SoundFontVst3Manager`)**:
-  - Standard MIDI File (`SMF 0 & 1` and `RIFF/RMID`) parser and 16-channel sequencer with lazy per-channel SoLoud mixing `Bus` routing (`CC 1` Mod Wheel, `CC 91` Reverb Send, `CC 93` Chorus Send), real-time chord detection, and synchronized karaoke lyrics.
+  - Standard MIDI File (`SMF 0 & 1` and `RIFF/RMID`) parser and 16-channel sequencer with lazy per-channel SoLoud mixing `Bus` routing (`CC 1` Mod Wheel, `CC 91` Reverb Send, `CC 93` Chorus Send), real-time chord detection, synchronized karaoke lyrics, and **external `0xF8` MIDI Clock Slave sync** (`MidiClockSlave` + `MidiClockSimulator`).
   - **Desktop VST3 Hosting (`macOS`, `Windows`, `Linux`)**: Scan `.vst3` plugin bundles, insert VST3 Audio Effects into global or per-channel custom filter slots (`0..7`), assign VST3 Virtual Instruments (`Vst3InstrumentPlugin`) to any MIDI channel alongside SoundFont channels, and open native OS plugin editor windows (`openEditorWindow`).
 
 ---
@@ -304,6 +304,15 @@ await midiPlayer.play();
 await midiPlayer.pause();
 await midiPlayer.seek(const Duration(seconds: 45));
 await midiPlayer.stop();
+
+// 7. Optional: Sync MidiPlayer in Slave mode to external 0xF8 MIDI Clock bytes
+// (or test without external MIDI hardware using MidiClockSimulator):
+final clockSim = MidiClockSimulator(
+  bpm: 128.0,
+  jitterMs: 1.0,
+  onSendByte: (byte, ts) => midiPlayer.feedMidiClockByte(byte, timestampUs: ts),
+);
+clockSim.start(); // Emits 0xFA Start + 24-PPQ 0xF8 pulses
 ```
 
 > **Desktop VST3 Setup Note:** To enable VST3 hosting on macOS, Windows, and Linux, add `enable_vst3: true` under `hooks.user_defines.flutter_soloud` in your app's `pubspec.yaml`. On **macOS**, also set `com.apple.security.app-sandbox` to `false` and `com.apple.security.cs.disable-library-validation` to `true` in `macos/Runner/DebugProfile.entitlements` and `Release.entitlements` (and optionally `NSDocumentsFolderUsageDescription` in `macos/Runner/Info.plist`) so the app can scan `/Library/Audio/Plug-Ins/VST3` and load third-party `.vst3` bundles.

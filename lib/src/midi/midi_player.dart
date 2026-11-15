@@ -7,6 +7,7 @@ import '../player/soundfont_player.dart';
 import '../player/vst3/soundfont_vst3_manager.dart';
 import 'chord_detector.dart';
 import 'midi_channel_state.dart';
+import 'midi_clock_slave.dart';
 import 'midi_lyrics.dart';
 import 'midi_models.dart';
 import 'midi_timeline.dart';
@@ -133,8 +134,63 @@ class MidiPlayer {
   /// Optional region loop end boundary. When reached with [looping], playback wraps to [loopStart].
   Duration? loopEnd;
 
+  double? _overrideBpm;
+
   /// Fixed tempo override in BPM. When non-null, overrides the song's tempo map.
-  double? overrideBpm;
+  double? get overrideBpm => _overrideBpm;
+  set overrideBpm(double? value) {
+    if (_overrideBpm == value) return;
+    _reanchorPlaybackClock();
+    _overrideBpm = value;
+    _syncVst3Transport();
+  }
+
+  /// Built-in MIDI Clock Slave (`0xF8`, `0xFA`, `0xFB`, `0xFC`, `0xF2`) receiver.
+  late final MidiClockSlave midiClock = MidiClockSlave(
+    onStateChanged: _onMidiClockStateChanged,
+  );
+
+  bool _externalClockSync = false;
+  double? _externalClockBpm;
+
+  /// Whether playback transport and tempo follow external MIDI clock bytes fed
+  /// into [midiClock] (or via [feedMidiClockByte] / [feedMidiClockBytes]).
+  bool get externalClockSync => _externalClockSync;
+  set externalClockSync(bool value) {
+    if (_externalClockSync == value) return;
+    _reanchorPlaybackClock();
+    _externalClockSync = value;
+    _externalClockBpm = value ? midiClock.bpm : null;
+    _syncVst3Transport();
+    if (_timeline != null) {
+      _eventController.add(
+        MidiPlaybackEvent(
+          type: MidiPlaybackEventType.tempoChange,
+          bpm: currentBpm,
+          timestamp: _position,
+        ),
+      );
+    }
+  }
+
+  /// Feeds a single raw MIDI clock/transport byte (`0xF8`, `0xFA`, `0xFB`,
+  /// `0xFC`, or `0xF2 <lsb> <msb>`) into [midiClock] and enables
+  /// [externalClockSync].
+  void feedMidiClockByte(int byte, {int? timestampUs}) {
+    if (!_externalClockSync) {
+      externalClockSync = true;
+    }
+    midiClock.feedByte(byte, timestampUs: timestampUs);
+  }
+
+  /// Feeds raw MIDI clock/transport bytes into [midiClock] and enables
+  /// [externalClockSync].
+  void feedMidiClockBytes(Iterable<int> bytes, {int? timestampUs}) {
+    if (!_externalClockSync) {
+      externalClockSync = true;
+    }
+    midiClock.feedBytes(bytes, timestampUs: timestampUs);
+  }
 
   /// Set of 0-based track indices that are muted.
   final Set<int> _mutedTracks = {};
@@ -150,19 +206,86 @@ class MidiPlayer {
     final clamped = value.clamp(0.1, 10.0);
     if ((clamped - _speedMultiplier).abs() < 0.0001) return;
 
+    // Re-anchor the wall clock baseline to the exact current virtual position
+    // before applying the new speed multiplier, preventing sudden timeline jumps.
+    _reanchorPlaybackClock();
+    _speedMultiplier = clamped;
+  }
+
+  double _computeEffectiveSpeed() {
+    if (_timeline == null) return _speedMultiplier;
+    final curBpm = _timeline!.tempoMap.getBpmAtTick(
+      _timeline!.tempoMap.durationToTick(_position),
+    );
+    final activeOverrideBpm = _externalClockSync
+        ? (_externalClockBpm ?? midiClock.bpm)
+        : _overrideBpm;
+    final bpmFactor = activeOverrideBpm != null && curBpm > 0
+        ? (activeOverrideBpm / curBpm).clamp(0.05, 20.0)
+        : 1.0;
+    return _speedMultiplier * bpmFactor;
+  }
+
+  void _reanchorPlaybackClock() {
     if (_isPlaying && _playbackWallStart != null) {
-      // Re-anchor the wall clock baseline to the exact current virtual position
-      // before applying the new speed multiplier, preventing sudden timeline jumps.
+      final effectiveSpeed = _computeEffectiveSpeed();
       final elapsedWall = DateTime.now().difference(_playbackWallStart!);
       final virtualElapsed = Duration(
-        microseconds: (elapsedWall.inMicroseconds * _speedMultiplier).round(),
+        microseconds: (elapsedWall.inMicroseconds * effectiveSpeed).round(),
       );
       _position = _playbackPosStart + virtualElapsed;
       _playbackPosStart = _position;
       _playbackWallStart = DateTime.now();
     }
+  }
 
-    _speedMultiplier = clamped;
+  void _onMidiClockStateChanged(MidiClockState state) {
+    if (!_externalClockSync) return;
+
+    switch (state.type) {
+      case MidiClockEventType.start:
+        _externalClockBpm = state.bpm;
+        unawaited(_restartFromStartForClock());
+      case MidiClockEventType.continuePlayback:
+        _externalClockBpm = state.bpm;
+        if (!_isPlaying) {
+          unawaited(play());
+        }
+      case MidiClockEventType.stop:
+        if (_isPlaying) {
+          unawaited(pause());
+        }
+      case MidiClockEventType.songPosition:
+        if (_timeline != null) {
+          final targetTick =
+              ((state.clockTickCount / kMidiClocksPerQuarterNote) *
+                      _timeline!.file.ticksPerQuarterNote)
+                  .round();
+          final target = _timeline!.tempoMap.tickToDuration(targetTick);
+          unawaited(seek(target));
+        }
+      case MidiClockEventType.clock:
+        _externalClockBpm ??= state.bpm;
+        if ((state.bpm - _externalClockBpm!).abs() >= 0.05) {
+          _reanchorPlaybackClock();
+          _externalClockBpm = state.bpm;
+          _syncVst3Transport();
+          _eventController.add(
+            MidiPlaybackEvent(
+              type: MidiPlaybackEventType.tempoChange,
+              bpm: currentBpm,
+              timestamp: _position,
+            ),
+          );
+        }
+    }
+  }
+
+  Future<void> _restartFromStartForClock() async {
+    await seek(loopStart ?? Duration.zero);
+    if (_externalClockSync && midiClock.isRunning && !_isPlaying) {
+      await play();
+    }
   }
 
   /// Whether playback automatically loops from the beginning upon reaching the end.
@@ -205,8 +328,11 @@ class MidiPlayer {
 
   /// Returns the current effective tempo in BPM at the active playback position.
   double get currentBpm {
-    if (overrideBpm != null && overrideBpm! > 0) {
-      return overrideBpm! * _speedMultiplier;
+    if (_externalClockSync) {
+      return (_externalClockBpm ?? midiClock.bpm) * _speedMultiplier;
+    }
+    if (_overrideBpm != null && _overrideBpm! > 0) {
+      return _overrideBpm! * _speedMultiplier;
     }
     if (_timeline == null) return 120.0 * _speedMultiplier;
     final tick = _timeline!.tempoMap.durationToTick(_position);
@@ -583,13 +709,7 @@ class MidiPlayer {
   void _onScheduleTick(Timer timer) {
     if (!_isPlaying || _timeline == null || _playbackWallStart == null) return;
 
-    final curBpm = _timeline!.tempoMap.getBpmAtTick(
-      _timeline!.tempoMap.durationToTick(_position),
-    );
-    final bpmFactor = overrideBpm != null && curBpm > 0
-        ? (overrideBpm! / curBpm).clamp(0.05, 20.0)
-        : 1.0;
-    final effectiveSpeed = speedMultiplier * bpmFactor;
+    final effectiveSpeed = _computeEffectiveSpeed();
 
     final elapsedWall = DateTime.now().difference(_playbackWallStart!);
     final virtualElapsed = Duration(
@@ -926,7 +1046,7 @@ class MidiPlayer {
       _eventController.add(
         MidiPlaybackEvent(
           type: MidiPlaybackEventType.tempoChange,
-          bpm: event.bpm,
+          bpm: _externalClockSync ? currentBpm : event.bpm,
           timestamp: timed.timestamp,
         ),
       );
@@ -1255,6 +1375,7 @@ class MidiPlayer {
       ch.disposeBus();
     }
     vst3Manager.disposeAll();
+    await midiClock.dispose();
     _positionController.close();
     _eventController.close();
     _lyricController.close();

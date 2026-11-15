@@ -146,6 +146,11 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
   StreamSubscription<MidiPlaybackEvent>? _eventSub;
   Timer? _uiRefreshTimer;
 
+  // Software 0xF8 MIDI Clock simulator for hardware-free Slave mode testing
+  MidiClockSimulator? _clockSimulator;
+  bool _useExternalClockSim = false;
+  double _simClockBpm = 120.0;
+
   // Loaded SoundFont players pool available for multi-timbral and channel instrument overrides
   final Map<String, SoundFontPlayer> _loadedSoundFontPlayers = {};
 
@@ -250,6 +255,7 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
     _eventSub?.cancel();
     _chordSub?.cancel();
     _lyricSub?.cancel();
+    _clockSimulator?.dispose();
     _midiPlayer?.dispose();
     _headersVerticalController.dispose();
     _lanesVerticalController.dispose();
@@ -1059,6 +1065,7 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
     required Color color,
   }) {
     return Container(
+      width: 165,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: const Color(0xFF141720),
@@ -1729,6 +1736,7 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                     _sostenutoPedalOn = false;
                     _softPedalOn = false;
                   });
+                  _clockSimulator?.stop();
                   _midiPlayer?.stop();
                   _isAutoScrolling = false;
                   if (_timelineHorizontalController.hasClients) {
@@ -1749,6 +1757,17 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                   color: Colors.white,
                   tooltip: _isPlaying ? 'Pause' : 'Play',
                   onPressed: () {
+                    if (_useExternalClockSim && _clockSimulator != null) {
+                      if (_isPlaying) {
+                        _clockSimulator!.stop();
+                      } else if ((_midiPlayer?.position ?? Duration.zero) >
+                          Duration.zero) {
+                        _clockSimulator!.continuePlayback();
+                      } else {
+                        _clockSimulator!.start();
+                      }
+                      return;
+                    }
                     if (_isPlaying) {
                       setState(() {
                         _isPlaying = false;
@@ -1847,6 +1866,71 @@ class _MidiPlayerScreenState extends State<MidiPlayerScreen> {
                   },
                 ),
               ),
+              const SizedBox(width: 8),
+              // 0xF8 MIDI Clock Slave Simulator Toggle
+              FilterChip(
+                avatar: Icon(
+                  Icons.timer_outlined,
+                  size: 15,
+                  color: _useExternalClockSim
+                      ? const Color(0xFF00E5FF)
+                      : Colors.white60,
+                ),
+                label: const Text('0xF8 Slave', style: TextStyle(fontSize: 11)),
+                selected: _useExternalClockSim,
+                selectedColor: const Color(0xFF00E5FF).withAlpha(45),
+                visualDensity: VisualDensity.compact,
+                tooltip:
+                    'Simulate an external 0xF8 MIDI Clock master (24 PPQ) driving MidiPlayer in Slave mode',
+                onSelected: (enabled) {
+                  setState(() {
+                    _useExternalClockSim = enabled;
+                    if (enabled) {
+                      _simClockBpm = _currentBpm.clamp(40.0, 240.0);
+                      _clockSimulator?.dispose();
+                      _clockSimulator = MidiClockSimulator(
+                        bpm: _simClockBpm,
+                        jitterMs: 1.0,
+                        onSendByte: (byte, ts) => _midiPlayer
+                            ?.feedMidiClockByte(byte, timestampUs: ts),
+                      );
+                      _midiPlayer?.externalClockSync = true;
+                      if (_isPlaying) {
+                        _clockSimulator!.continuePlayback();
+                      }
+                    } else {
+                      _clockSimulator?.dispose();
+                      _clockSimulator = null;
+                      _midiPlayer?.externalClockSync = false;
+                    }
+                  });
+                },
+              ),
+              if (_useExternalClockSim) ...[
+                const SizedBox(width: 8),
+                Text(
+                  'Clock: ${_simClockBpm.toStringAsFixed(0)} BPM',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF00E5FF),
+                  ),
+                ),
+                SizedBox(
+                  width: 95,
+                  child: Slider(
+                    value: _simClockBpm,
+                    min: 40.0,
+                    max: 240.0,
+                    activeColor: const Color(0xFF00E5FF),
+                    onChanged: (val) {
+                      setState(() {
+                        _simClockBpm = val;
+                        _clockSimulator?.bpm = val;
+                      });
+                    },
+                  ),
+                ),
+              ],
             ],
           ),
         ],
